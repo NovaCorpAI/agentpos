@@ -16,6 +16,7 @@ import {
   Operation,
   TransactionBuilder,
 } from "@stellar/stellar-sdk";
+import { fileURLToPath } from "node:url";
 import { FRIENDBOT_URL, configFromEnv } from "../src/config.js";
 
 // Load the repo-root (or package) .env if present (Node >= 20.12). Never required in CI.
