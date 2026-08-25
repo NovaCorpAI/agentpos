@@ -4,8 +4,10 @@ set -eu
 
 SITE_URL="${SITE_URL:-http://localhost:8080}"
 # Demo-only REST credentials (NOT secrets; allowlisted in .gitleaks.toml).
-CK="ck_agentgate_demo_0000000000000000000000000000000000000000"
-CS="cs_agentgate_demo_0000000000000000000000000000000000000000"
+# Exactly 43 chars each: WooCommerce stores consumer_secret in a varchar(43) column.
+CK="ck_agentgatedemo000000000000000000000000000"
+CS="cs_agentgatedemo000000000000000000000000000"
+export AG_DEMO_CK="$CK" AG_DEMO_CS="$CS"
 
 echo "[seed] waiting for WordPress files..."
 until [ -f /var/www/html/wp-config.php ]; do sleep 2; done
@@ -43,13 +45,23 @@ seed_product "Notebook A5 Dotted" "AG-NOTE-A5" "6.00" 100 "A5 notebook, 160 page
 seed_product "USB-C Cable 1m" "AG-CABLE-1M" "4.25" 200 "USB-C to USB-C, 1 m, 60 W, USB 2.0 data."
 seed_product "Sticker Pack" "AG-STICKERS" "3.00" 500 "10 vinyl stickers, waterproof, assorted designs."
 
-# REST API keys: WooCommerce stores the consumer key as a SHA-256 hash and the secret in clear.
-prefix="$(wp db prefix)"
-exists="$(wp db query "SELECT COUNT(*) FROM ${prefix}woocommerce_api_keys WHERE description='agentgate-demo';" --skip-column-names)"
-if [ "$exists" = "0" ]; then
-  wp db query "INSERT INTO ${prefix}woocommerce_api_keys (user_id, description, permissions, consumer_key, consumer_secret, truncated_key) VALUES (1, 'agentgate-demo', 'read_write', SHA2('${CK}', 256), '${CS}', '$(printf %s "$CK" | tail -c 7)');"
-  echo "[seed] created REST API key"
-fi
+# Demo-only mu-plugin: WooCommerce accepts Basic Auth on the REST API only over SSL.
+# The local store runs on plain HTTP, so REST requests carrying an Authorization header
+# are treated as SSL. Never ship this to a real store: use HTTPS there.
+mkdir -p /var/www/html/wp-content/mu-plugins
+cat > /var/www/html/wp-content/mu-plugins/agentgate-demo.php <<'PHP'
+<?php
+/* Plugin Name: AgentGate demo store helpers (local only) */
+if (
+    isset($_SERVER['REQUEST_URI']) && strpos($_SERVER['REQUEST_URI'], '/wp-json/') !== false
+    && (isset($_SERVER['HTTP_AUTHORIZATION']) || isset($_SERVER['PHP_AUTH_USER']))
+) {
+    $_SERVER['HTTPS'] = 'on';
+}
+PHP
+
+# REST API key: see seed/apikey.php (wc_api_hash for the key, clear secret, 43 chars).
+wp eval-file /seed/apikey.php
 
 echo "[seed] done. Store: $SITE_URL  REST: $SITE_URL/wp-json/wc/v3/products"
 echo "[seed] consumer_key=$CK consumer_secret=$CS"

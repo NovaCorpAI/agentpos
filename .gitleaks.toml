@@ -27,5 +27,5 @@ paths = [
   '''pnpm-lock\.yaml$''',
 ]
 regexes = [
-  '''cs_demo[a-z0-9_]*''',
+  '''c[ks]_agentgatedemo0+''',
 ]
