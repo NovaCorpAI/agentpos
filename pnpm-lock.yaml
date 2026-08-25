@@ -35,6 +35,8 @@ importers:
 
   apps/demo-store: {}
 
+  apps/web: {}
+
   packages/connectors:
     dependencies:
       '@agentgate/core':
