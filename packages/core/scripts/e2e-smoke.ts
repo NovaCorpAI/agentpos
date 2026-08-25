@@ -18,6 +18,16 @@ import {
 } from "@stellar/stellar-sdk";
 import { FRIENDBOT_URL, configFromEnv } from "../src/config.js";
 
+// Load the repo-root (or package) .env if present (Node >= 20.12). Never required in CI.
+for (const candidate of ["../../../.env", "../.env"]) {
+  try {
+    process.loadEnvFile(fileURLToPath(new URL(candidate, import.meta.url)));
+    break;
+  } catch {
+    /* no .env at this location */
+  }
+}
+
 const cfg = configFromEnv(process.env);
 if (cfg.network !== "testnet") {
   console.error("e2e:smoke runs on testnet only (guardrail 2).");
