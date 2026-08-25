@@ -22,7 +22,7 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
@@ -40,10 +40,41 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm e2e:smoke
         env:
           AGENTGATE_NETWORK: testnet
+
+  e2e-testnet:
+    # Full loop: WooCommerce demo store in docker + real facilitator settlement on testnet.
+    # Needs the AGENTGATE_FACILITATOR_API_KEY repository secret; skipped when absent.
+    if: github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Start demo store
+        run: |
+          pnpm demo:up
+          for i in $(seq 1 60); do
+            docker compose -f apps/demo-store/docker-compose.yml logs wpcli 2>/dev/null | grep -q "\[seed\] done" && break
+            sleep 5
+          done
+          docker compose -f apps/demo-store/docker-compose.yml logs wpcli | tail -3
+      - name: Agent buys on testnet
+        if: ${{ env.AGENTGATE_FACILITATOR_API_KEY != '' }}
+        run: pnpm e2e:testnet
+        env:
+          AGENTGATE_NETWORK: testnet
+          AGENTGATE_CHECKOUT_ASSET: XLM
+          AGENTGATE_FACILITATOR_API_KEY: ${{ secrets.AGENTGATE_FACILITATOR_API_KEY }}

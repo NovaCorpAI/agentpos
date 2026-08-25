@@ -13,10 +13,10 @@ export interface UcpManifestInput {
   network: `stellar:${string}`;
   capabilities?: Array<"checkout" | "discovery">;
   policies?: {
-    shipping?: string;
-    cancellation?: string;
-    returns?: string;
-    contact?: string;
+    shipping?: string | undefined;
+    cancellation?: string | undefined;
+    returns?: string | undefined;
+    contact?: string | undefined;
   };
 }
 

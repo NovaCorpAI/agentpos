@@ -44,6 +44,8 @@ export const coreConfigSchema = z.object({
   network: z.enum(NETWORKS).default("testnet"),
   /** Guardrail 2: mainnet requires explicit confirmation. */
   allowMainnet: z.boolean().default(false),
+  /** Asset the checkout charges. XLM exists only so automated e2e can run without a USDC faucet. */
+  checkoutAsset: z.enum(["USDC", "XLM"]).default("USDC"),
   facilitatorUrl: z.url().optional(),
   facilitatorApiKeys: z.array(z.string().min(1)).default([]),
   rpcUrl: z.url().optional(),
@@ -55,6 +57,7 @@ export type CoreConfigInput = z.input<typeof coreConfigSchema>;
 export interface CoreConfig {
   network: NetworkName;
   caip2: `stellar:${string}`;
+  checkoutAsset: "USDC" | "XLM";
   facilitatorUrl: string;
   facilitatorApiKeys: string[];
   rpcUrl: string | undefined;
@@ -84,9 +87,16 @@ export function resolveConfig(input: CoreConfigInput = {}): CoreConfig {
     });
   }
 
+  if (cfg.network === "mainnet" && cfg.checkoutAsset !== "USDC") {
+    throw new AgentGateError("CONFIG_INVALID", "Mainnet checkout must use USDC", {
+      hint: "checkoutAsset: 'XLM' is a testnet-only convenience for automated e2e.",
+    });
+  }
+
   return {
     network: cfg.network,
     caip2: CAIP2[cfg.network],
+    checkoutAsset: cfg.checkoutAsset,
     facilitatorUrl: cfg.facilitatorUrl ?? FACILITATOR_URLS[cfg.network],
     facilitatorApiKeys: cfg.facilitatorApiKeys,
     rpcUrl: cfg.rpcUrl,
@@ -110,6 +120,8 @@ export function configFromEnv(env: Record<string, string | undefined>): CoreConf
   if (env.AGENTGATE_NETWORK) input.network = env.AGENTGATE_NETWORK as NetworkName;
   const allow = envBool(env.AGENTGATE_ALLOW_MAINNET);
   if (allow !== undefined) input.allowMainnet = allow;
+  if (env.AGENTGATE_CHECKOUT_ASSET)
+    input.checkoutAsset = env.AGENTGATE_CHECKOUT_ASSET as "USDC" | "XLM";
   if (env.AGENTGATE_FACILITATOR_URL) input.facilitatorUrl = env.AGENTGATE_FACILITATOR_URL;
   if (apiKeys && apiKeys.length > 0) input.facilitatorApiKeys = apiKeys;
   if (env.AGENTGATE_RPC_URL) input.rpcUrl = env.AGENTGATE_RPC_URL;

@@ -1,0 +1,111 @@
+# Quickstart: de WooCommerce a tienda comprable por agentes en 15 minutos (testnet)
+
+AgentGate corre junto a tu sitio, lee tu catálogo, lo publica en los formatos que los agentes
+de IA entienden, cobra USDC sobre Stellar y crea la orden en tu WooCommerce. Sin marketplace y
+sin custodia: los pagos llegan directo a tu wallet y tú sigues siendo el vendedor de registro.
+
+## Qué necesitas
+
+- Node.js 22.5 o superior en el servidor (o en cualquier máquina que llegue a tu tienda).
+- Una tienda WooCommerce con HTTPS y una clave REST: WooCommerce > Ajustes > Avanzado >
+  API REST > Añadir clave, permisos **Lectura/Escritura**.
+- Una dirección Stellar que controles (Freighter, Lobstr, xBull...) para recibir los pagos.
+- Una API key gratuita del facilitador para testnet: https://channels.openzeppelin.com/testnet/gen
+  (se muestra una sola vez; guárdala).
+
+## 1. Instalar e inicializar
+
+```bash
+mkdir agentgate-sidecar && cd agentgate-sidecar
+npx @agentgate/site init
+```
+
+Responde: URL del sitio, nombre de la tienda, `WooCommerce`, URL de la tienda, tu dirección
+Stellar. El comando escribe `agentgate.config.json` y un `.env` con los campos vacíos. Complétalo:
+
+```
+AGENTGATE_NETWORK=testnet
+AGENTGATE_FACILITATOR_API_KEY=<de channels.openzeppelin.com>
+AGENTGATE_WOO_CONSUMER_KEY=ck_...
+AGENTGATE_WOO_CONSUMER_SECRET=cs_...
+```
+
+## 2. Escanear
+
+```bash
+npx @agentgate/site scan
+```
+
+AgentGate lee los productos por la API de WooCommerce y por tu sitemap, e imprime "esto
+entendí": una línea por producto con el precio de origen y un precio sugerido en USDC (1:1 en
+tiendas en USD; en otras monedas lo defines tú). Todavía no se publica nada.
+
+## 3. Confirmar
+
+```bash
+npx @agentgate/site confirm        # interactivo, producto por producto
+npx @agentgate/site confirm --all  # acepta todos los precios sugeridos (tiendas en USD)
+```
+
+Tú decides qué productos pueden comprar los agentes y a qué precio en USDC, siempre.
+
+## 4. Publicar y servir
+
+```bash
+npx @agentgate/site publish
+npx @agentgate/site serve --port 8402
+```
+
+`publish` valida el facilitador con tu key y marca como publicados los productos confirmados.
+`serve` levanta el sidecar. Redirige dos rutas de tu dominio hacia él (reverse proxy):
+
+```
+/.well-known/ucp   -> http://127.0.0.1:8402/.well-known/ucp
+/agentgate/*       -> http://127.0.0.1:8402/agentgate/*
+```
+
+Ejemplo nginx:
+
+```nginx
+location /.well-known/ucp { proxy_pass http://127.0.0.1:8402; }
+location /agentgate/      { proxy_pass http://127.0.0.1:8402; }
+```
+
+## 5. Qué ven los agentes
+
+| URL                                                  | Para qué                                                                                         |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `https://tu-sitio/.well-known/ucp`                   | Manifiesto UCP de descubrimiento con el handler de pago `x402-stellar`                           |
+| `https://tu-sitio/agentgate/catalog`                 | Productos publicados, precios en USDC, búsqueda con `?q=`                                        |
+| `https://tu-sitio/agentgate/feed`                    | Feed de productos ACP                                                                            |
+| `https://tu-sitio/agentgate/mcp`                     | Servidor MCP: `search_items`, `get_item`, `create_cart`, `get_order`, `get_payment_instructions` |
+| `POST https://tu-sitio/agentgate/cart`               | Cotización para `{ items, buyer, shipping }`                                                     |
+| `POST https://tu-sitio/agentgate/checkout?cart=<id>` | Checkout x402: 402 con términos, luego pago                                                      |
+| `https://tu-sitio/agentgate/orders/<id>`             | Estado de la orden, hash de la transacción, número de orden en WooCommerce                       |
+
+Cuando un agente paga, el facilitador liquida en Stellar y la orden aparece en WooCommerce en
+estado **Procesando**, pagada con `payment_method = agentgate`, `transaction_id = <hash Stellar>`
+y metadatos `_agentgate_*`. La despachas como cualquier otra orden.
+
+## Ver el estado
+
+```bash
+npx @agentgate/site status          # productos, órdenes recientes, errores del conector
+npx @agentgate/site status --retry  # reintenta crear en WooCommerce las órdenes que fallaron tras el pago
+```
+
+## Probarlo con un agente real (testnet)
+
+El repositorio incluye un script end-to-end que hace de agente: escanea, publica, crea un
+carrito, paga a través del facilitador real y verifica la orden en WooCommerce:
+
+```bash
+pnpm demo:up              # WooCommerce local con productos de ejemplo
+pnpm e2e:testnet          # requiere AGENTGATE_FACILITATOR_API_KEY en .env
+```
+
+## Pasar a mainnet
+
+Todavía no. Mainnet está bloqueado tras `AGENTGATE_ALLOW_MAINNET=true` y una key de facilitador
+para mainnet (login con GitHub en https://channels.openzeppelin.com/gen). Ver `plan/ROADMAP.md`,
+gate G2.

@@ -40,7 +40,7 @@ describe("x402 adapter", () => {
     const signer = createLocalKeypairSigner(Keypair.random().secret(), "testnet");
     expect(signer.kind).toBe("local-keypair");
     expect(signer.address).toMatch(/^G[A-Z2-7]{55}$/);
-    const client = createBuyerClient(cfg, signer);
+    const client = createBuyerClient(cfg, signer, { maxPerPayment: usdc("5") });
     expect(client).toBeDefined();
   });
 
