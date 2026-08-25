@@ -1,0 +1,35 @@
+{
+  "name": "agentgate-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Turn any fiat e-commerce site into an agent-buyable store. x402 on Stellar, UCP/ACP surfaces, Shopify/WooCommerce connectors.",
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@11.23.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "type": "module",
+  "scripts": {
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "e2e:smoke": "pnpm --filter @agentgate/core e2e:smoke",
+    "demo:up": "docker compose -f apps/demo-store/docker-compose.yml up -d",
+    "demo:down": "docker compose -f apps/demo-store/docker-compose.yml down -v",
+    "demo:logs": "docker compose -f apps/demo-store/docker-compose.yml logs -f wpcli",
+    "prepare": "git config core.hooksPath .githooks || true"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "eslint": "^10.9.1",
+    "prettier": "^3.9.6",
+    "tsx": "^4.23.12",
+    "turbo": "^2.10.11",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.68.0",
+    "vitest": "^4.1.11"
+  }
+}

@@ -1,0 +1,31 @@
+title = "AgentGate gitleaks config"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "stellar-secret-key"
+description = "Stellar secret seed (S... 56 chars base32)"
+regex = '''S[A-Z2-7]{55}'''
+keywords = ["S"]
+
+[[rules]]
+id = "woocommerce-consumer-secret"
+description = "WooCommerce consumer secret"
+regex = '''cs_[a-f0-9]{40}'''
+
+[[rules]]
+id = "shopify-admin-token"
+description = "Shopify Admin API access token"
+regex = '''shpat_[a-fA-F0-9]{32}'''
+
+[allowlist]
+description = "Non-secret fixtures"
+paths = [
+  '''\.env\.example$''',
+  '''apps/demo-store/.*''',
+  '''pnpm-lock\.yaml$''',
+]
+regexes = [
+  '''cs_demo[a-z0-9_]*''',
+]

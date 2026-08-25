@@ -1,0 +1,10 @@
+#!/usr/bin/env sh
+# AgentGate pre-commit: secret scan (guardrail 9). Install gitleaks: https://github.com/gitleaks/gitleaks
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks protect --staged --config .gitleaks.toml --redact || {
+    echo "gitleaks: possible secret in staged changes. Commit aborted." >&2
+    exit 1
+  }
+else
+  echo "warning: gitleaks not installed; skipping secret scan (install it before pushing)." >&2
+fi

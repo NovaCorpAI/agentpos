@@ -1,0 +1,53 @@
+# AgentGate demo store: WooCommerce with seed products, used by e2e tests and the demo.
+# Usage: pnpm demo:up  ->  http://localhost:8080  (admin: admin / admin)
+# REST:  http://localhost:8080/wp-json/wc/v3/products  (keys in seed/seed.sh)
+services:
+  db:
+    image: mariadb:11
+    environment:
+      MARIADB_DATABASE: wordpress
+      MARIADB_USER: wordpress
+      MARIADB_PASSWORD: wordpress
+      MARIADB_ROOT_PASSWORD: root
+    volumes:
+      - db:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  wordpress:
+    image: wordpress:6-php8.3-apache
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: wordpress
+      WORDPRESS_DB_NAME: wordpress
+    volumes:
+      - wp:/var/www/html
+
+  wpcli:
+    image: wordpress:cli-php8.3
+    depends_on:
+      - wordpress
+    user: "33:33"
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: wordpress
+      WORDPRESS_DB_NAME: wordpress
+      SITE_URL: http://localhost:8080
+    volumes:
+      - wp:/var/www/html
+      - ./seed:/seed:ro
+    entrypoint: ["sh", "/seed/seed.sh"]
+
+volumes:
+  db:
+  wp:

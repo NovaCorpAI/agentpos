@@ -1,0 +1,6 @@
+node_modules
+dist
+.turbo
+pnpm-lock.yaml
+LICENSE
+apps/demo-store/.data

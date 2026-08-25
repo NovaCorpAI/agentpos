@@ -1,0 +1,12 @@
+{
+  "name": "demo-store",
+  "version": "0.0.1",
+  "private": true,
+  "description": "WooCommerce demo store (docker) for AgentGate e2e and demo.",
+  "license": "Apache-2.0",
+  "scripts": {
+    "up": "docker compose up -d",
+    "down": "docker compose down -v",
+    "logs": "docker compose logs -f wpcli"
+  }
+}
