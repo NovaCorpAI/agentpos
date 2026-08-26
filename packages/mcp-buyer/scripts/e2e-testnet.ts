@@ -51,15 +51,26 @@ const WOO_CK =
 const WOO_CS =
   process.env.AGENTGATE_WOO_CONSUMER_SECRET ?? "cs_agentgatedemo000000000000000000000000000";
 
+/**
+ * Mainnet mode (G2 first real purchase): E2E_NETWORK=mainnet. No friendbot, no trustline
+ * creation: the seller is the merchant's real wallet (E2E_SELLER_ADDRESS) and the buyer is a
+ * pre-funded account (E2E_BUYER_SECRET_MAINNET). Always USDC. Small item by default.
+ */
+const MAINNET = process.env.E2E_NETWORK === "mainnet";
 const core = configFromEnv({
   ...process.env,
-  AGENTGATE_CHECKOUT_ASSET: process.env.AGENTGATE_CHECKOUT_ASSET ?? "XLM",
+  AGENTGATE_NETWORK: MAINNET ? "mainnet" : "testnet",
+  AGENTGATE_ALLOW_MAINNET: MAINNET ? "true" : "false",
+  AGENTGATE_CHECKOUT_ASSET: MAINNET ? "USDC" : (process.env.AGENTGATE_CHECKOUT_ASSET ?? "XLM"),
+  ...(MAINNET && !process.env.AGENTGATE_RPC_URL && process.env.AGENTGATE_RPC_URL_MAINNET
+    ? { AGENTGATE_RPC_URL: process.env.AGENTGATE_RPC_URL_MAINNET }
+    : {}),
 });
-if (core.network !== "testnet") throw new Error("e2e runs on testnet only (guardrail 2)");
 if (core.facilitatorApiKeys.length === 0)
   throw new Error(
-    "AGENTGATE_FACILITATOR_API_KEY missing (https://channels.openzeppelin.com/testnet/gen)",
+    `facilitator API key missing for ${core.network} (AGENTGATE_FACILITATOR_API_KEY_${core.network.toUpperCase()})`,
   );
+const ITEM_QUERY = process.env.E2E_ITEM ?? (MAINNET ? "sticker" : "mug");
 
 const t0 = Date.now();
 const step = (m: string) => console.log(`[${((Date.now() - t0) / 1000).toFixed(1)}s] ${m}`);
@@ -82,21 +93,40 @@ async function trustUsdc(kp: Keypair): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  const seller = Keypair.random();
-  // USDC runs need a buyer that already holds testnet USDC (faucet.circle.com): E2E_BUYER_SECRET.
-  const buyerSecret = process.env.E2E_BUYER_SECRET ?? process.env.SMOKE_USDC_SOURCE_SECRET;
-  if (core.checkoutAsset === "USDC" && !buyerSecret) {
-    throw new Error(
-      "USDC e2e needs E2E_BUYER_SECRET (or SMOKE_USDC_SOURCE_SECRET) holding testnet USDC",
+  let sellerAddress: string;
+  let buyerKp: Keypair;
+  if (MAINNET) {
+    const sellerEnv = process.env.E2E_SELLER_ADDRESS;
+    const buyerSecret = process.env.E2E_BUYER_SECRET_MAINNET;
+    if (!sellerEnv || !/^[GC][A-Z2-7]{55}$/.test(sellerEnv))
+      throw new Error(
+        "mainnet e2e needs E2E_SELLER_ADDRESS (the merchant's real wallet with a USDC trustline)",
+      );
+    if (!buyerSecret)
+      throw new Error("mainnet e2e needs E2E_BUYER_SECRET_MAINNET (pre-funded with XLM and USDC)");
+    sellerAddress = sellerEnv;
+    buyerKp = Keypair.fromSecret(buyerSecret);
+    step(
+      `MAINNET: seller ${sellerAddress} (merchant wallet), buyer ${buyerKp.publicKey()} (pre-funded), rpc ${core.rpcUrl}`,
+    );
+  } else {
+    const seller = Keypair.random();
+    // USDC runs need a buyer that already holds testnet USDC (faucet.circle.com): E2E_BUYER_SECRET.
+    const buyerSecret = process.env.E2E_BUYER_SECRET ?? process.env.SMOKE_USDC_SOURCE_SECRET;
+    if (core.checkoutAsset === "USDC" && !buyerSecret) {
+      throw new Error(
+        "USDC e2e needs E2E_BUYER_SECRET (or SMOKE_USDC_SOURCE_SECRET) holding testnet USDC",
+      );
+    }
+    buyerKp =
+      core.checkoutAsset === "USDC" ? Keypair.fromSecret(buyerSecret as string) : Keypair.random();
+    await Promise.all([fund(seller), ...(core.checkoutAsset === "USDC" ? [] : [fund(buyerKp)])]);
+    if (core.checkoutAsset === "USDC") await trustUsdc(seller);
+    sellerAddress = seller.publicKey();
+    step(
+      `seller ${sellerAddress} (friendbot${core.checkoutAsset === "USDC" ? " + USDC trustline" : ""}), buyer ${buyerKp.publicKey()} (${core.checkoutAsset === "USDC" ? "faucet-funded USDC" : "friendbot XLM"})`,
     );
   }
-  const buyerKp =
-    core.checkoutAsset === "USDC" ? Keypair.fromSecret(buyerSecret as string) : Keypair.random();
-  await Promise.all([fund(seller), ...(core.checkoutAsset === "USDC" ? [] : [fund(buyerKp)])]);
-  if (core.checkoutAsset === "USDC") await trustUsdc(seller);
-  step(
-    `seller ${seller.publicKey()} (friendbot${core.checkoutAsset === "USDC" ? " + USDC trustline" : ""}), buyer ${buyerKp.publicKey()} (${core.checkoutAsset === "USDC" ? "faucet-funded USDC" : "friendbot XLM"})`,
-  );
 
   // ---- seller side -----------------------------------------------------------
   const connector = new WooCommerceConnector({
@@ -110,7 +140,7 @@ async function main(): Promise<void> {
     site: {
       siteUrl: WOO_URL,
       displayName: "AgentGate Demo Store",
-      payTo: seller.publicKey(),
+      payTo: sellerAddress,
       platform: "woocommerce",
       woocommerce: { baseUrl: WOO_URL, allowInsecureHttp: true },
     },
@@ -139,14 +169,14 @@ async function main(): Promise<void> {
   // ---- buyer side: a human mandate, an agent acting inside it -------------------
   const home = mkdtempSync(join(tmpdir(), "agentgate-e2e-"));
   process.env.AGENTGATE_HOME = home;
-  const profile: Profile = {
+  const makeProfile = (maxPerTx: string): Profile => ({
     name: "e2e",
-    network: "testnet",
+    network: core.network,
     keyFile: "unused-in-e2e",
     address: buyerKp.publicKey(),
     mandate: mandateSchema.parse({
-      maxPerTx: "20",
-      maxTotal: "50",
+      maxPerTx,
+      maxTotal: "100",
       period: "day",
       allowedSellers: [new URL(siteUrl).host],
       allowPhysicalGoods: true,
@@ -162,30 +192,35 @@ async function main(): Promise<void> {
     },
     sites: [siteUrl],
     createdAt: new Date().toISOString(),
-  };
-  const spending = new SpendingLog(join(home, "spending.jsonl"));
-  const buyer = new BuyerService({
-    profile,
-    core,
-    signer: createLocalKeypairSigner(buyerKp.secret(), "testnet"),
-    spendingLog: spending,
-    log: (m) => step(`buyer: ${m}`),
   });
+  const spending = new SpendingLog(join(home, "spending.jsonl"));
+  const signer = createLocalKeypairSigner(buyerKp.secret(), core.network);
+  const makeBuyer = (maxPerTx: string) =>
+    new BuyerService({
+      profile: makeProfile(maxPerTx),
+      core,
+      signer,
+      spendingLog: spending,
+      log: (m) => step(`buyer: ${m}`),
+    });
 
-  const offers = await buyer.searchOffers("mug");
+  const offers = await makeBuyer("100").searchOffers(ITEM_QUERY);
   const mug = offers[0];
-  if (!mug) throw new Error("no offers for 'mug'");
+  if (!mug) throw new Error(`no offers for '${ITEM_QUERY}'`);
   step(`agent found "${mug.title}" at ${mug.price.amount} ${mug.price.asset} on ${mug.siteName}`);
 
+  // The human mandate allows exactly one unit of this item per payment.
+  const buyer = makeBuyer(mug.price.amount);
+
   // Mandate must refuse an over-limit cart before touching the wallet.
-  const tooBig = await buyer.createCart(siteUrl, [{ itemId: mug.id, quantity: 3 }]);
+  const tooBig = await buyer.createCart(siteUrl, [{ itemId: mug.id, quantity: 2 }]);
   try {
     await buyer.buy(siteUrl, tooBig.cartId);
     throw new Error("mandate did not block an over-limit purchase");
   } catch (err) {
     if (!(err instanceof AgentGateError) || err.code !== "MANDATE_EXCEEDED") throw err;
     step(
-      `mandate blocked ${tooBig.quote.total} ${core.checkoutAsset} (> maxPerTx 20): ${err.code}`,
+      `mandate blocked ${tooBig.quote.total} ${core.checkoutAsset} (> maxPerTx ${mug.price.amount}): ${err.code}`,
     );
   }
 
@@ -195,7 +230,7 @@ async function main(): Promise<void> {
   );
   const result = await buyer.buy(siteUrl, cart.cartId);
   step(
-    `PAID tx=${result.receipt.txHash} https://stellar.expert/explorer/testnet/tx/${result.receipt.txHash}`,
+    `PAID tx=${result.receipt.txHash} https://stellar.expert/explorer/${MAINNET ? "public" : "testnet"}/tx/${result.receipt.txHash}`,
   );
   if (!result.order.externalOrderId)
     throw new Error(`order not created in Woo: ${JSON.stringify(result.order)}`);
