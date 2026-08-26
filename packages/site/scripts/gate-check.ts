@@ -33,10 +33,9 @@ function sh(cmd: string, args: string[], cwd = root): { ok: boolean; out: string
     env: { ...process.env, FORCE_COLOR: "0" },
     windowsHide: true,
   });
-  return {
-    ok: r.status === 0,
-    out: `${r.stdout ?? ""}${r.stderr ?? ""}${r.error ? String(r.error) : ""}`,
-  };
+  const raw = `${r.stdout ?? ""}${r.stderr ?? ""}${r.error ? String(r.error) : ""}`;
+  // eslint-disable-next-line no-control-regex -- strip ANSI colors from tool output
+  return { ok: r.status === 0, out: raw.replace(/\[[0-9;]*m/g, "") };
 }
 
 const gateDoc = existsSync(join(root, "docs", "GATE-G1.md"))
