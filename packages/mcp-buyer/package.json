@@ -27,8 +27,9 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.typecheck.json",
     "test": "vitest run",
-    "lint": "eslint src bin",
-    "dev": "tsx src/cli.ts serve"
+    "lint": "eslint src bin scripts",
+    "dev": "tsx src/cli.ts serve",
+    "e2e:testnet": "tsx scripts/e2e-testnet.ts"
   },
   "dependencies": {
     "@agentgate/core": "workspace:*",
@@ -40,6 +41,8 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@agentgate/connectors": "workspace:*",
+    "@agentgate/scanner": "workspace:*",
     "@agentgate/site": "workspace:*",
     "@types/node": "^24.13.3",
     "@x402/core": "2.23.0",

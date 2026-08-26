@@ -86,7 +86,7 @@ export class SiteClient {
   constructor(
     siteUrl: string,
     private readonly fetchImpl: FetchLike = globalThis.fetch,
-    private readonly basePath = "/agentgate",
+    readonly basePath = "/agentgate",
   ) {
     const u = new URL(siteUrl);
     this.base = `${u.origin}${u.pathname.replace(/\/+$/, "")}`;

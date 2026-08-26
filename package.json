@@ -17,7 +17,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "e2e:smoke": "pnpm --filter @agentgate/core e2e:smoke",
-    "e2e:testnet": "pnpm --filter @agentgate/site e2e:testnet",
+    "e2e:testnet": "pnpm --filter @agentgate/mcp-buyer e2e:testnet",
     "demo:up": "docker compose -f apps/demo-store/docker-compose.yml up -d",
     "demo:down": "docker compose -f apps/demo-store/docker-compose.yml down -v",
     "demo:logs": "docker compose -f apps/demo-store/docker-compose.yml logs -f wpcli",

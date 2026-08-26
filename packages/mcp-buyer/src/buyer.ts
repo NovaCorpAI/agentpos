@@ -206,7 +206,10 @@ export class BuyerService {
     this.log(
       `paying cart ${cartId} at ${client.url}: ${formatUsdc(amount)} ${this.core.checkoutAsset}`,
     );
-    const response = await payFetch(cart.checkout, { method: "POST" });
+    // Pay against the host we reached (the cart's absolute `checkout` uses the site's public URL,
+    // which may differ from how this buyer addresses it, e.g. behind proxies or in e2e).
+    const checkoutUrl = `${client.url}${client.basePath}/checkout?cart=${encodeURIComponent(cartId)}`;
+    const response = await payFetch(checkoutUrl, { method: "POST" });
     const body = (await response.json().catch(() => ({}))) as {
       orderId?: string;
       error?: { code?: string; message?: string; hint?: string };
