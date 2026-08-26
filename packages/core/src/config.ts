@@ -70,8 +70,12 @@ export interface CoreConfig {
  * Production gate G1 (docs/GATE-G1.md). Flipped to true in a dedicated commit only when
  * `pnpm gate:check` is 100% green and the founder confirmed. Until then mainnet cannot be
  * configured at all, whatever the env says (guardrail 2, enforced in code).
+ *
+ * 2026-08-26: gate G1 closed (10/10 green locally and in CI, run 33007207677) and mainnet
+ * unlocked with the founder's explicit confirmation. Mainnet still requires
+ * AGENTGATE_ALLOW_MAINNET=true, a mainnet facilitator key and an RPC URL per deployment.
  */
-export const MAINNET_READY = false;
+export const MAINNET_READY = true;
 
 export interface ResolveOptions {
   /** Tests only: pretend the gate is closed. */

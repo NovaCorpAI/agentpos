@@ -1,8 +1,12 @@
 # Gate de producción G1 (desbloqueo de mainnet)
 
-Estado: EN CURSO. Mainnet se habilita solo cuando `pnpm gate:check` está 100% verde y el
-founder cambia `MAINNET_READY` a `true` en `packages/core/src/config.ts` en un commit dedicado.
-El reporte automático se escribe en `docs/gate-g1.report.json`.
+Estado: **CERRADO el 2026-08-26.** `pnpm gate:check` 100% verde en local y en CI (run
+33007207677, job `gate-g1`); el founder confirmó explícitamente el desbloqueo y
+`MAINNET_READY` pasó a `true` en `packages/core/src/config.ts` en un commit dedicado. Cada
+despliegue en mainnet sigue exigiendo `AGENTGATE_ALLOW_MAINNET=true`, key de facilitador de
+mainnet y `AGENTGATE_RPC_URL`. El reporte automático se escribe en `docs/gate-g1.report.json`
+y el job de CI lo mantiene verde en cada push; si algún ítem pasa a rojo, el criterio es
+revertir `MAINNET_READY` antes de publicar una nueva versión.
 
 ## Criterios automáticos (los verifica `pnpm gate:check`)
 

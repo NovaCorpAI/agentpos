@@ -484,18 +484,27 @@ describe("G1 operations", () => {
 
 describe("G1 mainnet lock", () => {
   beforeEach(() => {});
-  it("cannot configure mainnet while MAINNET_READY is false, even with the flag", () => {
+  it("cannot configure mainnet while the gate is open, even with the flag", () => {
     try {
-      resolveConfig({ network: "mainnet", allowMainnet: true, rpcUrl: "https://rpc.example" });
+      resolveConfig(
+        { network: "mainnet", allowMainnet: true, rpcUrl: "https://rpc.example" },
+        { mainnetReady: false },
+      );
       expect.unreachable();
     } catch (err) {
       expect((err as AgentGateError).code).toBe("MAINNET_NOT_CONFIRMED");
       expect((err as AgentGateError).message).toMatch(/gate G1/);
     }
-    const cfg = resolveConfig(
-      { network: "mainnet", allowMainnet: true, rpcUrl: "https://rpc.example" },
-      { mainnetReady: true },
+    // Gate closed (release constant): still needs the explicit flag and an RPC URL.
+    expect(() => resolveConfig({ network: "mainnet", rpcUrl: "https://rpc.example" })).toThrowError(
+      /explicit flag/,
     );
+    expect(() => resolveConfig({ network: "mainnet", allowMainnet: true })).toThrowError(/RPC/);
+    const cfg = resolveConfig({
+      network: "mainnet",
+      allowMainnet: true,
+      rpcUrl: "https://rpc.example",
+    });
     expect(cfg.caip2).toBe("stellar:pubnet");
   });
 });
