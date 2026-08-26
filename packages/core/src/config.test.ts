@@ -49,6 +49,20 @@ describe("config", () => {
     expect(cfg.llm.baseUrl).toBe("https://openrouter.ai/api/v1");
   });
 
+  it("picks the facilitator key for the configured network, falling back to the generic one", () => {
+    const env = {
+      AGENTGATE_FACILITATOR_API_KEY: "generic",
+      AGENTGATE_FACILITATOR_API_KEY_TESTNET: "tkey",
+      AGENTGATE_FACILITATOR_API_KEY_MAINNET: "mkey",
+    };
+    expect(configFromEnv({ ...env, AGENTGATE_NETWORK: "testnet" }).facilitatorApiKeys).toEqual([
+      "tkey",
+    ]);
+    expect(configFromEnv({ AGENTGATE_FACILITATOR_API_KEY: "generic" }).facilitatorApiKeys).toEqual([
+      "generic",
+    ]);
+  });
+
   it("rejects invalid values with CONFIG_INVALID", () => {
     try {
       resolveConfig({ facilitatorUrl: "not a url" });

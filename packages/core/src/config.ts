@@ -168,11 +168,18 @@ export function assertNoSecretsInConfig(config: unknown, label = "configuration"
 
 /** Reads AGENTGATE_* variables. Pass `process.env` (or a test object). */
 export function configFromEnv(env: Record<string, string | undefined>): CoreConfig {
-  const apiKeys = env.AGENTGATE_FACILITATOR_API_KEY?.split(",")
-    .map((k) => k.trim())
-    .filter(Boolean);
   const input: CoreConfigInput = {};
   if (env.AGENTGATE_NETWORK) input.network = env.AGENTGATE_NETWORK as NetworkName;
+  // Facilitator keys are per network. Prefer the network-specific variable, fall back to the generic one.
+  const network = (env.AGENTGATE_NETWORK as NetworkName | undefined) ?? "testnet";
+  const keySource =
+    (network === "mainnet"
+      ? env.AGENTGATE_FACILITATOR_API_KEY_MAINNET
+      : env.AGENTGATE_FACILITATOR_API_KEY_TESTNET) ?? env.AGENTGATE_FACILITATOR_API_KEY;
+  const apiKeys = keySource
+    ?.split(",")
+    .map((k) => k.trim())
+    .filter(Boolean);
   const allow = envBool(env.AGENTGATE_ALLOW_MAINNET);
   if (allow !== undefined) input.allowMainnet = allow;
   if (env.AGENTGATE_CHECKOUT_ASSET)
