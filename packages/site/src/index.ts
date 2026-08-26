@@ -3,16 +3,17 @@
  *
  *   import { createAgentGate } from "@agentgate/site";
  *   const gate = await createAgentGate({ cwd: process.cwd() });   // reads agentgate.config.json + env
- *   gate.serve(8402);                                              // sidecar
+ *   await gate.serve(8402);                                        // sidecar (+ retry worker)
  *   // or mount: app.all("/agentgate/*", (req) => gate.fetch(req)) with a fetch-compatible framework
  */
 import { serve as honoServe } from "@hono/node-server";
 import { GenericConnector, WooCommerceConnector } from "@agentgate/connectors";
 import type { GenericConnectorHooks } from "@agentgate/connectors";
-import type { CoreConfig, FacilitatorClient, OrderConnector } from "@agentgate/core";
-import { AgentGateError } from "@agentgate/core";
+import type { CoreConfig, FacilitatorClient, Logger, OrderConnector } from "@agentgate/core";
+import { AgentGateError, createLogger } from "@agentgate/core";
 import { createAgentGateApp } from "./app.js";
 import type { AgentGateSite } from "./app.js";
+import type { AlertEvent, AlertSink } from "./checkout.js";
 import { coreConfigFromEnv, loadSiteConfig, parseSiteConfig, secretsFromEnv } from "./config.js";
 import type { SiteConfig, SiteConfigInput, SiteSecrets } from "./config.js";
 import { SiteStorage } from "./storage.js";
@@ -28,9 +29,11 @@ export {
 export { SiteStorage } from "./storage.js";
 export { CatalogService } from "./catalog.js";
 export { CheckoutService } from "./checkout.js";
+export type { AlertEvent, AlertSink, SettledTerms } from "./checkout.js";
 export { createAgentGateApp, cartView, orderView } from "./app.js";
 export type { AgentGateDeps, AgentGateSite } from "./app.js";
 export { buildMcpServer, createMcpHandler } from "./mcp.js";
+export { TokenBucketLimiter } from "./ratelimit.js";
 export { generateAndStoreKeypair, loadKeypair, keysDir } from "./keys.js";
 
 export interface CreateAgentGateOptions {
@@ -44,7 +47,10 @@ export interface CreateAgentGateOptions {
   connector?: OrderConnector;
   storage?: SiteStorage;
   facilitator?: FacilitatorClient;
-  log?: (message: string) => void;
+  logger?: Logger;
+  alert?: AlertSink;
+  /** Retry loop interval for paid orders without a platform order (default 30s). */
+  retryIntervalMs?: number;
 }
 
 export function buildConnector(
@@ -80,39 +86,95 @@ export function buildConnector(
   });
 }
 
+/** Alert sink: structured log line plus an optional JSON webhook (G1 operations). */
+export function buildAlertSink(
+  logger: Logger,
+  webhookUrl?: string,
+  fetchImpl: typeof globalThis.fetch = globalThis.fetch,
+): AlertSink {
+  return async (event: AlertEvent) => {
+    logger.error("alert", { ...event });
+    if (!webhookUrl) return;
+    await fetchImpl(webhookUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ source: "agentgate", ...event }),
+      signal: AbortSignal.timeout(10_000),
+    }).catch((err: unknown) =>
+      logger.warn("alert.webhook_failed", {
+        error: err instanceof Error ? err.message : String(err),
+      }),
+    );
+  };
+}
+
 export interface AgentGate extends AgentGateSite {
   site: SiteConfig;
   core: CoreConfig;
   connector: OrderConnector;
-  /** Starts the sidecar. Port 0 picks a free port; the resolved port is returned. */
+  /** Starts the sidecar and the retry worker. Port 0 picks a free port; the resolved port is returned. */
   serve(port?: number, hostname?: string): Promise<{ port: number; close: () => void }>;
+  /** Runs one pass of the persistent retry loop (also used by `agentgate status --retry`). */
+  retryPending(): Promise<number>;
 }
 
 export async function createAgentGate(options: CreateAgentGateOptions = {}): Promise<AgentGate> {
   const site = options.site ? parseSiteConfig(options.site) : loadSiteConfig(options.cwd);
   const core = options.core ?? coreConfigFromEnv();
   const secrets = options.secrets ?? secretsFromEnv();
+  const logger =
+    options.logger ??
+    createLogger({
+      format: process.env.AGENTGATE_LOG_FORMAT === "pretty" ? "pretty" : "json",
+      base: { site: site.displayName },
+    });
   const connector = options.connector ?? buildConnector(site, secrets, options.hooks);
   const storage =
     options.storage ??
     new SiteStorage(`${options.cwd ?? process.cwd()}/${site.dataDir}/agentgate.sqlite`);
+  const alert = options.alert ?? buildAlertSink(logger, secrets.alertWebhookUrl);
   const built = createAgentGateApp({
     site,
     core,
     connector,
     storage,
+    logger,
+    alert,
     ...(options.facilitator ? { facilitator: options.facilitator } : {}),
-    ...(options.log ? { log: options.log } : {}),
   });
+  const retryPending = async (): Promise<number> => {
+    const retried = await built.checkout.retryPending();
+    return retried.filter((o) => o.externalOrderId).length;
+  };
   return {
     ...built,
     site,
     core,
     connector,
+    retryPending,
     serve(port = 8402, hostname = "0.0.0.0") {
       return new Promise((resolvePort) => {
         const server = honoServe({ fetch: built.app.fetch, port, hostname }, (info) => {
-          resolvePort({ port: info.port, close: () => server.close() });
+          const timer = setInterval(() => {
+            retryPending().catch((err: unknown) =>
+              logger.error("retry.loop_failed", {
+                error: err instanceof Error ? err.message : String(err),
+              }),
+            );
+          }, options.retryIntervalMs ?? 30_000);
+          timer.unref();
+          logger.info("sidecar.started", {
+            port: info.port,
+            network: core.caip2,
+            asset: core.checkoutAsset,
+          });
+          resolvePort({
+            port: info.port,
+            close: () => {
+              clearInterval(timer);
+              server.close();
+            },
+          });
         });
       });
     },

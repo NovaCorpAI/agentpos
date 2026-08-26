@@ -5,7 +5,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { z } from "zod";
-import { AgentGateError, configFromEnv } from "@agentgate/core";
+import { AgentGateError, assertNoSecretsInConfig, configFromEnv } from "@agentgate/core";
 import type { CoreConfig } from "@agentgate/core";
 
 export const SITE_CONFIG_FILE = "agentgate.config.json";
@@ -45,6 +45,20 @@ export const siteConfigSchema = z.object({
     })
     .optional(),
   locale: z.enum(["en", "es"]).default("en"),
+  /** G1: per-minute limits. Agents burst, so allow a small burst on top of the sustained rate. */
+  rateLimit: z
+    .object({
+      cartPerMinutePerIp: z.number().int().min(1).default(60),
+      checkoutPerMinutePerIp: z.number().int().min(1).default(60),
+      checkoutAttemptsPerCart: z.number().int().min(1).default(10),
+      burst: z.number().int().min(0).default(20),
+    })
+    .default({
+      cartPerMinutePerIp: 60,
+      checkoutPerMinutePerIp: 60,
+      checkoutAttemptsPerCart: 10,
+      burst: 20,
+    }),
 });
 
 export type SiteConfigInput = z.input<typeof siteConfigSchema>;
@@ -53,9 +67,13 @@ export type SiteConfig = z.output<typeof siteConfigSchema>;
 export interface SiteSecrets {
   wooConsumerKey: string | undefined;
   wooConsumerSecret: string | undefined;
+  /** Optional URL that receives critical alerts as JSON POSTs (G1 operations). */
+  alertWebhookUrl: string | undefined;
 }
 
 export function parseSiteConfig(input: unknown): SiteConfig {
+  // Zero custody at startup (G1): refuse any configuration that carries a secret seed.
+  assertNoSecretsInConfig(input, SITE_CONFIG_FILE);
   const parsed = siteConfigSchema.safeParse(input);
   if (!parsed.success) {
     throw new AgentGateError("CONFIG_INVALID", `Invalid ${SITE_CONFIG_FILE}`, {
@@ -89,6 +107,7 @@ export function secretsFromEnv(env: Record<string, string | undefined> = process
   return {
     wooConsumerKey: env.AGENTGATE_WOO_CONSUMER_KEY,
     wooConsumerSecret: env.AGENTGATE_WOO_CONSUMER_SECRET,
+    alertWebhookUrl: env.AGENTGATE_ALERT_WEBHOOK,
   };
 }
 

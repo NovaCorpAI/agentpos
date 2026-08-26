@@ -73,6 +73,25 @@ export class SiteStorage {
     this.db.close();
   }
 
+  /** Consistent online backup (G1 operations): SQLite `VACUUM INTO` a new file. */
+  backup(destination: string): void {
+    mkdirSync(dirname(destination), { recursive: true });
+    this.db.exec(`vacuum into '${destination.replace(/'/g, "''")}'`);
+  }
+
+  /** Counts for health and status. */
+  counts(): { items: number; drafts: number; carts: number; orders: number; payments: number } {
+    const n = (table: string) =>
+      Number((this.db.prepare(`select count(*) as n from ${table}`).get() as { n: number }).n);
+    return {
+      items: n("items"),
+      drafts: n("drafts"),
+      carts: n("carts"),
+      orders: n("orders"),
+      payments: n("payments"),
+    };
+  }
+
   private transaction(fn: () => void): void {
     this.db.exec("begin");
     try {

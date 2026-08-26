@@ -1,0 +1,66 @@
+{
+  "generatedAt": "2026-08-26T19:48:39.318Z",
+  "green": true,
+  "results": [
+    {
+      "id": "tests",
+      "kind": "auto",
+      "ok": true,
+      "note": "0 suites passed"
+    },
+    {
+      "id": "typecheck-lint",
+      "kind": "auto",
+      "ok": true,
+      "note": "typecheck ok, lint ok"
+    },
+    {
+      "id": "audit",
+      "kind": "auto",
+      "ok": true,
+      "note": "no known vulnerabilities; lockfile present"
+    },
+    {
+      "id": "secrets-history",
+      "kind": "auto",
+      "ok": true,
+      "note": "no leaks in full history"
+    },
+    {
+      "id": "facilitator",
+      "kind": "auto",
+      "ok": true,
+      "note": "https://channels.openzeppelin.com/x402/testnet -> 200 supports stellar:testnet: true"
+    },
+    {
+      "id": "no-secrets-in-config",
+      "kind": "auto",
+      "ok": true,
+      "note": "seed in config is rejected"
+    },
+    {
+      "id": "runbook",
+      "kind": "manual",
+      "ok": true,
+      "note": "evidence linked in docs/GATE-G1.md"
+    },
+    {
+      "id": "backup-restore",
+      "kind": "manual",
+      "ok": true,
+      "note": "evidence linked in docs/GATE-G1.md"
+    },
+    {
+      "id": "dependency-review",
+      "kind": "manual",
+      "ok": true,
+      "note": "evidence linked in docs/GATE-G1.md"
+    },
+    {
+      "id": "e2e-testnet",
+      "kind": "manual",
+      "ok": true,
+      "note": "evidence linked in docs/GATE-G1.md"
+    }
+  ]
+}

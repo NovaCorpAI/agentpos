@@ -116,7 +116,18 @@ export class SiteClient {
 
   async info(): Promise<SiteInfo> {
     const manifest = await this.get("/.well-known/ucp", "manifest");
-    const health = await this.get(`${this.basePath}/health`, "health");
+    // /health answers 503 when the site's facilitator is down or orders are stuck; the body is
+    // still informative, so read it leniently and let the mandate/network checks decide.
+    let health: Record<string, unknown> = {};
+    try {
+      const res = await this.fetchImpl(`${this.base}${this.basePath}/health`, {
+        headers: { accept: "application/json" },
+        signal: AbortSignal.timeout(15_000),
+      });
+      health = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    } catch {
+      /* health unreachable: keep defaults */
+    }
     return {
       url: this.base,
       host: this.host,

@@ -88,6 +88,7 @@ export interface Cart {
   quote: Quote;
   buyer?: BuyerContact;
   shipping?: Address;
+  traceId?: string;
   createdAt: string;
   expiresAt: string;
 }
@@ -128,6 +129,13 @@ export interface Order {
     retryable: boolean;
     attempts: number;
   };
+  /**
+   * Set when a settled payment does not match the quoted terms (amount, asset, payTo, network).
+   * The payment is kept, the platform order is NOT created, and an alert is raised (G1).
+   */
+  hold?: { reason: "PAYMENT_MISMATCH"; details: Record<string, unknown>; at: string };
+  /** Correlates logs across scan, cart, checkout, settle and order creation. */
+  traceId?: string;
   createdAt: string;
   updatedAt: string;
 }

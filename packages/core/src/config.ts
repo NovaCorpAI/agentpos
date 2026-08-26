@@ -66,7 +66,22 @@ export interface CoreConfig {
   llm: z.output<typeof llmSchema>;
 }
 
-export function resolveConfig(input: CoreConfigInput = {}): CoreConfig {
+/**
+ * Production gate G1 (docs/GATE-G1.md). Flipped to true in a dedicated commit only when
+ * `pnpm gate:check` is 100% green and the founder confirmed. Until then mainnet cannot be
+ * configured at all, whatever the env says (guardrail 2, enforced in code).
+ */
+export const MAINNET_READY = false;
+
+export interface ResolveOptions {
+  /** Tests only: pretend the gate is closed. */
+  mainnetReady?: boolean;
+}
+
+export function resolveConfig(
+  input: CoreConfigInput = {},
+  options: ResolveOptions = {},
+): CoreConfig {
   const parsed = coreConfigSchema.safeParse(input);
   if (!parsed.success) {
     throw new AgentGateError("CONFIG_INVALID", "Invalid AgentGate configuration", {
@@ -76,9 +91,19 @@ export function resolveConfig(input: CoreConfigInput = {}): CoreConfig {
   }
   const cfg = parsed.data;
 
+  const ready = options.mainnetReady ?? MAINNET_READY;
+  if (cfg.network === "mainnet" && !ready) {
+    throw new AgentGateError(
+      "MAINNET_NOT_CONFIRMED",
+      "Mainnet is locked: production gate G1 is not closed in this release",
+      {
+        hint: "Run `pnpm gate:check`; when 100% green the founder flips MAINNET_READY in packages/core/src/config.ts (docs/GATE-G1.md).",
+      },
+    );
+  }
   if (cfg.network === "mainnet" && !cfg.allowMainnet) {
-    throw new AgentGateError("MAINNET_NOT_CONFIRMED", "Mainnet is locked until gate G2", {
-      hint: "Set allowMainnet: true (AGENTGATE_ALLOW_MAINNET=true) only after the founder confirms gate G2 in plan/ROADMAP.md.",
+    throw new AgentGateError("MAINNET_NOT_CONFIRMED", "Mainnet requires an explicit flag", {
+      hint: "Set allowMainnet: true (AGENTGATE_ALLOW_MAINNET=true) and a mainnet facilitator API key.",
     });
   }
   if (cfg.network === "mainnet" && !cfg.rpcUrl) {
@@ -109,6 +134,36 @@ export function resolveConfig(input: CoreConfigInput = {}): CoreConfig {
 function envBool(value: string | undefined): boolean | undefined {
   if (value === undefined) return undefined;
   return ["1", "true", "yes"].includes(value.toLowerCase());
+}
+
+const STELLAR_SEED = /\bS[A-Z2-7]{55}\b/;
+
+/**
+ * Zero custody at startup (G1): a merchant configuration must never carry a Stellar secret
+ * seed. Scans every string value of the given object recursively and throws on the first hit.
+ */
+export function assertNoSecretsInConfig(config: unknown, label = "configuration"): void {
+  const visit = (value: unknown, path: string): void => {
+    if (typeof value === "string") {
+      if (STELLAR_SEED.test(value)) {
+        throw new AgentGateError(
+          "SECRET_IN_CONFIG",
+          `A Stellar secret seed was found in ${label} at ${path}`,
+          {
+            hint: "AgentGate never stores merchant private keys. Put only the PUBLIC address (G...) in the config and keep the seed in your wallet.",
+            details: { path },
+          },
+        );
+      }
+      return;
+    }
+    if (Array.isArray(value)) value.forEach((v, i) => visit(v, `${path}[${i}]`));
+    else if (value && typeof value === "object") {
+      for (const [k, v] of Object.entries(value as Record<string, unknown>))
+        visit(v, path ? `${path}.${k}` : k);
+    }
+  };
+  visit(config, "");
 }
 
 /** Reads AGENTGATE_* variables. Pass `process.env` (or a test object). */

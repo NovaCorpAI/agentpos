@@ -69,6 +69,43 @@ function facilitatorClient(config: CoreConfig): HTTPFacilitatorClient {
   return new HTTPFacilitatorClient(facilitator);
 }
 
+export interface FacilitatorHealth {
+  ok: boolean;
+  status: number | undefined;
+  supportsNetwork: boolean;
+  checkedAt: string;
+  error?: string;
+}
+
+/** Liveness of the facilitator for the configured network (uses the API key when set). */
+export async function checkFacilitator(
+  config: CoreConfig,
+  fetchImpl: typeof globalThis.fetch = globalThis.fetch,
+): Promise<FacilitatorHealth> {
+  const checkedAt = new Date().toISOString();
+  try {
+    const key = config.facilitatorApiKeys[0];
+    const res = await fetchImpl(`${config.facilitatorUrl}/supported`, {
+      headers: key ? { authorization: `Bearer ${key}` } : {},
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return { ok: false, status: res.status, supportsNetwork: false, checkedAt };
+    const body = (await res.json()) as { kinds?: Array<{ scheme: string; network: string }> };
+    const supportsNetwork = Boolean(
+      body.kinds?.some((k) => k.scheme === "exact" && k.network === config.caip2),
+    );
+    return { ok: supportsNetwork, status: res.status, supportsNetwork, checkedAt };
+  } catch (err) {
+    return {
+      ok: false,
+      status: undefined,
+      supportsNetwork: false,
+      checkedAt,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
 /**
  * Resource (seller) side: an x402ResourceServer bound to the Stellar exact scheme.
  * Pass a custom FacilitatorClient only in tests (stub); production always uses the HTTP client.

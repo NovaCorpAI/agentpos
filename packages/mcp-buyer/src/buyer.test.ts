@@ -151,6 +151,15 @@ describe("BuyerService", () => {
       connector,
       storage,
       facilitator: stubFacilitator(),
+      healthFetch: async () =>
+        new Response(
+          JSON.stringify({
+            kinds: [{ x402Version: 2, scheme: "exact", network: "stellar:testnet" }],
+            extensions: [],
+            signers: {},
+          }),
+          { status: 200 },
+        ),
     });
     profile = {
       name: "test",

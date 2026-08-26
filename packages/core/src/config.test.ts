@@ -22,16 +22,15 @@ describe("config", () => {
 
   it("requires an RPC URL on mainnet even when confirmed", () => {
     try {
-      resolveConfig({ network: "mainnet", allowMainnet: true });
+      resolveConfig({ network: "mainnet", allowMainnet: true }, { mainnetReady: true });
       expect.unreachable();
     } catch (err) {
       expect((err as AgentGateError).code).toBe("RPC_URL_REQUIRED");
     }
-    const cfg = resolveConfig({
-      network: "mainnet",
-      allowMainnet: true,
-      rpcUrl: "https://rpc.example.com",
-    });
+    const cfg = resolveConfig(
+      { network: "mainnet", allowMainnet: true, rpcUrl: "https://rpc.example.com" },
+      { mainnetReady: true },
+    );
     expect(cfg.caip2).toBe("stellar:pubnet");
     expect(cfg.facilitatorUrl).toBe(FACILITATOR_URLS.mainnet);
   });

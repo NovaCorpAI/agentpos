@@ -25,6 +25,7 @@ import {
   FRIENDBOT_URL,
   configFromEnv,
   createLocalKeypairSigner,
+  createLogger,
   formatUsdc,
 } from "@agentgate/core";
 import { WooCommerceConnector } from "@agentgate/connectors";
@@ -116,7 +117,7 @@ async function main(): Promise<void> {
     core,
     connector,
     storage,
-    log: (m) => step(`site: ${m}`),
+    logger: createLogger({ format: "pretty", sink: (line) => step(`site: ${line}`) }),
   });
   const scan = await scanSite({
     baseUrl: WOO_URL,

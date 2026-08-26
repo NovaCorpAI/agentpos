@@ -21,7 +21,8 @@
     "demo:up": "docker compose -f apps/demo-store/docker-compose.yml up -d",
     "demo:down": "docker compose -f apps/demo-store/docker-compose.yml down -v",
     "demo:logs": "docker compose -f apps/demo-store/docker-compose.yml logs -f wpcli",
-    "prepare": "git config core.hooksPath .githooks || true"
+    "prepare": "git config core.hooksPath .githooks || true",
+    "gate:check": "pnpm --filter @agentgate/site gate:check"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",

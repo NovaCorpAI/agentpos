@@ -1,6 +1,7 @@
 /**
- * Cart -> quote -> order state machine (SPEC 08).
- * The merchant-platform order is created ONLY from markPaid(), i.e. after settlement (guardrail 6).
+ * Cart -> quote -> order state machine (SPEC 08, hardened for gate G1).
+ * The merchant-platform order is created ONLY from markPaid(), i.e. after settlement (guardrail 6),
+ * and only when the settled terms match the quoted terms exactly.
  */
 import { randomBytes } from "node:crypto";
 import type {
@@ -8,6 +9,7 @@ import type {
   BuyerContact,
   Cart,
   CartLine,
+  Logger,
   Order,
   OrderConnector,
   PaymentRecord,
@@ -16,9 +18,34 @@ import type {
   SettlementReceipt,
   UsdcMinor,
 } from "@agentgate/core";
-import { AgentGateError, addUsdc, mulUsdc, usdcFromMinor } from "@agentgate/core";
+import {
+  AgentGateError,
+  addUsdc,
+  compareUsdc,
+  mulUsdc,
+  silentLogger,
+  usdcFromMinor,
+} from "@agentgate/core";
 import type { CatalogService } from "./catalog.js";
 import type { SiteStorage } from "./storage.js";
+
+export interface AlertEvent {
+  severity: "warning" | "critical";
+  code: "PAYMENT_MISMATCH" | "ORDER_NOT_CREATED" | "SETTLEMENT_FAILED" | "RETRY_LOOP_STALLED";
+  message: string;
+  details: Record<string, unknown>;
+  at: string;
+}
+
+export type AlertSink = (event: AlertEvent) => void | Promise<void>;
+
+/** Terms the facilitator actually settled, as seen by the resource server. */
+export interface SettledTerms {
+  payTo: string;
+  asset: string;
+  amountMinor: UsdcMinor;
+  network: string;
+}
 
 export interface CheckoutOptions {
   storage: SiteStorage;
@@ -28,9 +55,12 @@ export interface CheckoutOptions {
   cartTtlMinutes: number;
   network: string;
   asset: string;
+  /** Contract id of the checkout asset; settled asset must match it exactly. */
+  assetAddress: string;
   /** Immediate connector retries after settlement before giving up (background retry continues). */
   connectorAttempts?: number;
-  log?: (message: string) => void;
+  logger?: Logger;
+  alert?: AlertSink;
 }
 
 function newId(prefix: string): string {
@@ -39,14 +69,33 @@ function newId(prefix: string): string {
 
 export class CheckoutService {
   private readonly attempts: number;
-  private readonly log: (m: string) => void;
+  private readonly logger: Logger;
+  private readonly alert: AlertSink;
 
   constructor(private readonly opts: CheckoutOptions) {
     this.attempts = opts.connectorAttempts ?? 3;
-    this.log = opts.log ?? (() => {});
+    this.logger = opts.logger ?? silentLogger;
+    this.alert = opts.alert ?? (() => {});
   }
 
-  async createCart(lines: CartLine[], buyer?: BuyerContact, shipping?: Address): Promise<Cart> {
+  private async raise(event: Omit<AlertEvent, "at">): Promise<void> {
+    const full = { ...event, at: new Date().toISOString() };
+    this.logger.error(`alert.${event.code}`, { severity: event.severity, ...event.details });
+    try {
+      await this.alert(full);
+    } catch (err) {
+      this.logger.warn("alert.sink_failed", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  async createCart(
+    lines: CartLine[],
+    buyer?: BuyerContact,
+    shipping?: Address,
+    traceId?: string,
+  ): Promise<Cart> {
     if (lines.length === 0) {
       throw new AgentGateError("CONFIG_INVALID", "Cart needs at least one line", {
         hint: "Send items: [{ itemId, quantity }].",
@@ -59,30 +108,14 @@ export class CheckoutService {
       item: this.opts.catalog.getPublished(itemId),
       quantity,
     }));
-
-    const availability = await this.opts.connector.getAvailability(
+    await this.assertAvailable(
       items.map(({ item, quantity }) => ({
         itemId: item.id,
-        ...(item.externalId ? { externalId: item.externalId } : {}),
+        externalId: item.externalId,
+        stockMode: item.stockMode,
         quantity,
       })),
     );
-    const unavailable = items.filter(({ item }) => {
-      const a = availability.find((r) => r.itemId === item.id);
-      return item.stockMode === "tracked"
-        ? !a?.available
-        : a !== undefined && a.available === false;
-    });
-    if (unavailable.length) {
-      throw new AgentGateError(
-        "OUT_OF_STOCK",
-        "Some items are not available in the requested quantity",
-        {
-          hint: "Reduce quantity or remove the items listed in details.",
-          details: { items: unavailable.map((u) => u.item.id) },
-        },
-      );
-    }
 
     const payTos = new Set(items.map(({ item }) => item.payTo ?? this.opts.defaultPayTo));
     if (payTos.size > 1) {
@@ -136,12 +169,50 @@ export class CheckoutService {
       quote,
       ...(buyer ? { buyer } : {}),
       ...(shipping ? { shipping } : {}),
+      ...(traceId ? { traceId } : {}),
       createdAt: now.toISOString(),
       expiresAt: new Date(now.getTime() + this.opts.cartTtlMinutes * 60_000).toISOString(),
     };
     this.opts.storage.saveCart(cart);
     this.opts.storage.deleteExpiredCarts(now);
+    this.logger.info("cart.created", {
+      traceId,
+      cartId: cart.id,
+      total: totalUsdc,
+      lines: quoteLines.length,
+    });
     return cart;
+  }
+
+  private async assertAvailable(
+    items: Array<{
+      itemId: string;
+      externalId?: string | undefined;
+      stockMode: "tracked" | "untracked";
+      quantity: number;
+    }>,
+  ): Promise<void> {
+    const availability = await this.opts.connector.getAvailability(
+      items.map((i) => ({
+        itemId: i.itemId,
+        ...(i.externalId ? { externalId: i.externalId } : {}),
+        quantity: i.quantity,
+      })),
+    );
+    const unavailable = items.filter((i) => {
+      const a = availability.find((r) => r.itemId === i.itemId);
+      return i.stockMode === "tracked" ? !a?.available : a !== undefined && a.available === false;
+    });
+    if (unavailable.length) {
+      throw new AgentGateError(
+        "OUT_OF_STOCK",
+        "Some items are not available in the requested quantity",
+        {
+          hint: "Reduce quantity or remove the items listed in details.",
+          details: { items: unavailable.map((u) => u.itemId) },
+        },
+      );
+    }
   }
 
   getCart(id: string): Cart {
@@ -163,6 +234,63 @@ export class CheckoutService {
     return cart;
   }
 
+  /**
+   * G1: the quote must still hold at payment time. Re-checks every line's published price and
+   * live availability; any drift expires the cart and asks the agent to re-quote. Never settles
+   * against stale terms.
+   */
+  async revalidateCart(id: string): Promise<Cart> {
+    const cart = this.getCart(id);
+    if (this.opts.storage.getOrderByCart(id)?.payment) return cart; // already paid: nothing to revalidate
+    const drift: Array<Record<string, unknown>> = [];
+    for (const line of cart.quote.lines) {
+      let current: UsdcMinor | undefined;
+      try {
+        current = this.opts.catalog.getPublished(line.itemId).priceUsdc;
+      } catch {
+        drift.push({ itemId: line.itemId, reason: "item_no_longer_published" });
+        continue;
+      }
+      if (current === undefined || compareUsdc(current, line.unitPriceUsdc) !== 0) {
+        drift.push({
+          itemId: line.itemId,
+          reason: "price_changed",
+          quoted: line.unitPriceUsdc,
+          current,
+        });
+      }
+    }
+    if (drift.length === 0) {
+      try {
+        await this.assertAvailable(
+          cart.quote.lines.map((l) => ({
+            itemId: l.itemId,
+            externalId: l.externalId,
+            stockMode: this.opts.catalog.getPublished(l.itemId).stockMode,
+            quantity: l.quantity,
+          })),
+        );
+      } catch (err) {
+        if (err instanceof AgentGateError && err.code === "OUT_OF_STOCK")
+          drift.push({ reason: "out_of_stock", ...err.details });
+        else throw err;
+      }
+    }
+    if (drift.length > 0) {
+      this.opts.storage.saveCart({ ...cart, expiresAt: new Date(0).toISOString() });
+      this.logger.warn("cart.requote_required", { traceId: cart.traceId, cartId: id, drift });
+      throw new AgentGateError(
+        "REQUOTE_REQUIRED",
+        "Price or availability changed since the quote",
+        {
+          hint: "Create a new cart to get current terms; nothing was charged.",
+          details: { cartId: id, drift },
+        },
+      );
+    }
+    return cart;
+  }
+
   /** Called from the protected checkout handler after verify, before settle. Idempotent per cart. */
   beginOrder(cartId: string): Order {
     const existing = this.opts.storage.getOrderByCart(cartId);
@@ -176,36 +304,96 @@ export class CheckoutService {
       quote: cart.quote,
       ...(cart.buyer ? { buyer: cart.buyer } : {}),
       ...(cart.shipping ? { shipping: cart.shipping } : {}),
+      ...(cart.traceId ? { traceId: cart.traceId } : {}),
       createdAt: now,
       updatedAt: now,
     };
     this.opts.storage.saveOrder(order);
+    this.logger.info("order.pending", { traceId: order.traceId, orderId: order.id, cartId });
     return order;
   }
 
-  /** Settlement confirmed by the facilitator: record payment, mark paid, create the platform order. */
-  async markPaid(cartId: string, receipt: SettlementReceipt): Promise<Order> {
+  /**
+   * Settlement confirmed by the facilitator: record payment (idempotent by tx hash), verify the
+   * settled terms against the quote, mark paid and create the platform order. A mismatch keeps
+   * the payment, puts the order on hold and raises a critical alert (the merchant decides).
+   */
+  async markPaid(
+    cartId: string,
+    receipt: SettlementReceipt,
+    settled?: SettledTerms,
+  ): Promise<Order> {
     const order = this.beginOrder(cartId);
+    const log = this.logger.child({
+      traceId: order.traceId,
+      orderId: order.id,
+      cartId,
+      txHash: receipt.txHash,
+    });
     const payment: PaymentRecord = {
       txHash: receipt.txHash,
       network: receipt.network,
       asset: this.opts.asset,
-      amountMinor: receipt.amount ?? order.quote.totalUsdc,
+      amountMinor: receipt.amount ?? settled?.amountMinor ?? order.quote.totalUsdc,
       ...(receipt.payer ? { payer: receipt.payer } : {}),
       ts: new Date().toISOString(),
     };
     const fresh = this.opts.storage.recordPayment(order.id, payment);
     if (!fresh) {
-      this.log(`payment ${receipt.txHash} already recorded; skipping (idempotent)`);
+      log.warn("payment.duplicate_ignored");
       return this.opts.storage.getOrder(order.id) as Order;
     }
+
+    const mismatch = settled ? this.mismatch(order.quote, settled, receipt) : [];
+    if (mismatch.length > 0) {
+      const held: Order = {
+        ...order,
+        status: "paid",
+        payment,
+        hold: { reason: "PAYMENT_MISMATCH", details: { mismatch }, at: new Date().toISOString() },
+        updatedAt: new Date().toISOString(),
+      };
+      this.opts.storage.saveOrder(held);
+      await this.raise({
+        severity: "critical",
+        code: "PAYMENT_MISMATCH",
+        message:
+          "Settled payment does not match the quoted terms; order on hold, platform order NOT created",
+        details: { orderId: order.id, cartId, txHash: receipt.txHash, mismatch },
+      });
+      return held;
+    }
+
     const paid: Order = { ...order, status: "paid", payment, updatedAt: new Date().toISOString() };
     this.opts.storage.saveOrder(paid);
+    log.info("payment.settled", { amount: payment.amountMinor, payer: payment.payer });
     return this.pushToConnector(paid);
   }
 
+  private mismatch(
+    quote: Quote,
+    settled: SettledTerms,
+    receipt: SettlementReceipt,
+  ): Array<Record<string, unknown>> {
+    const out: Array<Record<string, unknown>> = [];
+    if (settled.payTo !== quote.payTo)
+      out.push({ field: "payTo", expected: quote.payTo, actual: settled.payTo });
+    if (settled.asset !== this.opts.assetAddress)
+      out.push({ field: "asset", expected: this.opts.assetAddress, actual: settled.asset });
+    if (settled.network !== this.opts.network)
+      out.push({ field: "network", expected: this.opts.network, actual: settled.network });
+    if (compareUsdc(settled.amountMinor, quote.totalUsdc) !== 0)
+      out.push({ field: "amount", expected: quote.totalUsdc, actual: settled.amountMinor });
+    if (receipt.amount !== undefined && compareUsdc(receipt.amount, quote.totalUsdc) !== 0)
+      out.push({ field: "settledAmount", expected: quote.totalUsdc, actual: receipt.amount });
+    if (receipt.network !== this.opts.network)
+      out.push({ field: "settledNetwork", expected: this.opts.network, actual: receipt.network });
+    return out;
+  }
+
   private async pushToConnector(order: Order): Promise<Order> {
-    if (order.externalOrderId || !order.payment) return order;
+    if (order.externalOrderId || !order.payment || order.hold) return order;
+    const log = this.logger.child({ traceId: order.traceId, orderId: order.id });
     let attempts = order.connectorError?.attempts ?? 0;
     let lastError: AgentGateError | undefined;
     for (let i = 0; i < this.attempts; i += 1) {
@@ -228,9 +416,11 @@ export class CheckoutService {
           updatedAt: new Date().toISOString(),
         };
         this.opts.storage.saveOrder(done);
-        this.log(
-          `order ${order.id} created in ${this.opts.connector.platform} as ${result.externalOrderId}`,
-        );
+        log.info("order.created_in_platform", {
+          platform: this.opts.connector.platform,
+          externalOrderId: result.externalOrderId,
+          attempts,
+        });
         return done;
       } catch (err) {
         lastError =
@@ -241,9 +431,11 @@ export class CheckoutService {
                 retryable: true,
                 cause: err,
               });
-        this.log(
-          `connector attempt ${attempts} failed for ${order.id}: ${lastError.code} ${lastError.message}`,
-        );
+        log.warn("order.connector_attempt_failed", {
+          attempt: attempts,
+          code: lastError.code,
+          message: lastError.message,
+        });
         if (!lastError.retryable) break;
         await new Promise((r) => setTimeout(r, 500 * 2 ** i));
       }
@@ -260,14 +452,62 @@ export class CheckoutService {
       updatedAt: new Date().toISOString(),
     };
     this.opts.storage.saveOrder(failed);
+    await this.raise({
+      severity: "critical",
+      code: "ORDER_NOT_CREATED",
+      message: "Payment settled but the platform order could not be created; retry loop engaged",
+      details: {
+        orderId: order.id,
+        txHash: order.payment.txHash,
+        attempts,
+        code: failed.connectorError?.code,
+        retryable: failed.connectorError?.retryable,
+      },
+    });
     return failed;
   }
 
   /** Re-attempts platform order creation for a paid order that failed (ORDER_NOT_CREATED). */
   async retryConnector(orderId: string): Promise<Order> {
     const order = this.getOrder(orderId);
-    if (order.status !== "paid" || order.externalOrderId) return order;
+    if (order.status !== "paid" || order.externalOrderId || order.hold) return order;
     return this.pushToConnector(order);
+  }
+
+  /** Orders that are paid, not on hold, and still without a platform order. */
+  stuckOrders(): Order[] {
+    return this.opts.storage
+      .listOrders({ status: "paid", limit: 500 })
+      .filter((o) => !o.externalOrderId && !o.hold);
+  }
+
+  /**
+   * Persistent retry loop (G1): called periodically by the worker. Backoff grows with attempts
+   * (30s, 1m, 2m, ... capped at 30m); an order older than `stallAfterMs` raises a stall alert.
+   */
+  async retryPending(now = Date.now(), stallAfterMs = 60 * 60_000): Promise<Order[]> {
+    const retried: Order[] = [];
+    for (const order of this.stuckOrders()) {
+      const attempts = order.connectorError?.attempts ?? 0;
+      const wait = Math.min(30 * 60_000, 30_000 * 2 ** Math.max(0, attempts - this.attempts));
+      const last = new Date(order.updatedAt).getTime();
+      if (now - last < wait) continue;
+      const result = await this.retryConnector(order.id);
+      retried.push(result);
+      if (!result.externalOrderId && now - new Date(order.createdAt).getTime() > stallAfterMs) {
+        await this.raise({
+          severity: "critical",
+          code: "RETRY_LOOP_STALLED",
+          message: "A paid order has had no platform order for over an hour",
+          details: {
+            orderId: order.id,
+            txHash: order.payment?.txHash,
+            attempts: result.connectorError?.attempts,
+          },
+        });
+      }
+    }
+    return retried;
   }
 
   getOrder(id: string): Order {
@@ -279,9 +519,20 @@ export class CheckoutService {
     return order;
   }
 
-  markSettlementFailed(cartId: string, reason: string): void {
+  async markSettlementFailed(cartId: string, reason: string): Promise<void> {
     const order = this.opts.storage.getOrderByCart(cartId);
     if (!order || order.status !== "pending_payment") return;
-    this.log(`settlement failed for cart ${cartId}: ${reason}`);
+    this.logger.warn("settlement.failed", {
+      traceId: order.traceId,
+      orderId: order.id,
+      cartId,
+      reason,
+    });
+    await this.raise({
+      severity: "warning",
+      code: "SETTLEMENT_FAILED",
+      message: "Facilitator failed to settle a verified payment; nothing was charged",
+      details: { orderId: order.id, cartId, reason },
+    });
   }
 }

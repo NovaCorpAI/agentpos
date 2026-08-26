@@ -11,6 +11,7 @@ import {
   formatUsdc,
   usdc,
   createLlm,
+  createLogger,
   validateAcpProductsResponse,
   validateUcpBusinessProfile,
 } from "@agentgate/core";
@@ -376,7 +377,13 @@ program
         console.log(
           `${o.createdAt}  ${o.id}  ${o.status.padEnd(15)} ${formatUsdc(o.quote.totalUsdc).padStart(10)} ${gate.core.checkoutAsset}  tx=${o.payment?.txHash ?? "-"}  ext=${o.externalOrderId ?? "-"}${flag}`,
         );
-        if (opts.retry && o.connectorError) {
+        if (o.hold)
+          console.log(
+            pc.red(
+              `  ON HOLD: ${o.hold.reason} ${JSON.stringify(o.hold.details)} (see docs/RUNBOOK.md)`,
+            ),
+          );
+        if (opts.retry && o.connectorError && !o.hold) {
           const r = await gate.checkout.retryConnector(o.id);
           console.log(
             r.externalOrderId
@@ -393,6 +400,33 @@ program
 
 // ---------------------------------------------------------------------------
 program
+  .command("backup")
+  .description("Consistent backup of the local database (SQLite VACUUM INTO)")
+  .argument("[dir]", "destination directory", "./backups")
+  .action((dir: string) => {
+    const cwd = program.opts<{ cwd: string }>().cwd;
+    loadDotEnv(cwd);
+    try {
+      const site = loadSiteConfig(cwd);
+      const storage = new SiteStorage(resolve(cwd, site.dataDir, "agentgate.sqlite"));
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const dest = resolve(cwd, dir, `agentgate-${stamp}.sqlite`);
+      storage.backup(dest);
+      const c = storage.counts();
+      storage.close();
+      console.log(pc.green(`backup written: ${dest}`));
+      console.log(
+        pc.dim(
+          `items=${c.items} orders=${c.orders} payments=${c.payments}. Restore: copy over ${site.dataDir}/agentgate.sqlite with the sidecar stopped.`,
+        ),
+      );
+    } catch (err) {
+      die(err);
+    }
+  });
+
+// ---------------------------------------------------------------------------
+program
   .command("serve")
   .description("Run the sidecar HTTP server")
   .option("-p, --port <port>", "port", "8402")
@@ -401,10 +435,12 @@ program
     const cwd = program.opts<{ cwd: string }>().cwd;
     loadDotEnv(cwd);
     try {
-      const gate = await createAgentGate({
-        cwd,
-        log: (m) => console.log(pc.dim(`[agentgate] ${m}`)),
-      });
+      const format =
+        process.env.AGENTGATE_LOG_FORMAT === "pretty" ||
+        (process.stdout.isTTY && !process.env.AGENTGATE_LOG_FORMAT)
+          ? "pretty"
+          : "json";
+      const gate = await createAgentGate({ cwd, logger: createLogger({ format }) });
       const { port } = await gate.serve(Number(opts.port), opts.host);
       console.log(
         pc.green(
