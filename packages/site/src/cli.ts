@@ -6,7 +6,14 @@ import { resolve } from "node:path";
 import { Command } from "commander";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
-import { AgentGateError, formatUsdc, usdc, createLlm } from "@agentgate/core";
+import {
+  AgentGateError,
+  formatUsdc,
+  usdc,
+  createLlm,
+  validateAcpProductsResponse,
+  validateUcpBusinessProfile,
+} from "@agentgate/core";
 import type { CatalogItemDraft, LlmProvider } from "@agentgate/core";
 import { scanSite } from "@agentgate/scanner";
 import { createAgentGate, buildConnector } from "./index.js";
@@ -311,6 +318,25 @@ program
           hint: "Check the API key matches the network (testnet vs mainnet).",
         });
       const gate = await createAgentGate({ cwd });
+      // Conformance gate: the discovery surfaces must validate against the pinned official schemas.
+      const profile = await (
+        await gate.fetch(new Request(`${gate.site.siteUrl}/.well-known/ucp`))
+      ).json();
+      const ucpCheck = validateUcpBusinessProfile(profile);
+      const feed = await (
+        await gate.fetch(new Request(`${gate.site.siteUrl}${gate.site.basePath}/feed`))
+      ).json();
+      const acpCheck = validateAcpProductsResponse(feed);
+      if (!ucpCheck.valid || !acpCheck.valid) {
+        throw new AgentGateError(
+          "SPEC_MISMATCH",
+          "Discovery surfaces do not validate against the pinned schemas",
+          {
+            hint: "This is a bug in AgentGate, not in your data. Please report it with the details below.",
+            details: { ucp: ucpCheck.errors, acp: acpCheck.errors },
+          },
+        );
+      }
       const published = gate.catalog.publishAll();
       gate.storage.setMeta("publishedAt", new Date().toISOString());
       console.log(

@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Keypair } from "@stellar/stellar-sdk";
-import { resolveConfig, usdc } from "@agentgate/core";
+import {
+  resolveConfig,
+  usdc,
+  validateAcpProductsResponse,
+  validateUcpBusinessProfile,
+} from "@agentgate/core";
 import type { CatalogItem, OrderConnector, PaidOrderInput } from "@agentgate/core";
 import { createAgentGateApp } from "./app.js";
 import { parseSiteConfig } from "./config.js";
@@ -96,12 +101,15 @@ describe("site app", () => {
 
   it("serves discovery surfaces with only published items", async () => {
     const manifest = await read(await req("/.well-known/ucp"));
-    expect(manifest.ucp.payment_handlers[0].id).toBe("x402-stellar");
+    expect(manifest.ucp.payment_handlers["org.x402.stellar"][0].id).toBe("x402-stellar");
+    expect(manifest.ucp.payment_handlers["org.x402.stellar"][0].config.payTo).toBe(payTo);
+    expect(validateUcpBusinessProfile(manifest).errors).toEqual([]);
     const catalog = await read(await req("/agentgate/catalog"));
     expect(catalog.items.map((i: { id: string }) => i.id).sort()).toEqual(["ebook", "mug"]);
     expect(catalog.items[0].price.minor).toMatch(/^\d+$/);
     const feed = await read(await req("/agentgate/feed"));
     expect(feed.products).toHaveLength(2);
+    expect(validateAcpProductsResponse(feed).errors).toEqual([]);
     const search = await read(await req("/agentgate/catalog?q=ceramic"));
     expect(search.items).toHaveLength(1);
     expect((await req("/agentgate/items/draft-only")).status).toBe(409);

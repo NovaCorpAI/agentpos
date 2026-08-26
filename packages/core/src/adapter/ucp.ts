@@ -1,17 +1,26 @@
 /**
- * UCP adapter (SPEC 09): builds the /.well-known/ucp manifest from a site's published state.
- * Skeleton in Phase 0: shape follows the public UCP overview (services / capabilities /
- * payment_handlers). MUST be validated against the pinned JSON Schema in Phase 2 before
- * any site publishes it.
+ * UCP adapter (SPEC 09): builds the business profile served at /.well-known/ucp.
+ * Shape follows profile.json#/$defs/business_schema (registries keyed by reverse-domain names,
+ * YYYY-MM-DD versions). Validated against the pinned official schemas in conformance tests.
+ *
+ * Honesty rule: we only declare what the site actually implements. The AgentGate service and the
+ * x402 Stellar payment handler are real; dev.ucp.shopping capabilities are not declared until the
+ * UCP checkout semantics ship (Build phase).
  */
 import { ADAPTER_VERSION, PROTOCOL_VERSIONS } from "./versions.js";
 
-export interface UcpManifestInput {
+export interface UcpProfileInput {
   siteUrl: string;
-  displayName: string;
+  /** Path prefix of the AgentGate routes, e.g. "/agentgate". */
+  basePath: string;
   /** CAIP-2 network the x402 handler settles on. */
   network: `stellar:${string}`;
-  capabilities?: Array<"checkout" | "discovery">;
+  /** Checkout asset symbol (USDC by default). */
+  asset: string;
+  /** Contract id of the asset on that network. */
+  assetAddress: string;
+  /** Stellar address that receives payments (watch-only; never a key). */
+  payTo: string;
   policies?: {
     shipping?: string | undefined;
     cancellation?: string | undefined;
@@ -20,52 +29,83 @@ export interface UcpManifestInput {
   };
 }
 
-export interface UcpManifest {
+export interface UcpServiceEntry {
+  version: string;
+  transport: "rest" | "mcp";
+  endpoint: string;
+  spec: string;
+  schema?: string;
+  config?: Record<string, unknown>;
+}
+
+export interface UcpPaymentHandlerEntry {
+  id: string;
+  version: string;
+  spec: string;
+  schema: string;
+  available_instruments: Array<{ type: string }>;
+  config: Record<string, unknown>;
+}
+
+export interface UcpBusinessProfile {
   ucp: {
     version: string;
-    adapterVersion: string;
-    services: Record<string, { version: string; rest: { endpoint: string } }>;
-    capabilities: Array<{ name: string; version: string }>;
-    payment_handlers: Array<{
-      id: string;
-      name: string;
-      spec: string;
-      config: Record<string, unknown>;
-    }>;
-    policies?: UcpManifestInput["policies"];
+    services: Record<string, UcpServiceEntry[]>;
+    capabilities: Record<string, never[]>;
+    payment_handlers: Record<string, UcpPaymentHandlerEntry[]>;
+    /** AgentGate-specific, ignored by UCP consumers (protocol object is open). */
+    "com.novacorplabs.agentgate"?: Record<string, unknown>;
   };
 }
 
-export function buildUcpManifest(input: UcpManifestInput): UcpManifest {
-  const base = input.siteUrl.replace(/\/+$/, "");
-  const caps = input.capabilities ?? ["discovery", "checkout"];
+export function buildUcpProfile(input: UcpProfileInput): UcpBusinessProfile {
+  const base = `${input.siteUrl.replace(/\/+$/, "")}${input.basePath}`;
+  const v = PROTOCOL_VERSIONS.ucp.version;
+  const ag = PROTOCOL_VERSIONS.agentgate;
   return {
     ucp: {
-      version: PROTOCOL_VERSIONS.ucp.version,
-      adapterVersion: ADAPTER_VERSION,
+      version: v,
       services: {
-        "dev.ucp.shopping": {
-          version: PROTOCOL_VERSIONS.ucp.version,
-          rest: { endpoint: `${base}/agentgate` },
-        },
-      },
-      capabilities: caps.map((name) => ({
-        name: `dev.ucp.shopping.${name}`,
-        version: PROTOCOL_VERSIONS.ucp.version,
-      })),
-      payment_handlers: [
-        {
-          id: "x402-stellar",
-          name: "x402 (USDC on Stellar)",
-          spec: "https://github.com/x402-foundation/x402",
-          config: {
-            network: input.network,
-            scheme: PROTOCOL_VERSIONS.x402.scheme,
-            checkout: `${base}/agentgate/checkout`,
+        [ag.serviceName]: [
+          {
+            version: v,
+            transport: "rest",
+            endpoint: base,
+            spec: ag.spec,
+            schema: ag.serviceSchema,
           },
-        },
-      ],
-      ...(input.policies ? { policies: input.policies } : {}),
+          { version: v, transport: "mcp", endpoint: `${base}/mcp`, spec: ag.spec },
+        ],
+      },
+      capabilities: {},
+      payment_handlers: {
+        [ag.paymentHandlerName]: [
+          {
+            id: ag.paymentHandlerId,
+            version: v,
+            spec: PROTOCOL_VERSIONS.x402.source,
+            schema: ag.handlerSchema,
+            available_instruments: [{ type: "stellar_wallet" }],
+            config: {
+              protocol: "x402",
+              x402Version: PROTOCOL_VERSIONS.x402.protocol,
+              scheme: PROTOCOL_VERSIONS.x402.scheme,
+              network: input.network,
+              asset: input.asset,
+              assetAddress: input.assetAddress,
+              payTo: input.payTo,
+              checkout: `${base}/checkout`,
+              cart: `${base}/cart`,
+            },
+          },
+        ],
+      },
+      "com.novacorplabs.agentgate": {
+        adapterVersion: ADAPTER_VERSION,
+        catalog: `${base}/catalog`,
+        feed: `${base}/feed`,
+        ...(input.policies ? { policies: input.policies } : {}),
+      },
     },
   };
 }

@@ -12,7 +12,7 @@ import {
   assetAddress,
   addressSchema,
   buildAcpFeed,
-  buildUcpManifest,
+  buildUcpProfile,
   buyerContactSchema,
   cartLineSchema,
   createResourceServer,
@@ -194,10 +194,13 @@ export function createAgentGateApp(deps: AgentGateDeps): AgentGateSite {
   // --- discovery surfaces ----------------------------------------------------
   app.get("/.well-known/ucp", (c) =>
     c.json(
-      buildUcpManifest({
+      buildUcpProfile({
         siteUrl,
-        displayName: site.displayName,
+        basePath: base,
         network: core.caip2,
+        asset: core.checkoutAsset,
+        assetAddress: assetAddress(core),
+        payTo: site.payTo,
         ...(site.policies ? { policies: site.policies } : {}),
       }),
     ),
@@ -206,6 +209,7 @@ export function createAgentGateApp(deps: AgentGateDeps): AgentGateSite {
   app.get(`${base}/health`, (c) =>
     c.json({
       ok: true,
+      name: site.displayName,
       adapterVersion: ADAPTER_VERSION,
       network: core.caip2,
       asset: core.checkoutAsset,
@@ -233,23 +237,26 @@ export function createAgentGateApp(deps: AgentGateDeps): AgentGateSite {
     c.json(publicItem(catalog.getPublished(c.req.param("id")), core.checkoutAsset)),
   );
 
-  app.get(`${base}/feed`, (c) =>
-    c.json(
+  // ACP feed: fiat prices (ISO 4217 minor units) as the schema requires; items without a fiat
+  // source price are listed without price. USDC terms live in the UCP handler and /catalog.
+  app.get(`${base}/feed`, (c) => {
+    c.header("X-AgentGate-Adapter", ADAPTER_VERSION);
+    return c.json(
       buildAcpFeed(
-        { name: site.displayName, url: siteUrl },
         catalog.published().map((i) => ({
           id: i.id,
           title: i.title,
           description: i.descriptionAgent,
           url: i.url,
           ...(i.imageUrl ? { imageUrl: i.imageUrl } : {}),
-          priceUsdc: priceOf(i),
-          availability: "in_stock" as const,
-          attributes: i.attributes,
+          ...(i.priceSrc && /^[A-Za-z]{3}$/.test(i.priceSrc.currency)
+            ? { priceSrc: i.priceSrc }
+            : {}),
+          available: true,
         })),
       ),
-    ),
-  );
+    );
+  });
 
   // --- cart ------------------------------------------------------------------
   app.post(`${base}/cart`, async (c) => {

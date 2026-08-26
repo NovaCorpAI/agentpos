@@ -6,7 +6,7 @@ import { usdc } from "../money.js";
 import { createLocalKeypairSigner, createSigner } from "../signer.js";
 import { AgentGateError } from "../errors.js";
 import { buildRouteConfig, createBuyerClient, createResourceServer, toReceipt } from "./x402.js";
-import { buildUcpManifest } from "./ucp.js";
+import { buildUcpProfile } from "./ucp.js";
 import { buildAcpFeed } from "./acp.js";
 import { ADAPTER_VERSION, PROTOCOL_VERSIONS } from "./versions.js";
 
@@ -77,31 +77,38 @@ describe("signer factory", () => {
 });
 
 describe("UCP / ACP surfaces", () => {
-  it("builds a manifest with an x402-stellar payment handler", () => {
-    const manifest = buildUcpManifest({
+  it("builds a UCP business profile with the x402 Stellar payment handler", () => {
+    const profile = buildUcpProfile({
       siteUrl: "https://shop.example/",
-      displayName: "Example Shop",
+      basePath: "/agentgate",
       network: "stellar:testnet",
+      asset: "USDC",
+      assetAddress: USDC_TESTNET_ADDRESS,
+      payTo,
     });
-    expect(manifest.ucp.payment_handlers[0]?.id).toBe("x402-stellar");
-    expect(manifest.ucp.services["dev.ucp.shopping"]?.rest.endpoint).toBe(
+    const handler =
+      profile.ucp.payment_handlers[PROTOCOL_VERSIONS.agentgate.paymentHandlerName]?.[0];
+    expect(handler?.id).toBe("x402-stellar");
+    expect(handler?.config.payTo).toBe(payTo);
+    expect(profile.ucp.services[PROTOCOL_VERSIONS.agentgate.serviceName]?.[0]?.endpoint).toBe(
       "https://shop.example/agentgate",
     );
-    expect(manifest.ucp.adapterVersion).toBe(ADAPTER_VERSION);
+    expect(profile.ucp["com.novacorplabs.agentgate"]?.adapterVersion).toBe(ADAPTER_VERSION);
+    // Honesty: no UCP shopping capabilities are claimed until implemented.
+    expect(profile.ucp.capabilities).toEqual({});
   });
 
-  it("builds an ACP feed with decimal USDC prices from integer minor units", () => {
-    const feed = buildAcpFeed({ name: "Example Shop", url: "https://shop.example" }, [
+  it("builds an ACP feed with fiat prices in ISO minor units", () => {
+    const feed = buildAcpFeed([
       {
         id: "sku-1",
         title: "Mug",
         description: "Ceramic mug, 350 ml",
         url: "https://shop.example/mug",
-        priceUsdc: usdc("9.9"),
-        availability: "in_stock",
+        priceSrc: { amount: "9.90", currency: "USD" },
+        available: true,
       },
     ]);
-    expect(feed.version).toBe(PROTOCOL_VERSIONS.acp.version);
-    expect(feed.products[0]?.price).toEqual({ amount: "9.9", currency: "USDC" });
+    expect(feed.products[0]?.variants[0]?.price).toEqual({ amount: 990, currency: "USD" });
   });
 });

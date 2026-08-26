@@ -117,13 +117,11 @@ export class SiteClient {
   async info(): Promise<SiteInfo> {
     const manifest = await this.get("/.well-known/ucp", "manifest");
     const health = await this.get(`${this.basePath}/health`, "health");
-    const ucp = manifest.ucp as
-      { payment_handlers?: Array<{ config?: { network?: string } }> } | undefined;
     return {
       url: this.base,
       host: this.host,
-      name: String((manifest as { ucp?: { displayName?: string } }).ucp?.displayName ?? this.host),
-      network: String(health.network ?? ucp?.payment_handlers?.[0]?.config?.network ?? "unknown"),
+      name: String(health.name ?? this.host),
+      network: String(health.network ?? "unknown"),
       asset: String(health.asset ?? "USDC"),
       basePath: this.basePath,
       verified: false, // registry verification lands with the hosted plane (Phase 2)

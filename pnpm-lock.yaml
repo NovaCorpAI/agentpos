@@ -70,6 +70,12 @@ importers:
       '@x402/stellar':
         specifier: 2.23.0
         version: 2.23.0(debug@4.4.3)
+      ajv:
+        specifier: ^8.20.0
+        version: 8.20.0
+      ajv-formats:
+        specifier: ^3.0.1
+        version: 3.0.1(ajv@8.20.0)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -111,6 +117,12 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
+      '@agentgate/connectors':
+        specifier: workspace:*
+        version: link:../connectors
+      '@agentgate/scanner':
+        specifier: workspace:*
+        version: link:../scanner
       '@agentgate/site':
         specifier: workspace:*
         version: link:../site
