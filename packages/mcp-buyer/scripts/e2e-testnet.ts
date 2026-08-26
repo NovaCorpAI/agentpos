@@ -11,7 +11,15 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Keypair } from "@stellar/stellar-sdk";
+import {
+  Asset,
+  BASE_FEE,
+  Horizon,
+  Keypair,
+  Networks,
+  Operation,
+  TransactionBuilder,
+} from "@stellar/stellar-sdk";
 import {
   AgentGateError,
   FRIENDBOT_URL,
@@ -60,11 +68,34 @@ async function fund(kp: Keypair): Promise<void> {
   if (!res.ok) throw new Error(`friendbot failed: ${res.status}`);
 }
 
+/** Opens the USDC trustline so the account can receive USDC (classic asset on Stellar). */
+async function trustUsdc(kp: Keypair): Promise<void> {
+  const horizon = new Horizon.Server(core.horizonUrl);
+  const account = await horizon.loadAccount(kp.publicKey());
+  const tx = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase: Networks.TESTNET })
+    .addOperation(Operation.changeTrust({ asset: new Asset("USDC", core.usdcIssuer) }))
+    .setTimeout(60)
+    .build();
+  tx.sign(kp);
+  await horizon.submitTransaction(tx);
+}
+
 async function main(): Promise<void> {
   const seller = Keypair.random();
-  const buyerKp = Keypair.random();
-  await Promise.all([fund(seller), fund(buyerKp)]);
-  step(`funded seller ${seller.publicKey()} and buyer ${buyerKp.publicKey()} via friendbot`);
+  // USDC runs need a buyer that already holds testnet USDC (faucet.circle.com): E2E_BUYER_SECRET.
+  const buyerSecret = process.env.E2E_BUYER_SECRET ?? process.env.SMOKE_USDC_SOURCE_SECRET;
+  if (core.checkoutAsset === "USDC" && !buyerSecret) {
+    throw new Error(
+      "USDC e2e needs E2E_BUYER_SECRET (or SMOKE_USDC_SOURCE_SECRET) holding testnet USDC",
+    );
+  }
+  const buyerKp =
+    core.checkoutAsset === "USDC" ? Keypair.fromSecret(buyerSecret as string) : Keypair.random();
+  await Promise.all([fund(seller), ...(core.checkoutAsset === "USDC" ? [] : [fund(buyerKp)])]);
+  if (core.checkoutAsset === "USDC") await trustUsdc(seller);
+  step(
+    `seller ${seller.publicKey()} (friendbot${core.checkoutAsset === "USDC" ? " + USDC trustline" : ""}), buyer ${buyerKp.publicKey()} (${core.checkoutAsset === "USDC" ? "faucet-funded USDC" : "friendbot XLM"})`,
+  );
 
   // ---- seller side -----------------------------------------------------------
   const connector = new WooCommerceConnector({
