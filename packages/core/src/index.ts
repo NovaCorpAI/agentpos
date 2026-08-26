@@ -6,3 +6,4 @@ export * from "./signer.js";
 export * from "./fiscal.js";
 export * from "./catalog.js";
 export * from "./adapter/index.js";
+export * from "./keys.js";

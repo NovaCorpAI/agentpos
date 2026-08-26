@@ -87,6 +87,49 @@ importers:
         specifier: ^4.1.11
         version: 4.1.11(@types/node@24.13.3)(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.2)(tsx@4.23.12))
 
+  packages/mcp-buyer:
+    dependencies:
+      '@agentgate/core':
+        specifier: workspace:*
+        version: link:../core
+      '@clack/prompts':
+        specifier: ^1.7.0
+        version: 1.7.0
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.30.0
+        version: 1.30.0(zod@4.4.3)
+      '@stellar/stellar-sdk':
+        specifier: ^16.2.0
+        version: 16.2.0(debug@4.4.3)
+      commander:
+        specifier: ^15.0.0
+        version: 15.0.0
+      picocolors:
+        specifier: ^1.1.1
+        version: 1.1.1
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@agentgate/site':
+        specifier: workspace:*
+        version: link:../site
+      '@types/node':
+        specifier: ^24.13.3
+        version: 24.13.3
+      '@x402/core':
+        specifier: 2.23.0
+        version: 2.23.0
+      tsx:
+        specifier: ^4.23.12
+        version: 4.23.12
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.11
+        version: 4.1.11(@types/node@24.13.3)(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.2)(tsx@4.23.12))
+
   packages/scanner:
     dependencies:
       '@agentgate/core':
