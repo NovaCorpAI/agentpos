@@ -29,6 +29,21 @@ import type { Receipt, ReceiptStore } from "@agentgate/receipts";
 
 type Row = { json: string };
 
+/** Aggregated, publishable metrics: counts and totals, never a buyer or an address. */
+export interface PublicMetrics {
+  since: string;
+  until: string;
+  paidOrders: number;
+  totalMinor: string;
+  heldOrders: number;
+  /** Paid orders whose platform order has not been created yet (connector retrying). */
+  pendingPlatformOrders: number;
+  uniquePayers: number;
+  uniqueIdentifiedAgents: number;
+  latencyMs: { samples: number; p50?: number; p95?: number };
+  byDay: Array<{ day: string; orders: number; totalMinor: string }>;
+}
+
 function reviveQuote(q: Record<string, unknown>) {
   const lines = (q.lines as Array<Record<string, unknown>>).map((l) => ({
     ...l,
@@ -98,6 +113,86 @@ export class SiteStorage {
       carts: n("carts"),
       orders: n("orders"),
       payments: n("payments"),
+    };
+  }
+
+  /**
+   * Aggregated public metrics (G2). Deliberately counts and totals only: no buyer data, no
+   * addresses, no order ids. A merchant can publish this without publishing their customers.
+   *
+   * `latency` measures the loop the merchant actually cares about: from the moment the order was
+   * registered at checkout to the moment their own platform confirmed it. Orders still waiting on
+   * a failing connector are excluded from the percentiles and counted in `pendingPlatformOrders`,
+   * because averaging in an order that never completed would flatter the number.
+   */
+  publicMetrics(since: Date, now: Date = new Date()): PublicMetrics {
+    const rows = this.db
+      .prepare("select json from orders where created_at >= ? order by created_at asc")
+      .all(since.toISOString()) as Row[];
+
+    const byDay = new Map<string, { orders: number; totalMinor: bigint }>();
+    const payers = new Set<string>();
+    const agents = new Set<string>();
+    const latencies: number[] = [];
+    let paidOrders = 0;
+    let totalMinor = 0n;
+    let held = 0;
+    let pendingPlatformOrders = 0;
+
+    for (const row of rows) {
+      const order = JSON.parse(row.json) as {
+        status: string;
+        createdAt: string;
+        updatedAt: string;
+        quote: { totalUsdc: string };
+        payment?: { payer?: string };
+        agent?: { agentKey?: string };
+        hold?: unknown;
+        externalOrderId?: string;
+      };
+      if (order.hold) held += 1;
+      if (order.status !== "paid" && order.status !== "fulfilled") continue;
+      paidOrders += 1;
+      const amount = BigInt(order.quote.totalUsdc);
+      totalMinor += amount;
+      const day = order.createdAt.slice(0, 10);
+      const bucket = byDay.get(day) ?? { orders: 0, totalMinor: 0n };
+      bucket.orders += 1;
+      bucket.totalMinor += amount;
+      byDay.set(day, bucket);
+      if (order.payment?.payer) payers.add(order.payment.payer);
+      if (order.agent?.agentKey) agents.add(order.agent.agentKey);
+      if (order.externalOrderId) {
+        const ms = new Date(order.updatedAt).getTime() - new Date(order.createdAt).getTime();
+        if (Number.isFinite(ms) && ms >= 0) latencies.push(ms);
+      } else {
+        pendingPlatformOrders += 1;
+      }
+    }
+
+    latencies.sort((a, b) => a - b);
+    const percentile = (p: number): number | undefined =>
+      latencies.length === 0
+        ? undefined
+        : (latencies[Math.min(latencies.length - 1, Math.floor((p / 100) * latencies.length))] as number);
+
+    return {
+      since: since.toISOString(),
+      until: now.toISOString(),
+      paidOrders,
+      totalMinor: totalMinor.toString(),
+      heldOrders: held,
+      pendingPlatformOrders,
+      uniquePayers: payers.size,
+      uniqueIdentifiedAgents: agents.size,
+      latencyMs: {
+        samples: latencies.length,
+        ...(percentile(50) !== undefined ? { p50: percentile(50) as number } : {}),
+        ...(percentile(95) !== undefined ? { p95: percentile(95) as number } : {}),
+      },
+      byDay: [...byDay.entries()]
+        .sort(([a], [b]) => (a < b ? -1 : 1))
+        .map(([day, v]) => ({ day, orders: v.orders, totalMinor: v.totalMinor.toString() })),
     };
   }
 

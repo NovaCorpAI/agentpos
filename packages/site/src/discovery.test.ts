@@ -13,7 +13,7 @@ import type { AgentGateSite } from "./app.js";
 import { parseSiteConfig } from "./config.js";
 import type { SiteConfigInput } from "./config.js";
 import { SiteStorage } from "./storage.js";
-import { stubFacilitator } from "./test-utils.js";
+import { payLikeAnAgent, stubFacilitator } from "./test-utils.js";
 
 const payTo = Keypair.random().publicKey();
 const core = resolveConfig({ network: "testnet" });
@@ -188,5 +188,73 @@ describe("llms.txt", () => {
       new Request("https://shop.test/llms.txt"),
     );
     expect(await res.text()).not.toContain("/receipt");
+  });
+});
+
+describe("public metrics (G2)", () => {
+  it("publishes aggregates and nothing that identifies a buyer", async () => {
+    const gate = makeSite();
+    // Two settled orders.
+    for (const itemId of ["mug", "ebook"]) {
+      const cartRes = await gate.fetch(
+        new Request("https://shop.test/agentgate/cart", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            items: [{ itemId, quantity: 1 }],
+            buyer: { email: "ada@example.com" },
+          }),
+        }),
+      );
+      const { cartId } = (await cartRes.json()) as { cartId: string };
+      await payLikeAnAgent(
+        gate.fetch,
+        `https://shop.test/agentgate/checkout?cart=${cartId}`,
+        { method: "POST" },
+      );
+    }
+
+    const res = await gate.fetch(new Request("https://shop.test/agentgate/metrics"));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      paidOrders: number;
+      total: string;
+      uniquePayers: number;
+      latencyMs: { samples: number; p50?: number; p95?: number };
+      byDay: Array<{ day: string; orders: number; total: string }>;
+      heldOrders: number;
+      pendingPlatformOrders: number;
+    };
+    expect(body.paidOrders).toBe(2);
+    expect(body.total).toBe("11.9");
+    expect(body.uniquePayers).toBe(1); // the stub facilitator always reports the same payer
+    expect(body.byDay[0]?.orders).toBe(2);
+    expect(body.latencyMs.samples).toBe(2);
+    expect(body.latencyMs.p50).toBeGreaterThanOrEqual(0);
+    expect(body.heldOrders).toBe(0);
+    expect(body.pendingPlatformOrders).toBe(0);
+
+    // Nothing that identifies a buyer may appear anywhere in the payload.
+    const raw = JSON.stringify(body);
+    expect(raw).not.toContain("ada@example.com");
+    expect(raw).not.toContain("GPAYER");
+    expect(raw).not.toContain("cart_");
+    expect(raw).not.toContain("ord_");
+  });
+
+  it("answers with zeroes for a store that has sold nothing", async () => {
+    const res = await makeSite().fetch(new Request("https://shop.test/agentgate/metrics?days=7"));
+    const body = (await res.json()) as {
+      paidOrders: number;
+      total: string;
+      windowDays: number;
+      latencyMs: { samples: number; p50?: number };
+    };
+    expect(body.paidOrders).toBe(0);
+    expect(body.total).toBe("0");
+    expect(body.windowDays).toBe(7);
+    // No samples means no percentile, not a fake zero.
+    expect(body.latencyMs.samples).toBe(0);
+    expect(body.latencyMs.p50).toBeUndefined();
   });
 });

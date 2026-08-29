@@ -15,6 +15,8 @@ import { approve, listPending, loadProfile, saveProfile } from "./profile.js";
 import type { Profile } from "./profile.js";
 import { mandateSchema } from "./mandate.js";
 import { buildBuyerServer } from "./server.js";
+import { BuyerService } from "./buyer.js";
+import { runDemoPurchase } from "./demo.js";
 import { SpendingLog } from "./spending.js";
 
 function die(err: unknown): never {
@@ -189,6 +191,75 @@ program
     }
     console.log(pc.bold(`total ${formatUsdc(total as never)}`));
   });
+
+program
+  .command("demo")
+  .description("Discover a store, quote a cart, pay it, and show the hash (the reference agent)")
+  .argument("<store-url>", "store origin, e.g. https://shop.example")
+  .option("--item <id>", "item to buy (default: the cheapest published item)")
+  .option("-q, --quantity <n>", "how many", "1")
+  .option("--dry-run", "stop before paying: no wallet and no funds needed")
+  .option("--json", "print the run as JSON instead of narrating it")
+  .action(
+    async (
+      storeUrl: string,
+      opts: { item?: string; quantity: string; dryRun?: boolean; json?: boolean },
+    ) => {
+      const name = program.opts<{ profile: string }>().profile;
+      try {
+        let buyerService: BuyerService | undefined;
+        let buyer: Profile["buyer"] | undefined;
+        let shipping: Profile["shipping"] | undefined;
+        if (!opts.dryRun) {
+          // The wallet is only needed to pay. A dry run must work on a machine that has never
+          // run `init`, because that is the first thing a stranger evaluating us will try.
+          const profile = loadProfile(name);
+          buyer = profile.buyer;
+          shipping = profile.shipping;
+          buyerService = new BuyerService({ profile });
+        }
+        const result = await runDemoPurchase({
+          storeUrl,
+          itemId: opts.item,
+          quantity: Number(opts.quantity),
+          dryRun: Boolean(opts.dryRun),
+          buyer,
+          shipping,
+          buyerService,
+          onStep: opts.json
+            ? undefined
+            : (s) => {
+                const colour =
+                  s.step === "settled" || s.step === "receipt"
+                    ? pc.green
+                    : s.step === "policy"
+                      ? pc.yellow
+                      : pc.dim;
+                console.log(`${colour(s.step.padEnd(9))} ${s.message}`);
+              },
+        });
+        if (opts.json) {
+          console.log(JSON.stringify(result, null, 2));
+          return;
+        }
+        console.log("");
+        if (result.paid) {
+          console.log(pc.green(`Bought. tx ${result.txHash}`));
+          console.log(
+            pc.dim(
+              `Verify it yourself: https://stellar.expert/explorer/${result.store.network === "stellar:pubnet" ? "public" : "testnet"}/tx/${result.txHash}`,
+            ),
+          );
+        } else if (opts.dryRun) {
+          console.log(
+            pc.dim("Nothing was paid. Drop --dry-run (and run `agentgate-buyer init`) to buy for real."),
+          );
+        }
+      } catch (err) {
+        die(err);
+      }
+    },
+  );
 
 program
   .command("serve")

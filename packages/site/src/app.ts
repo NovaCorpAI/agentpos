@@ -88,6 +88,7 @@ export interface SiteRoutes {
   orders: string;
   approvals: string;
   receipts: string;
+  metrics: string;
   health: string;
 }
 
@@ -337,6 +338,7 @@ export function createAgentGateApp(deps: AgentGateDeps): AgentGateSite {
     orders: `${siteUrl}${base}/orders/<orderId>`,
     approvals: `${siteUrl}${base}/approvals/<approvalId>`,
     receipts: `${siteUrl}${base}/orders/<orderId>/receipt`,
+    metrics: `${siteUrl}${base}/metrics`,
     health: `${siteUrl}${base}/health`,
   };
 
@@ -541,6 +543,27 @@ export function createAgentGateApp(deps: AgentGateDeps): AgentGateSite {
       "",
     ];
     return c.text(`${lines.join("\n")}`);
+  });
+
+  // Aggregated public metrics (G2). Counts and totals only: publishable without publishing
+  // anyone's customers. `?days=` bounds the window; the default is 30.
+  app.get(`${base}/metrics`, (c) => {
+    const days = Math.min(365, Math.max(1, Number(c.req.query("days") ?? 30) || 30));
+    const now = new Date();
+    const metrics = storage.publicMetrics(new Date(now.getTime() - days * 86_400_000), now);
+    return c.json({
+      store: { name: site.displayName, url: siteUrl },
+      network: core.caip2,
+      asset: core.checkoutAsset,
+      windowDays: days,
+      ...metrics,
+      total: formatUsdc(usdcFromMinor(metrics.totalMinor)),
+      byDay: metrics.byDay.map((d) => ({
+        ...d,
+        total: formatUsdc(usdcFromMinor(d.totalMinor)),
+      })),
+      note: "Aggregates only. No buyer data, no addresses, no order ids. Latency is checkout to platform order.",
+    });
   });
 
   app.get(`${base}/health`, async (c) => {
