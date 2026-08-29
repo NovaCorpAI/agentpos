@@ -319,3 +319,50 @@ describe("unknown routes", () => {
     expect(((await res.json()) as { error: { hint: string } }).error.hint).toContain("/settle");
   });
 });
+
+describe("account separation, enforced", () => {
+  it("refuses to settle a payment whose payee is its own fee account", async () => {
+    const f = app();
+    for (const path of ["/verify", "/settle"]) {
+      const res = await f.fetch(
+        post(path, {
+          paymentPayload: payload,
+          paymentRequirements: requirements({ payTo: signer.publicKey() }),
+        }),
+      );
+      expect(res.status, path).toBe(422);
+      const body = (await res.json()) as { error: { message: string; hint: string } };
+      expect(body.error.message).toContain("own fee account");
+      expect(body.error.hint).toContain("never receives payments");
+    }
+  });
+
+  it("warns on health when the fee account holds anything other than XLM", async () => {
+    const horizon = (async () =>
+      new Response(
+        JSON.stringify({
+          balances: [
+            { asset_type: "native", balance: "100.0000000" },
+            {
+              asset_type: "credit_alphanum4",
+              asset_code: "USDC",
+              asset_issuer: "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN",
+              balance: "12.5000000",
+            },
+            { asset_type: "credit_alphanum4", asset_code: "EMPTY", asset_issuer: "GXYZ", balance: "0.0000000" },
+          ],
+        }),
+        { status: 200 },
+      )) as typeof globalThis.fetch;
+    const res = await app({ fetchImpl: horizon }).fetch(new Request("https://facilitator.test/health"));
+    const body = (await res.json()) as {
+      ok: boolean;
+      feeAccount: { warning?: string; foreignBalances?: Array<{ asset: string; balance: string }> };
+    };
+    // Still healthy: it can pay fees. But it says loudly that separation was broken.
+    expect(body.ok).toBe(true);
+    expect(body.feeAccount.warning).toContain("other than XLM");
+    expect(body.feeAccount.foreignBalances).toHaveLength(1);
+    expect(body.feeAccount.foreignBalances?.[0]?.asset).toContain("USDC");
+  });
+});

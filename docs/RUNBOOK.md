@@ -49,6 +49,31 @@ revisar `/agentgate/health.facilitator`, la API key (401) y el estado del facili
   Sin facilitador no hay ventas nuevas; las órdenes ya pagadas no se ven afectadas.
 - `orders.stuck > 0`: ver ORDER_NOT_CREATED.
 
+## Facilitador propio (`apps/facilitator`)
+
+Está en el camino del pago: si se cae, no hay ventas en las tiendas que apuntan a él.
+
+**`/health` responde 503 con `funded: false`.** La cuenta de fees bajó del mínimo. Enviar XLM
+a la dirección que muestra `signer`. Solo XLM. Las liquidaciones fallan cuando llega a cero,
+no antes, así que el 503 es el aviso previo.
+
+**`/health` muestra `warning` y `foreignBalances`.** Alguien envió a la cuenta de fees un
+activo que no es XLM. Esa cuenta no debe recibir nada: moverlo fuera y averiguar quién lo
+mandó (probablemente una tienda configuró su `payTo` con nuestra dirección; el facilitador
+rechaza esos pagos con `SPEC_MISMATCH`, pero un envío manual no pasa por ahí).
+
+**`verify` responde `unexpected_verify_error` en serie.** Casi siempre es el RPC. Revisar el
+log (`facilitator.verify_failed` con el mensaje), y si el RPC primario no responde, cambiar
+`AGENTGATE_FACILITATOR_RPC_URL` al secundario documentado en `docs/RPC-MAINNET.md` y reiniciar.
+Nada se cobra mientras tanto: sin `verify` no hay `settle`.
+
+**`settle` responde `success: false`.** Leer `errorReason`. Si es un error de secuencia, dos
+instancias están firmando con la misma cuenta; debe correr una sola por cuenta de fees.
+
+**Rotar la llave de fees.** Generar una nueva con `pnpm --filter @agentgate/facilitator keygen
+--network mainnet --force` en la máquina de destino, fondearla, reiniciar con el archivo nuevo,
+y vaciar la vieja hacia la tesorería. El servicio imprime al arrancar qué dirección está usando.
+
 ## Operación rutinaria
 
 - Backup: `agentgate backup ./backups` (SQLite `VACUUM INTO`, consistente en caliente). Restaurar

@@ -244,8 +244,35 @@ pnpm demo:up              # WooCommerce local con productos de ejemplo
 pnpm e2e:testnet          # requiere AGENTGATE_FACILITATOR_API_KEY en .env
 ```
 
+## Qué facilitador usar, y quién paga las comisiones de red
+
+Un pago x402 en Stellar lo liquida un **facilitador**: un servicio que revisa la transacción
+firmada por el comprador y la envía a la red, pagando la (mínima) comisión de red. Tu tienda
+habla con uno a través de dos variables:
+
+```
+AGENTGATE_FACILITATOR_URL=...
+AGENTGATE_FACILITATOR_API_KEY=...
+```
+
+Puedes apuntarlas a cualquier facilitador. Dos que conviene conocer:
+
+- **Built on Stellar (hospedado).** `https://channels.openzeppelin.com/x402` para mainnet,
+  `.../x402/testnet` para testnet. Keys en https://channels.openzeppelin.com/gen. Él pone las
+  comisiones. Al 2026-08-29 su verificación en mainnet falla para todos los integradores que
+  conocemos (reportado); testnet funciona.
+- **El tuyo.** `apps/facilitator` en este repo es un facilitador mínimo sobre los SDK oficiales.
+  Si lo corres, **las comisiones las pagas tú**, desde una cuenta aparte que guarda XLM y nada
+  más. Costo medido: unos 0,0023 XLM por venta. Se niega a arrancar sin lista de activos
+  permitidos, sin API keys y (en mainnet) sin un RPC explícito.
+  `pnpm --filter @agentgate/facilitator keygen` crea la cuenta de comisiones sin imprimir jamás
+  su secreto. Guía completa en `apps/facilitator/README.md`.
+
+Uses el que uses, el dinero sigue yendo comprador → tu billetera dentro de una sola transacción.
+El facilitador nunca lo retiene, y nosotros tampoco. AgentGate no opera un facilitador para
+comercios: el que corremos es para nuestras pruebas y nuestra tienda demo.
+
 ## Pasar a mainnet
 
-Todavía no. Mainnet está bloqueado tras `AGENTGATE_ALLOW_MAINNET=true` y una key de facilitador
-para mainnet (login con GitHub en https://channels.openzeppelin.com/gen). Ver `plan/ROADMAP.md`,
-gate G2.
+Mainnet está bloqueado tras `AGENTGATE_ALLOW_MAINNET=true` y un facilitador que liquide
+`stellar:pubnet`. Ver `plan/ROADMAP.md`, gate G2.

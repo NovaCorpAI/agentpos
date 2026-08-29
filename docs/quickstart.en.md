@@ -241,7 +241,34 @@ pnpm demo:up              # local WooCommerce with seed products
 pnpm e2e:testnet          # needs AGENTGATE_FACILITATOR_API_KEY in .env
 ```
 
+## Which facilitator, and who pays the fees
+
+An x402 payment on Stellar is settled by a **facilitator**: a service that checks the buyer's
+signed transaction and submits it to the network, paying the (tiny) transaction fee. Your store
+talks to one through two settings:
+
+```
+AGENTGATE_FACILITATOR_URL=...
+AGENTGATE_FACILITATOR_API_KEY=...
+```
+
+You can point them at any facilitator. Two you should know about:
+
+- **Built on Stellar (hosted).** `https://channels.openzeppelin.com/x402` for mainnet,
+  `.../x402/testnet` for testnet. Keys at https://channels.openzeppelin.com/gen. It sponsors the
+  fees. As of 2026-08-29 its mainnet verification is failing for every integrator we know of
+  (tracked upstream); testnet works.
+- **Your own.** `apps/facilitator` in this repo is a minimal facilitator on the official SDKs. If
+  you run it, **you pay your own fees**, from a separate account that holds XLM and nothing else.
+  Measured cost: about 0.0023 XLM per sale. It refuses to start without an asset allowlist, API
+  keys, and (on mainnet) an explicit RPC. `pnpm --filter @agentgate/facilitator keygen` creates
+  the fee account without ever printing its secret. Full guide in `apps/facilitator/README.md`.
+
+Whichever you use, the money still moves buyer → your wallet inside one transaction. The
+facilitator never holds it, and neither do we. AgentGate does not operate a facilitator for
+merchants: the one we run is for our own tests and demo store.
+
 ## Going to mainnet
 
-Not yet. Mainnet is locked behind `AGENTGATE_ALLOW_MAINNET=true` and a mainnet facilitator key
-(GitHub login at https://channels.openzeppelin.com/gen). See `plan/ROADMAP.md`, gate G2.
+Mainnet is locked behind `AGENTGATE_ALLOW_MAINNET=true` and a facilitator that settles
+`stellar:pubnet`. See `plan/ROADMAP.md`, gate G2.

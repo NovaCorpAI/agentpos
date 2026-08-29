@@ -1,0 +1,23 @@
+# Self-hosted x402 facilitator. From the monorepo root:
+#   docker compose -f apps/facilitator/docker-compose.yml --env-file ~/.agentgate/facilitator/mainnet.env up -d
+# The env file comes from `pnpm --filter @agentgate/facilitator keygen`; add the rest of the
+# variables to it (KEYS, ASSETS, RPC_URL). Put TLS and a rate limiter in front (Caddy, nginx,
+# Cloudflare): this service does neither itself.
+services:
+  facilitator:
+    build:
+      context: ../..
+      dockerfile: apps/facilitator/Dockerfile
+    image: agentgate-facilitator:local
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8403:8403"
+    environment:
+      AGENTGATE_FACILITATOR_NETWORK: ${AGENTGATE_FACILITATOR_NETWORK:-testnet}
+      AGENTGATE_FACILITATOR_SIGNER_SECRET: ${AGENTGATE_FACILITATOR_SIGNER_SECRET:?fee account secret, from keygen}
+      AGENTGATE_FACILITATOR_KEYS: ${AGENTGATE_FACILITATOR_KEYS:?comma-separated bearer tokens for your stores}
+      AGENTGATE_FACILITATOR_ASSETS: ${AGENTGATE_FACILITATOR_ASSETS:?contract ids it may settle}
+      AGENTGATE_FACILITATOR_RPC_URL: ${AGENTGATE_FACILITATOR_RPC_URL:-}
+      AGENTGATE_FACILITATOR_MAX_FEE_STROOPS: ${AGENTGATE_FACILITATOR_MAX_FEE_STROOPS:-50000}
+    # Runs as `node`, never root; the image sets that. Nothing is mounted: the only state is the
+    # key in the environment, and the ledger is the source of truth for everything else.

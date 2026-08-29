@@ -22,7 +22,8 @@
     "test": "vitest run",
     "lint": "eslint src",
     "dev": "tsx src/server.ts",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "keygen": "tsx src/keygen.ts"
   },
   "dependencies": {
     "@agentgate/core": "workspace:*",

@@ -24,6 +24,37 @@ service submits. What this service holds is XLM to pay fees with, and that is th
 should ever have. If you find yourself adding a feature that makes it hold merchant or buyer
 funds, stop: that is a different product with a different regulatory posture.
 
+## Who pays the fees, and from which account
+
+The x402 Stellar scheme has the facilitator sponsor transaction fees (`areFeesSponsored: true` is
+the only value the spec supports today), so **whoever runs the facilitator pays**. There is no
+protocol-level way to charge the buyer.
+
+That leads to one rule and two consequences:
+
+- **A merchant who wants to bear their own costs runs their own facilitator.** It is a container
+  and two env vars on the store side. AgentGate's instance is for our own CI and demo store; we
+  do not operate one for merchants, and the fee account is not a cost centre we want.
+- **The fee account is its own account.** Not the merchant's `payTo` (their revenue), not a
+  buyer's wallet, not anything else you hold. It holds XLM for fees and nothing more, so the worst
+  case of a compromise is a drained fee balance.
+
+Separation is enforced, not just written down: `verify` and `settle` refuse a payment whose
+`payTo` is the fee account itself (`SPEC_MISMATCH`), and `/health` warns with `foreignBalances`
+if that account ever holds anything other than XLM.
+
+### Create the fee account
+
+```bash
+pnpm --filter @agentgate/facilitator keygen --network mainnet
+```
+
+It writes `~/.agentgate/facilitator/mainnet.env` (owner-only) and prints **only the public
+address**. The secret never reaches the terminal, and therefore never reaches a scrollback, a
+screenshot or a chat transcript. Send XLM to that address; 20 to 30 XLM lasts thousands of
+settlements. It refuses to overwrite an existing file unless `--force`, because silently replacing
+a funded key strands its balance.
+
 ## Run it
 
 ```bash

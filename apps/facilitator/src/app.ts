@@ -153,6 +153,22 @@ export function createFacilitatorApp(deps: FacilitatorAppDeps): FacilitatorApp {
         ),
       };
     }
+    // Account separation, enforced rather than documented: the fee account signs and pays for
+    // other people's transactions and must never be the recipient of one. If it were, this
+    // service would be receiving funds, which is a different product with a different posture.
+    if (String(requirements.payTo) === keypair.publicKey()) {
+      return {
+        ok: false,
+        response: c.json(
+          errorBody(
+            "SPEC_MISMATCH",
+            "payTo is this facilitator's own fee account",
+            "A facilitator's fee account pays fees only and never receives payments. Point payTo at the merchant's wallet.",
+          ),
+          422,
+        ),
+      };
+    }
     // The asset allowlist is the guardrail that keeps our fee balance from being spent on
     // arbitrary tokens by anyone holding a key.
     if (!config.allowedAssets.includes(String(requirements.asset))) {
@@ -231,14 +247,22 @@ export function createFacilitatorApp(deps: FacilitatorAppDeps): FacilitatorApp {
    */
   app.get("/health", async (c) => {
     let balanceStroops: bigint | undefined;
+    // Anything that is not XLM on the fee account means someone sent it money it was never meant
+    // to hold. Reported, not hidden: it is the operator's signal that separation has been broken.
+    const foreignBalances: Array<{ asset: string; balance: string }> = [];
     try {
       const res = await fetchImpl(`${config.horizonUrl}/accounts/${keypair.publicKey()}`, {
         signal: AbortSignal.timeout(8_000),
       });
       if (res.ok) {
-        const account = (await res.json()) as { balances?: Array<{ asset_type: string; balance: string }> };
-        const native = account.balances?.find((b) => b.asset_type === "native");
-        if (native) balanceStroops = toStroops(native.balance);
+        const account = (await res.json()) as {
+          balances?: Array<{ asset_type: string; balance: string; asset_code?: string; asset_issuer?: string }>;
+        };
+        for (const b of account.balances ?? []) {
+          if (b.asset_type === "native") balanceStroops = toStroops(b.balance);
+          else if (toStroops(b.balance) !== 0n)
+            foreignBalances.push({ asset: `${b.asset_code ?? b.asset_type}:${b.asset_issuer ?? ""}`, balance: b.balance });
+        }
       } else if (res.status === 404) {
         balanceStroops = 0n;
       }
@@ -260,6 +284,12 @@ export function createFacilitatorApp(deps: FacilitatorAppDeps): FacilitatorApp {
             funded === false
               ? "Fee account is below the configured minimum. Top it up: settlements will start failing."
               : "This account pays transaction fees only. It never holds buyer or seller funds.",
+          ...(foreignBalances.length > 0
+            ? {
+                warning: "The fee account holds assets other than XLM. It should not: move them out and find out who sent them.",
+                foreignBalances,
+              }
+            : {}),
         },
         allowedAssets: config.allowedAssets.length,
       },
