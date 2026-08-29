@@ -87,6 +87,36 @@ Cuando un agente paga, el facilitador liquida en Stellar y la orden aparece en W
 estado **Procesando**, pagada con `payment_method = agentgate`, `transaction_id = <hash Stellar>`
 y metadatos `_agentgate_*`. La despachas como cualquier otra orden.
 
+## Poner reglas a las ventas agénticas (opcional)
+
+Puedes limitar qué te compran los agentes desde `agentgate.config.json`, en el bloque `policy`.
+Las reglas se evalúan al cotizar y **otra vez** antes de cobrar, porque tu situación pudo cambiar:
+
+```json
+{
+  "policy": {
+    "status": "active",
+    "maxOrderUsdc": "200",
+    "maxPeriodUsdc": "1000",
+    "period": "daily",
+    "maxQuantityPerItem": 5,
+    "excludedItems": ["edicion-limitada"],
+    "allowedShippingCountries": ["CL", "AR"],
+    "approvalThresholdUsdc": "100"
+  }
+}
+```
+
+- `status: "suspended"` corta todas las ventas a agentes sin tocar tu catálogo.
+- `excludedItems` son productos que sigues vendiendo a personas, pero no a agentes.
+- Sobre `approvalThresholdUsdc` la orden queda **pendiente de tu aprobación y no se cobra**.
+- El acumulado del período cuenta lo ya vendido más lo pendiente de aprobar, para que una ráfaga
+  de órdenes sin aprobar no supere tu límite entre todas.
+
+Cada rechazo llega al agente con un código que puede entender (`POLICY_ORDER_LIMIT`,
+`POLICY_PERIOD_LIMIT`, `POLICY_ITEM_EXCLUDED`, `POLICY_SHIPPING_COUNTRY`...) y un mensaje que le
+dice qué hacer.
+
 ## Ver el estado
 
 ```bash

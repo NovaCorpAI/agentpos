@@ -26,6 +26,8 @@ import {
   silentLogger,
   usdcFromMinor,
 } from "@agentgate/core";
+import { OPEN_POLICY, evaluatePolicy, periodStart } from "@agentgate/policy";
+import type { MerchantPolicy, PolicyDecision } from "@agentgate/policy";
 import type { CatalogService } from "./catalog.js";
 import type { SiteStorage } from "./storage.js";
 
@@ -57,6 +59,8 @@ export interface CheckoutOptions {
   asset: string;
   /** Contract id of the checkout asset; settled asset must match it exactly. */
   assetAddress: string;
+  /** Merchant policy over agentic sales (M1). Defaults to no restrictions. */
+  policy?: MerchantPolicy;
   /** Immediate connector retries after settlement before giving up (background retry continues). */
   connectorAttempts?: number;
   logger?: Logger;
@@ -71,11 +75,57 @@ export class CheckoutService {
   private readonly attempts: number;
   private readonly logger: Logger;
   private readonly alert: AlertSink;
+  private readonly policy: MerchantPolicy;
 
   constructor(private readonly opts: CheckoutOptions) {
     this.attempts = opts.connectorAttempts ?? 3;
     this.logger = opts.logger ?? silentLogger;
     this.alert = opts.alert ?? (() => {});
+    this.policy = opts.policy ?? OPEN_POLICY;
+  }
+
+  /**
+   * Runs the merchant policy over a quote (M1). Evaluated at cart time and AGAIN at checkout,
+   * because suspension, catalog exclusions and period volume can change in between.
+   */
+  private runPolicy(
+    quote: Quote,
+    shippingCountry: string | undefined,
+    excludeCartId?: string,
+  ): PolicyDecision {
+    const committed = this.opts.storage.committedSince(
+      periodStart(this.policy.period),
+      new Date(),
+      excludeCartId,
+    );
+    const decision = evaluatePolicy(this.policy, {
+      lines: quote.lines.map((l) => ({
+        itemId: l.itemId,
+        quantity: l.quantity,
+        lineTotalUsdc: l.lineTotalUsdc,
+      })),
+      totalUsdc: quote.totalUsdc,
+      periodSpentUsdc: usdcFromMinor(committed),
+      requiresShipping: quote.requiresShipping,
+      shippingCountry,
+    });
+    this.logger.info("policy.evaluated", {
+      decision: decision.decision,
+      code: decision.decision === "allowed" ? undefined : decision.code,
+      total: quote.totalUsdc,
+      committed,
+      period: this.policy.period,
+    });
+    return decision;
+  }
+
+  /** Denied decisions become typed errors the agent can reason about. */
+  private assertNotDenied(decision: PolicyDecision): void {
+    if (decision.decision !== "denied") return;
+    throw new AgentGateError(decision.code, decision.message, {
+      hint: decision.hint,
+      details: decision.details,
+    });
   }
 
   private async raise(event: Omit<AlertEvent, "at">): Promise<void> {
@@ -162,6 +212,12 @@ export class CheckoutService {
     }
 
     const quote: Quote = { lines: quoteLines, totalUsdc, payTo: payTo as string, requiresShipping };
+
+    // Merchant policy, first pass (M1). A denial stops the quote here: the agent gets a typed
+    // reason instead of a cart it could never pay.
+    const decision = this.runPolicy(quote, shipping?.country);
+    this.assertNotDenied(decision);
+
     const now = new Date();
     const cart: Cart = {
       id: newId("cart"),
@@ -169,6 +225,13 @@ export class CheckoutService {
       quote,
       ...(buyer ? { buyer } : {}),
       ...(shipping ? { shipping } : {}),
+      policy: {
+        decision: decision.decision === "requires_approval" ? "requires_approval" : "allowed",
+        ...(decision.decision !== "allowed"
+          ? { code: decision.code, message: decision.message }
+          : {}),
+        evaluatedAt: new Date().toISOString(),
+      },
       ...(traceId ? { traceId } : {}),
       createdAt: now.toISOString(),
       expiresAt: new Date(now.getTime() + this.opts.cartTtlMinutes * 60_000).toISOString(),
@@ -287,6 +350,17 @@ export class CheckoutService {
           details: { cartId: id, drift },
         },
       );
+    }
+
+    // Merchant policy, second pass (M1): suspension, exclusions and period volume can have
+    // changed since the quote. Nothing is charged when this blocks.
+    const decision = this.runPolicy(cart.quote, cart.shipping?.country, cart.id);
+    this.assertNotDenied(decision);
+    if (decision.decision === "requires_approval") {
+      throw new AgentGateError("POLICY_APPROVAL_REQUIRED", decision.message, {
+        hint: decision.hint,
+        details: { cartId: cart.id, ...decision.details },
+      });
     }
     return cart;
   }

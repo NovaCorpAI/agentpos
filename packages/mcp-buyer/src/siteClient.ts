@@ -29,6 +29,8 @@ export interface SiteCart {
   cartId: string;
   expiresAt: string;
   checkout: string;
+  /** Merchant policy outcome (M1): `requires_approval` carts cannot be paid until a human approves. */
+  policy?: { decision: "allowed" | "requires_approval"; code?: string; message?: string };
   quote: {
     total: string;
     totalMinor: string;

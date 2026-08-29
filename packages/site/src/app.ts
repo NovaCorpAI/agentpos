@@ -101,6 +101,15 @@ const STATUS_BY_CODE: Record<string, number> = {
   CONFIG_INVALID: 400,
   RATE_LIMITED: 429,
   FACILITATOR_UNAVAILABLE: 502,
+  // merchant policy (M1): the merchant forbids this sale, or pauses it for a human.
+  POLICY_SUSPENDED: 403,
+  POLICY_ITEM_EXCLUDED: 403,
+  POLICY_ITEM_QUANTITY: 403,
+  POLICY_ORDER_QUANTITY: 403,
+  POLICY_ORDER_LIMIT: 403,
+  POLICY_PERIOD_LIMIT: 403,
+  POLICY_SHIPPING_COUNTRY: 403,
+  POLICY_APPROVAL_REQUIRED: 403,
 };
 
 function errorResponse(c: Context, err: unknown): Response {
@@ -171,6 +180,7 @@ export function createAgentGateApp(deps: AgentGateDeps): AgentGateSite {
     network: core.caip2,
     asset: core.checkoutAsset,
     assetAddress: assetAddress(core),
+    policy: site.policy,
     logger,
     ...(deps.alert ? { alert: deps.alert } : {}),
   });
@@ -546,6 +556,8 @@ export function cartView(
       },
       checkout: routes.checkout.replace("<cartId>", cart.id),
       protocol: "x402",
+      // Merchant policy outcome (M1): tells the agent up front whether this cart can be paid.
+      policy: cart.policy,
       traceId: cart.traceId,
     }),
   ) as Record<string, unknown>;

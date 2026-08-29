@@ -215,6 +215,38 @@ export class SiteStorage {
     return rows.map((r) => reviveOrder(r.json));
   }
 
+  /**
+   * Volume already committed since `since` (M1 policy accumulator): settled orders plus carts
+   * awaiting merchant approval that have not expired. Counting the pending ones is deliberate,
+   * otherwise a burst of unapproved carts could collectively pass the period limit.
+   */
+  committedSince(since: Date, now: Date = new Date(), excludeCartId?: string): bigint {
+    const iso = since.toISOString();
+    const paid = this.db
+      .prepare("select json from orders where created_at >= ? and status in ('paid','fulfilled')")
+      .all(iso) as Row[];
+    let total = 0n;
+    for (const row of paid)
+      total += BigInt((JSON.parse(row.json) as { quote: { totalUsdc: string } }).quote.totalUsdc);
+    const carts = this.db
+      .prepare(
+        "select json from carts where expires_at > ? and id not in (select cart_id from orders)",
+      )
+      .all(now.toISOString()) as Row[];
+    for (const row of carts) {
+      const cart = JSON.parse(row.json) as {
+        id: string;
+        createdAt: string;
+        policy?: { decision: string };
+        quote: { totalUsdc: string };
+      };
+      if (cart.id === excludeCartId) continue; // never count the cart being evaluated against itself
+      if (cart.policy?.decision === "requires_approval" && cart.createdAt >= iso)
+        total += BigInt(cart.quote.totalUsdc);
+    }
+    return total;
+  }
+
   // payments (idempotency by tx hash, guardrail 6) --------------------------
   recordPayment(orderId: string, payment: PaymentRecord): boolean {
     const result = this.db

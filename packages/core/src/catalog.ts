@@ -82,12 +82,24 @@ export interface Quote {
   requiresShipping: boolean;
 }
 
+/**
+ * Outcome of the merchant policy for this cart (M1). `requires_approval` carts are quoted but
+ * cannot settle until a human approves them (M2); they still count toward the period volume.
+ */
+export interface CartPolicyState {
+  decision: "allowed" | "requires_approval";
+  code?: string;
+  message?: string;
+  evaluatedAt: string;
+}
+
 export interface Cart {
   id: string;
   lines: CartLine[];
   quote: Quote;
   buyer?: BuyerContact;
   shipping?: Address;
+  policy?: CartPolicyState;
   traceId?: string;
   createdAt: string;
   expiresAt: string;

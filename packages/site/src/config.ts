@@ -6,6 +6,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { z } from "zod";
 import { AgentGateError, assertNoSecretsInConfig, configFromEnv } from "@agentgate/core";
+import { OPEN_POLICY, merchantPolicySchema } from "@agentgate/policy";
 import type { CoreConfig } from "@agentgate/core";
 
 export const SITE_CONFIG_FILE = "agentgate.config.json";
@@ -45,6 +46,8 @@ export const siteConfigSchema = z.object({
     })
     .optional(),
   locale: z.enum(["en", "es"]).default("en"),
+  /** Merchant policy over agentic sales (M1). Omitted means: sell everything, no limits. */
+  policy: merchantPolicySchema.default(OPEN_POLICY),
   /** G1: per-minute limits. Agents burst, so allow a small burst on top of the sustained rate. */
   rateLimit: z
     .object({

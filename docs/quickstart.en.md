@@ -87,6 +87,35 @@ When an agent pays, the facilitator settles on Stellar and the order appears in 
 **Processing**, paid with `payment_method = agentgate`, `transaction_id = <stellar tx hash>` and
 `_agentgate_*` metadata. You fulfil it like any other order.
 
+## Set rules for agentic sales (optional)
+
+You can bound what agents may buy from `agentgate.config.json`, in the `policy` block. Rules are
+evaluated when quoting and **again** before charging, because your situation may have changed:
+
+```json
+{
+  "policy": {
+    "status": "active",
+    "maxOrderUsdc": "200",
+    "maxPeriodUsdc": "1000",
+    "period": "daily",
+    "maxQuantityPerItem": 5,
+    "excludedItems": ["limited-edition"],
+    "allowedShippingCountries": ["CL", "AR"],
+    "approvalThresholdUsdc": "100"
+  }
+}
+```
+
+- `status: "suspended"` stops all agentic sales without touching your catalog.
+- `excludedItems` stay on sale for humans, just not for agents.
+- Above `approvalThresholdUsdc` the order waits for **your approval and is not charged**.
+- The period accumulator counts settled orders plus orders awaiting approval, so a burst of
+  unapproved orders cannot collectively pass your limit.
+
+Every rejection reaches the agent with a code it can act on (`POLICY_ORDER_LIMIT`,
+`POLICY_PERIOD_LIMIT`, `POLICY_ITEM_EXCLUDED`, `POLICY_SHIPPING_COUNTRY`...) and an actionable message.
+
 ## Check status
 
 ```bash
