@@ -37,6 +37,9 @@ const gate = await createAgentGate({
 });
 ```
 
+Discovery (served automatically, nothing to configure): `/openapi.json` and `/llms.txt` at the
+site root, which is where the x402 directories and crawlers look. See `docs/ecosystem.md`.
+
 Surfaces: `/.well-known/ucp`, `/agentgate/catalog`, `/agentgate/feed`, `/agentgate/mcp`,
 `POST /agentgate/cart`, `POST /agentgate/checkout?cart=`, `/agentgate/orders/:id`,
 `/agentgate/approvals/:id`, `/agentgate/orders/:id/receipt`, `/agentgate/receipts/:hash`,

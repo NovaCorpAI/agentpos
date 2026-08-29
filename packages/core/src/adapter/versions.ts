@@ -17,21 +17,22 @@ export const PROTOCOL_VERSIONS = {
   ucp: {
     /** Business profile served at /.well-known/ucp (profile.json#/$defs/business_schema). */
     profilePath: "/.well-known/ucp",
-    /** Protocol version (YYYY-MM-DD) as used by the reference scaffold in the UCP repo. */
-    version: "2026-01-01",
-    spec: "https://ucp.dev/2026-01-01/specification/overview",
+    /** Release snapshot we publish against. Real UCP releases are tagged vYYYY-MM-DD. */
+    version: "2026-08-25",
+    spec: "https://ucp.dev/2026-08-25/specification/overview/",
     schemas: {
-      profile: "https://ucp.dev/schemas/profile.json",
-      checkout: "https://ucp.dev/schemas/shopping/checkout.json",
-      catalogSearch: "https://ucp.dev/schemas/shopping/catalog_search.json",
-      catalogLookup: "https://ucp.dev/schemas/shopping/catalog_lookup.json",
-      shoppingRest: "https://ucp.dev/2026-01-01/services/shopping/rest.openapi.json",
+      profile: "https://ucp.dev/2026-08-25/schemas/profile.json",
+      paymentHandler: "https://ucp.dev/2026-08-25/schemas/payment_handler.json",
+      checkout: "https://ucp.dev/2026-08-25/schemas/shopping/checkout.json",
+      catalogSearch: "https://ucp.dev/2026-08-25/schemas/shopping/catalog_search.json",
+      catalogLookup: "https://ucp.dev/2026-08-25/schemas/shopping/catalog_lookup.json",
+      shoppingRest: "https://ucp.dev/2026-08-25/services/shopping/rest.openapi.json",
     },
-    checkedAt: "2026-08-25",
+    checkedAt: "2026-08-29",
     source:
-      "https://github.com/Universal-Commerce-Protocol/ucp (source/schemas, scripts/scaffolds/profile_response.json)",
+      "https://github.com/Universal-Commerce-Protocol/ucp (branch release/2026-08-25, source/schemas). Re-vendor with `pnpm --filter @agentgate/core vendor:schemas`.",
     notes:
-      "v1 publishes a schema-valid business profile with an AgentGate service and the x402 Stellar payment handler. dev.ucp.shopping capabilities are NOT declared until we implement UCP checkout semantics (Build phase).",
+      "Corrected 2026-08-29: the previous pin (2026-01-01) was never a released snapshot and its schema URLs 404ed. Real releases are 2026-01-11, 2026-01-23, 2026-04-08 and 2026-08-25. Our business profile validates unchanged against 2026-08-25. dev.ucp.shopping capabilities are NOT declared until we implement UCP checkout semantics (Build phase).",
   },
   acp: {
     /** Date-based versioning by OpenAI/Stripe. Feed = ProductsResponse from schema.feed.json. */
@@ -39,7 +40,9 @@ export const PROTOCOL_VERSIONS = {
     schemas: {
       feed: "https://github.com/agentic-commerce-protocol/agentic-commerce-protocol/blob/main/spec/2026-04-17/json-schema/schema.feed.json",
     },
-    checkedAt: "2026-08-25",
+    /** Released snapshots upstream, newest last. 2026-04-17 is still the latest. */
+    releases: ["2025-09-29", "2025-12-12", "2026-01-16", "2026-01-30", "2026-04-17"],
+    checkedAt: "2026-08-29",
     source: "https://github.com/agentic-commerce-protocol/agentic-commerce-protocol",
     notes:
       "Product feed only (fiat prices in ISO 4217 minor units, as the schema requires). Checkout + delegated payment are Build-phase slots.",

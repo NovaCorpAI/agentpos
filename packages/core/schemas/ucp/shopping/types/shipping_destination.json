@@ -23,7 +23,10 @@
           "ucp_request": "optional"
         }
       },
-      "required": ["id", "type"]
+      "required": [
+        "id",
+        "type"
+      ]
     }
   ]
 }

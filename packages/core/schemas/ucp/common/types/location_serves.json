@@ -7,7 +7,11 @@
   "minProperties": 1,
   "maxProperties": 1,
   "propertyNames": {
-    "anyOf": [{ "const": "point" }, { "const": "address" }, { "$ref": "reverse_domain_name.json" }]
+    "anyOf": [
+      { "const": "point" },
+      { "const": "address" },
+      { "$ref": "reverse_domain_name.json" }
+    ]
   },
   "properties": {
     "point": {

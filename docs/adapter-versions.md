@@ -8,8 +8,8 @@ Official schemas are vendored under `packages/core/schemas/` and enforced by
 | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | x402        | wire V2, SDK `@x402/core` + `@x402/stellar` 2.23.0, scheme `exact`                                                                                        | 2026-08-25 | github.com/x402-foundation/x402                                                    | End-to-end (checkout + settle), proven on testnet against the real facilitator                                                                                                      |
 | Facilitator | Built on Stellar, `channels.openzeppelin.com/x402[/testnet]`, CAIP-2 `stellar:testnet` / `stellar:pubnet`, API key per network                            | 2026-08-25 | developers.stellar.org/docs/build/agentic-payments/x402/built-on-stellar           | Used as-is, never reimplemented                                                                                                                                                     |
-| UCP         | protocol version `2026-01-01`; business profile at `/.well-known/ucp` validated against `profile.json#/$defs/business_schema` (116 vendored schema files) | 2026-08-25 | github.com/Universal-Commerce-Protocol/ucp (`source/schemas`, `scripts/scaffolds`) | Schema-valid profile with service `com.novacorplabs.agentgate` and handler `org.x402.stellar`; NO `dev.ucp.shopping` capabilities claimed until UCP checkout semantics ship (Build) |
-| ACP         | `2026-04-17`; `/agentgate/feed` = `ProductsResponse` validated against `spec/2026-04-17/json-schema/schema.feed.json`                                     | 2026-08-25 | github.com/agentic-commerce-protocol/agentic-commerce-protocol                     | Feed only, fiat prices in ISO 4217 minor units (schema requirement); checkout + delegated payment are Build slots                                                                   |
+| UCP         | release `2026-08-25`; business profile at `/.well-known/ucp` validated against `profile.json#/$defs/business_schema` (vendored schema tree) | 2026-08-29 | github.com/Universal-Commerce-Protocol/ucp (branch `release/2026-08-25`, `source/schemas`) | Schema-valid profile with service `com.novacorplabs.agentgate` and handler `org.x402.stellar`; NO `dev.ucp.shopping` capabilities claimed until UCP checkout semantics ship (Build) |
+| ACP         | `2026-04-17` (still the latest release); `/agentgate/feed` = `ProductsResponse` validated against `spec/2026-04-17/json-schema/schema.feed.json`          | 2026-08-29 | github.com/agentic-commerce-protocol/agentic-commerce-protocol                     | Feed only, fiat prices in ISO 4217 minor units (schema requirement); checkout + delegated payment are Build slots                                                                   |
 
 Our own identifiers (published at agentgate.novacorplabs.com): service `com.novacorplabs.agentgate`
 (`/schemas/agentgate-service.openapi.json`), payment handler `org.x402.stellar` id `x402-stellar`
@@ -31,6 +31,21 @@ Our own identifiers (published at agentgate.novacorplabs.com): service `com.nova
 - 2026-08-29: el facilitador rechaza toda verificacion en mainnet con
   `unexpected_verify_error` (testnet OK con el mismo codigo). Ver
   `docs/INCIDENT-mainnet-facilitator.md`. Bloquea G2 por causa externa.
+- 2026-08-29 (G3, correccion): **el pin de UCP estaba mal**. `2026-01-01` nunca
+  fue un snapshot publicado y sus URLs de esquema respondian 404. Los releases
+  reales son `2026-01-11`, `2026-01-23`, `2026-04-08` y `2026-08-25`. Se
+  re-vendorizaron los esquemas desde `release/2026-08-25` y nuestro perfil de
+  negocio valida **sin cambios** contra ellos, asi que la correccion es de
+  declaracion, no de forma. ACP sigue en `2026-04-17` (verificado contra el
+  listado de `spec/` del repo: no hay release posterior).
+  Para que esto no vuelva a depender de la memoria de nadie:
+  `pnpm --filter @agentgate/core vendor:schemas` reporta el drift y sale con
+  codigo != 0; con `-- --write` actualiza los archivos vendorizados.
+- 2026-08-29 (G3): cada tienda publica ahora `{origin}/openapi.json` (OpenAPI
+  3.1 con `x-payment-info` en el checkout pagado y `security: []` en todo lo
+  gratis, segun el contrato de descubrimiento de x402scan) y `{origin}/llms.txt`.
+  Directorios del ecosistema investigados y documentados en `docs/ecosystem.md`;
+  hallazgo principal: **ninguno indexa Stellar todavia**.
 
 ## Weekly routine
 

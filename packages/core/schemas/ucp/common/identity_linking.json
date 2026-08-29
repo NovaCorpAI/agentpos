@@ -64,7 +64,9 @@
       "platform_schema": {
         "title": "Identity Linking (Platform)",
         "description": "Platform-level identity linking capability declaration. Platforms advertise support for identity linking; no auth-specific config is required.",
-        "allOf": [{ "$ref": "../capability.json#/$defs/platform_schema" }]
+        "allOf": [
+          { "$ref": "../capability.json#/$defs/platform_schema" }
+        ]
       },
       "business_schema": {
         "title": "Identity Linking (Business)",

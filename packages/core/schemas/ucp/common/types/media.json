@@ -4,7 +4,10 @@
   "title": "Media",
   "description": "Media item (image, video, etc.).",
   "type": "object",
-  "required": ["type", "url"],
+  "required": [
+    "type",
+    "url"
+  ],
   "properties": {
     "type": {
       "type": "string",

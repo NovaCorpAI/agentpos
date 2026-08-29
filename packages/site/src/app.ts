@@ -13,6 +13,7 @@ import {
   assetAddress,
   addressSchema,
   buildAcpFeed,
+  buildStoreOpenApi,
   buildUcpProfile,
   buyerContactSchema,
   cartLineSchema,
@@ -465,6 +466,82 @@ export function createAgentGateApp(deps: AgentGateDeps): AgentGateSite {
       }),
     ),
   );
+
+  // Discovery document (G3). The ecosystem's crawlers look for `{origin}/openapi.json` first and
+  // fall back to the runtime 402, so it is served at the site root as well as under the base path.
+  const openApiDocument = () => {
+    const items = catalog.published();
+    const prices = items
+      .map((i) => i.priceUsdc)
+      .filter((p): p is UsdcMinor => p !== undefined)
+      .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    return buildStoreOpenApi({
+      siteUrl,
+      basePath: base,
+      displayName: site.displayName,
+      network: core.caip2,
+      asset: core.checkoutAsset,
+      assetAddress: assetAddress(core),
+      publishedItems: items.length,
+      receipts: receipts !== undefined && site.receipts.publicOrderReceipts,
+      approvals: approvals !== undefined,
+      ...(site.policies?.contact?.includes("@") ? { contactEmail: site.policies.contact } : {}),
+      ...(prices.length > 0
+        ? {
+            priceRangeUsd: {
+              min: formatUsdc(prices[0] as UsdcMinor),
+              max: formatUsdc(prices[prices.length - 1] as UsdcMinor),
+            },
+          }
+        : {}),
+    });
+  };
+  app.get("/openapi.json", (c) => c.json(openApiDocument()));
+  app.get(`${base}/openapi.json`, (c) => c.json(openApiDocument()));
+
+  // llms.txt: the plain-text convention the x402 directories read. Same facts as the OpenAPI
+  // document, in the form an agent can act on without parsing a schema.
+  app.get("/llms.txt", (c) => {
+    const items = catalog.published();
+    const lines = [
+      `# ${site.displayName}`,
+      "",
+      `> An agent-buyable storefront. Pay with x402 on ${core.caip2}, settled in ${core.checkoutAsset}. No accounts, no API keys. The merchant is the merchant of record.`,
+      "",
+      "## Buy something",
+      "",
+      `1. GET ${siteUrl}${base}/catalog          what is for sale, with prices`,
+      `2. POST ${siteUrl}${base}/cart            {"items":[{"itemId":"...","quantity":1}]} -> a quote`,
+      `3. POST ${siteUrl}${base}/checkout?cart=<cartId>   answers 402; pay and repeat`,
+      `4. GET ${siteUrl}${base}/orders/<orderId>  status, tx hash and the merchant's order id`,
+      "",
+      "The price is per cart, not per call. Physical items need a shipping address and a buyer email at step 2.",
+      "",
+      "## Machine-readable",
+      "",
+      `- OpenAPI: ${siteUrl}/openapi.json`,
+      `- UCP business profile: ${siteUrl}/.well-known/ucp`,
+      `- ACP product feed: ${siteUrl}${base}/feed`,
+      `- MCP endpoint: ${siteUrl}${base}/mcp`,
+      `- Health: ${siteUrl}${base}/health`,
+      ...(receipts && site.receipts.publicOrderReceipts
+        ? [`- Signed receipt per order: ${siteUrl}${base}/orders/<orderId>/receipt`]
+        : []),
+      "",
+      "## Notes",
+      "",
+      `- Items published: ${items.length}`,
+      ...(approvals
+        ? [
+            "- Large orders may answer 202 and wait for a human. Nothing is charged while you wait; poll the approval URL.",
+          ]
+        : []),
+      "- Every refusal carries a machine-readable code and an actionable hint. Read it before retrying.",
+      `- Powered by AgentGate (Apache-2.0), adapter ${ADAPTER_VERSION}.`,
+      "",
+    ];
+    return c.text(`${lines.join("\n")}`);
+  });
 
   app.get(`${base}/health`, async (c) => {
     const facilitator = await facilitatorStatus();

@@ -22,11 +22,16 @@
                   "description": "A 3DS device data collection Action.",
                   "items": {
                     "type": "object",
-                    "required": ["config"],
+                    "required": [
+                      "config"
+                    ],
                     "properties": {
                       "config": {
                         "type": "object",
-                        "required": ["payment_instrument_id", "url"],
+                        "required": [
+                          "payment_instrument_id",
+                          "url"
+                        ],
                         "properties": {
                           "payment_instrument_id": {
                             "type": "string",
@@ -48,11 +53,16 @@
                   "description": "A 3DS challenge Action.",
                   "items": {
                     "type": "object",
-                    "required": ["config"],
+                    "required": [
+                      "config"
+                    ],
                     "properties": {
                       "config": {
                         "type": "object",
-                        "required": ["payment_instrument_id", "url"],
+                        "required": [
+                          "payment_instrument_id",
+                          "url"
+                        ],
                         "properties": {
                           "payment_instrument_id": {
                             "type": "string",

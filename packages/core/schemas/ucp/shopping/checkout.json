@@ -5,7 +5,15 @@
   "title": "Checkout",
   "description": "Base checkout schema. Extensions compose onto this using allOf.",
   "type": "object",
-  "required": ["ucp", "id", "line_items", "status", "currency", "totals", "links"],
+  "required": [
+    "ucp",
+    "id",
+    "line_items",
+    "status",
+    "currency",
+    "totals",
+    "links"
+  ],
   "additionalProperties": true,
   "properties": {
     "ucp": {

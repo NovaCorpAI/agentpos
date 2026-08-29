@@ -4,7 +4,9 @@
   "title": "Option Value",
   "description": "A selectable value for a product option.",
   "type": "object",
-  "required": ["label"],
+  "required": [
+    "label"
+  ],
   "properties": {
     "id": {
       "type": "string",

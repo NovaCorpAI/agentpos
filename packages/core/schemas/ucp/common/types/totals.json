@@ -16,7 +16,10 @@
             "type": "array",
             "items": {
               "type": "object",
-              "required": ["display_text", "amount"],
+              "required": [
+                "display_text",
+                "amount"
+              ],
               "properties": {
                 "display_text": {
                   "type": "string",
@@ -36,19 +39,7 @@
       {
         "if": {
           "properties": {
-            "type": {
-              "not": {
-                "enum": [
-                  "subtotal",
-                  "items_discount",
-                  "discount",
-                  "fulfillment",
-                  "tax",
-                  "fee",
-                  "total"
-                ]
-              }
-            }
+            "type": { "not": { "enum": ["subtotal", "items_discount", "discount", "fulfillment", "tax", "fee", "total"] } }
           },
           "required": ["type"]
         },
