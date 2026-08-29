@@ -6,8 +6,13 @@ This document specifies how a buying agent identifies itself to a merchant, and 
 organization vouches for that agent. It is written so a third party can verify both without
 AgentGate installed: everything below is Ed25519, SHA-256 and JSON.
 
-It is the identity half of the extension draft *Verifiable Agent Commerce Receipts*; the
-settlement half lives in `@agentgate/receipts`.
+It is the identity half of the ecosystem extension draft
+[`agent-commerce-receipts`](../../specs/extensions/agent-commerce-receipts.md); the settlement
+half lives in `@agentgate/receipts`. Where this document and the extension draft differ, the
+extension draft is the one submitted to the working group: it delegates request authentication to
+RFC 9421 (the x402 `http-message-signatures` extension) and keeps only the owner attestation,
+merchant modes and revocation as new normative content. Section 4 below describes the
+pre-standard request signature this implementation ships today.
 
 ## 1. Motivation
 

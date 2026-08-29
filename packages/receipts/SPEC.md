@@ -6,8 +6,11 @@ This document specifies a signed, hash-chained receipt that a merchant issues fo
 sale, and the rules for verifying it. It is written so a third party can verify a receipt with
 nothing but the JSON, SHA-256 and Ed25519: no database access, no API, no vendor.
 
-It is the settlement half of the extension draft *Verifiable Agent Commerce Receipts*; the
-identity half lives in `@agentgate/identity`.
+It is the settlement half of the ecosystem extension draft
+[`agent-commerce-receipts`](../../specs/extensions/agent-commerce-receipts.md); the identity half
+lives in `@agentgate/identity`. The extension draft additionally positions this format against the
+existing x402 `offer-receipt` extension, which covers per-payment signed receipts but not chaining,
+commercial context, or the events where no payment happened.
 
 ## 1. Motivation
 
