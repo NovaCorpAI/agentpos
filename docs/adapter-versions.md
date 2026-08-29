@@ -28,6 +28,10 @@ Our own identifiers (published at agentgate.novacorplabs.com): service `com.nova
   price must be an ISO 4217 currency in minor units (USDC is not ISO 4217), so the feed carries
   the merchant's fiat source price and USDC terms live in the UCP handler config and `/catalog`.
 
+- 2026-08-29: el facilitador rechaza toda verificacion en mainnet con
+  `unexpected_verify_error` (testnet OK con el mismo codigo). Ver
+  `docs/INCIDENT-mainnet-facilitator.md`. Bloquea G2 por causa externa.
+
 ## Weekly routine
 
 1. `curl -H "Authorization: Bearer $KEY" https://channels.openzeppelin.com/x402/testnet/supported`
