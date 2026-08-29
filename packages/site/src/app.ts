@@ -539,6 +539,7 @@ export function createAgentGateApp(deps: AgentGateDeps): AgentGateSite {
       agent = identity.authenticate((name) => c.req.header(name), {
         method: "POST",
         path: pathWithQuery(c.req.url),
+        url: c.req.url,
         body: raw,
       });
     } catch (err) {

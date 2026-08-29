@@ -195,7 +195,9 @@ Dos cosas que conviene saber:
 - **Esto no es KYC.** Sabes qué llave actúa por qué dueño, nada más: sin documentos, sin datos
   personales. Reduce el anonimato, no lo elimina.
 
-El formato es público y verificable sin nuestro SDK: ver `packages/identity/SPEC.md`.
+Los agentes firman con [RFC 9421 HTTP Message Signatures](https://www.rfc-editor.org/rfc/rfc9421.html),
+el estándar que usa el ecosistema x402, así que cualquier cliente compatible funciona sin
+aprender nada propio de AgentGate. El perfil completo está en `packages/identity/SPEC.md`.
 
 ## Guardar prueba de cada venta (activo por defecto)
 

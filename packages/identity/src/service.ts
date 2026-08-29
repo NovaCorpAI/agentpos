@@ -24,6 +24,12 @@ import {
   verifyRequestSignature,
 } from "./request.js";
 import type { SignableRequest } from "./request.js";
+import {
+  RFC9421_WINDOW_SECONDS,
+  SIGNATURE_HEADER,
+  SIGNATURE_INPUT_HEADER,
+  verifyHttpMessageSignature,
+} from "./rfc9421.js";
 import { MemoryAgentStore, MemoryNonceStore, recordFromAttestation } from "./registry.js";
 import type { AgentRecord, AgentStatus, AgentStore, NonceStore } from "./registry.js";
 
@@ -55,6 +61,15 @@ export interface IdentityServiceOptions {
 
 export type HeaderLookup = (name: string) => string | undefined | null;
 
+/**
+ * One request, as the verifier needs to see it. `url` is required to verify RFC 9421 signatures
+ * (its derived components are defined over the target URI); `path` serves the legacy profile.
+ */
+export interface AuthenticatedRequest extends Omit<SignableRequest, "timestamp" | "nonce"> {
+  /** Absolute URL of the request as received. */
+  url?: string;
+}
+
 export class IdentityService {
   readonly mode: IdentityMode;
   readonly agents: AgentStore;
@@ -72,12 +87,66 @@ export class IdentityService {
    * Authenticates one request. Throws a typed error the agent can act on; returns the identity
    * to record on the order otherwise.
    */
-  authenticate(headers: HeaderLookup, request: Omit<SignableRequest, "timestamp" | "nonce">, now: Date = new Date()): AgentIdentity {
+  authenticate(headers: HeaderLookup, request: AuthenticatedRequest, now: Date = new Date()): AgentIdentity {
+    const attestationHeader = headers(AGENT_ATTESTATION_HEADER) ?? undefined;
+
+    // RFC 9421 first: it is what the ecosystem specifies, so an agent that speaks the standard
+    // never has to learn our dialect to be believed here.
+    if (headers(SIGNATURE_INPUT_HEADER) && headers(SIGNATURE_HEADER)) {
+      return this.authenticateRfc9421(headers, request, attestationHeader, now);
+    }
+    return this.authenticateLegacy(headers, request, attestationHeader, now);
+  }
+
+  /** RFC 9421 HTTP Message Signatures (the x402 `http-message-signatures` extension). */
+  private authenticateRfc9421(
+    headers: HeaderLookup,
+    request: AuthenticatedRequest,
+    attestationHeader: string | undefined,
+    now: Date,
+  ): AgentIdentity {
+    if (!request.url) {
+      throw new AgentGateError("AGENT_SIGNATURE_INVALID", "This endpoint cannot verify RFC 9421 signatures", {
+        hint: `Send the ${AGENT_ID_HEADER} header set instead, or report this: the server did not pass the request URL to the verifier.`,
+      });
+    }
+    const result = verifyHttpMessageSignature(
+      { method: request.method, url: request.url, body: request.body, headers },
+      { now, windowSeconds: RFC9421_WINDOW_SECONDS },
+    );
+    if (!result.ok) {
+      const clockSkew = result.reason?.includes("away from server time") || result.reason === "Signature has expired";
+      throw new AgentGateError(
+        clockSkew ? "AGENT_TIMESTAMP_OUT_OF_WINDOW" : "AGENT_SIGNATURE_INVALID",
+        result.reason ?? "The RFC 9421 signature on this request is not acceptable",
+        {
+          hint: clockSkew
+            ? `Signatures are valid for ${RFC9421_WINDOW_SECONDS}s; check your clock and re-sign.`
+            : 'Sign at least "@method" and "@path" (plus "content-digest" when there is a body) with an ed25519 key, and set keyid to its Stellar public key.',
+          details: { profile: "rfc9421", ...(result.label ? { label: result.label } : {}) },
+        },
+      );
+    }
+    const agentKey = result.keyid as string;
+    if (!this.nonces.useOnce(result.replayKey as string, new Date(now.getTime() + RFC9421_WINDOW_SECONDS * 1000))) {
+      throw new AgentGateError("AGENT_NONCE_REUSED", "This signature was already used", {
+        hint: "Use a fresh `nonce` parameter for every request; replays are refused.",
+      });
+    }
+    return this.identityFor(agentKey, attestationHeader, now);
+  }
+
+  /** The pre-standard header set this implementation shipped first; kept for existing clients. */
+  private authenticateLegacy(
+    headers: HeaderLookup,
+    request: AuthenticatedRequest,
+    attestationHeader: string | undefined,
+    now: Date,
+  ): AgentIdentity {
     const agentKey = headers(AGENT_ID_HEADER) ?? undefined;
     const signature = headers(AGENT_SIGNATURE_HEADER) ?? undefined;
     const timestamp = headers(AGENT_TIMESTAMP_HEADER) ?? undefined;
     const nonce = headers(AGENT_NONCE_HEADER) ?? undefined;
-    const attestationHeader = headers(AGENT_ATTESTATION_HEADER) ?? undefined;
 
     if (!agentKey && !signature) {
       if (this.mode === "verified-only") {
@@ -114,6 +183,14 @@ export class IdentityService {
       });
     }
 
+    return this.identityFor(agentKey, attestationHeader, now);
+  }
+
+  /**
+   * Everything after "the signature is good, whatever profile it used": revocation, attestation,
+   * and what the store records. Shared so the two profiles cannot drift apart in what they trust.
+   */
+  private identityFor(agentKey: string, attestationHeader: string | undefined, now: Date): AgentIdentity {
     const record = this.agents.get(agentKey);
     if (record?.status === "revoked") {
       throw new AgentGateError("AGENT_REVOKED", "This agent key was revoked", {

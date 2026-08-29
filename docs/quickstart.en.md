@@ -193,7 +193,9 @@ Two things worth knowing:
 - **It is not KYC.** You learn which key acts for which owner, nothing more: no documents, no
   personal data. It reduces anonymity; it does not eliminate it.
 
-The wire format is public and verifiable without our SDK: see `packages/identity/SPEC.md`.
+Agents sign with [RFC 9421 HTTP Message Signatures](https://www.rfc-editor.org/rfc/rfc9421.html),
+the standard the x402 ecosystem uses, so any compliant client works without learning anything
+AgentGate-specific. The full profile is in `packages/identity/SPEC.md`.
 
 ## Keep proof of every sale (on by default)
 

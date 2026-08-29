@@ -6,7 +6,8 @@ A stablecoin transfer proves that funds moved. It does not say which agent asked
 authority, or whether that authority was withdrawn yesterday. This package adds that, with two
 signed objects and no new identity provider:
 
-- a **request signature** (Ed25519) that binds method, path, body, timestamp and a nonce, so a
+- a **request signature** ([RFC 9421](https://www.rfc-editor.org/rfc/rfc9421.html), the form the
+  x402 `http-message-signatures` extension specifies) that binds method, path and body, so a
   captured signature authorizes exactly one request, once;
 - an **owner attestation**: a signed statement that a key acts on someone's behalf.
 
@@ -49,19 +50,26 @@ revocation takes effect on the agent's next request rather than on a cache expir
 ## Agent side
 
 ```ts
-import { signRequest, signAttestation, encodeAttestation } from "@agentgate/identity";
+import { signHttpMessage, signAttestation, encodeAttestation } from "@agentgate/identity";
 
+const url = "https://shop.example/agentgate/cart";
 const body = JSON.stringify({ items: [{ itemId: "mug", quantity: 1 }] });
-const res = await fetch("https://shop.example/agentgate/cart", {
+const res = await fetch(url, {
   method: "POST",
   headers: {
     "content-type": "application/json",
-    ...signRequest(agentSecret, { method: "POST", path: "/agentgate/cart", body }),
+    // Signature-Input, Signature and Content-Digest, per RFC 9421 + RFC 9530.
+    ...signHttpMessage(agentSecret, { method: "POST", url, body }),
     "x-agent-attestation": encodeAttestation(attestation),
   },
   body,
 });
 ```
+
+Any RFC 9421 client works; there is nothing AgentGate-specific to implement. The profile the
+store accepts: `alg` ed25519, `keyid` as a Stellar public key (`G...`), `@method` and `@path`
+covered, `content-digest` covered when there is a body, `created` within 60 seconds, and a
+`nonce`. `signRequest` still exists for clients on the pre-standard header set.
 
 The owner signs the attestation once, offline, with a key that never has to touch the agent:
 

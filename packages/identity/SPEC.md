@@ -55,9 +55,44 @@ spending wallets.
 
 ## 4. Request signature
 
-The agent signs each request over its canonical form.
+Two profiles are accepted. **RFC 9421 is the one to implement**; the second exists because it
+shipped first and clients already use it.
 
-### 4.1 Canonical payload
+### 4.0 RFC 9421 profile (preferred)
+
+The agent signs the request with [RFC 9421 HTTP Message Signatures], the form the x402
+`http-message-signatures` extension specifies. Verifiers implementing this document MUST accept
+it, with this profile:
+
+| Constraint | Value |
+| --- | --- |
+| `alg` | `ed25519` (may be omitted; no other algorithm is accepted) |
+| `keyid` | the agent's Ed25519 public key in Stellar StrKey form (`G...`) |
+| Covered components | MUST include `@method` and `@path` (or `@target-uri`) |
+| Body | when present, `content-digest` (RFC 9530, SHA-256) MUST be covered, and MUST match the body as received |
+| `created` | REQUIRED, within 60 seconds of server time; `expires` honoured when present |
+| `nonce` | SHOULD be present. Without it, two byte-identical requests inside the window are indistinguishable from a replay, and the second is refused |
+
+Derived components supported: `@method`, `@path`, `@query`, `@authority`, `@target-uri`.
+Component parameters (for example `@query-param;name=...`) are refused rather than ignored: a
+verifier that silently drops part of what was signed verifies something other than what the agent
+signed.
+
+Example:
+
+```
+Content-Digest: sha-256=:X48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=:
+Signature-Input: sig1=("@method" "@path" "@query" "content-digest");created=1756425600;keyid="GAGENT…";alg="ed25519";nonce="k4Jd91"
+Signature: sig1=:base64…:
+```
+
+The nonce (or, absent one, the signature itself) is spent once, after the signature verifies.
+
+[RFC 9421 HTTP Message Signatures]: https://www.rfc-editor.org/rfc/rfc9421.html
+
+### 4.1 Canonical payload (pre-standard profile)
+
+Kept for clients already signing this way. New implementations SHOULD use 4.0.
 
 ```
 AGENTGATE-REQUEST-V1\n
@@ -71,7 +106,7 @@ AGENTGATE-REQUEST-V1\n
 Fields are joined with `\n` (U+000A). The body is hashed rather than included so that signing
 cost does not grow with payload size.
 
-### 4.2 Headers
+### 4.2 Headers (pre-standard profile)
 
 | Header | Value |
 | --- | --- |
@@ -81,7 +116,7 @@ cost does not grow with payload size.
 | `X-Agent-Signature` | Base64 Ed25519 signature over the canonical payload |
 | `X-Agent-Attestation` | Optional; base64url of the signed attestation (section 5) |
 
-### 4.3 Verification
+### 4.3 Verification (pre-standard profile)
 
 A verifier MUST, in this order:
 
@@ -97,7 +132,12 @@ Step 4 comes last deliberately: spending the nonce before verifying the signatur
 unauthenticated caller burn nonces an honest agent intends to use.
 
 Signing the method, path and body means a captured signature authorizes exactly one request. The
-nonce means it authorizes it once.
+nonce means it authorizes it once. Both profiles converge on this property; they differ only in
+how the bytes are laid out.
+
+A request carrying an RFC 9421 signature is verified under 4.0. Only a request without one falls
+through to this profile. A request with neither is anonymous, and what that means is the
+merchant's mode (section 6).
 
 ## 5. Owner attestation
 
@@ -207,4 +247,5 @@ Machine-readable, so an agent can act rather than guess:
 ## Reference implementation
 
 `@agentgate/identity` (Apache-2.0), running in production sidecars.
-Conformance vectors: `src/identity.test.ts`.
+Conformance vectors: `src/identity.test.ts` and `src/rfc9421.test.ts`, the latter including
+RFC 9421 Appendix B.2.6 verbatim (signature base and the RFC's own Ed25519 signature).

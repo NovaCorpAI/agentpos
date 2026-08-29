@@ -403,13 +403,22 @@ Built on Stellar facilitator.
 `@agentgate/receipts` includes a conformance test that verifies a receipt against a real Stellar
 testnet payment on public Horizon.
 
-### Known divergence
+### Conformance status
 
-The reference implementation currently authenticates agent requests with its own canonical form
-(`AGENTGATE-REQUEST-V1` over method, path, body hash, timestamp and nonce) rather than RFC 9421.
-This predates the alignment described in § Relationship to existing extensions. The normative
-requirement in this document is RFC 9421; accepting RFC 9421 signatures alongside the existing
-form is tracked as implementation work, not as a change to this specification.
+The reference implementation verifies RFC 9421 signatures under the profile in
+§ Owner attestation: Ed25519 only, `keyid` as a Stellar public key, `@method` and `@path` covered,
+`content-digest` (RFC 9530, SHA-256) covered and matching whenever there is a body, `created`
+inside a 60-second window, and single-use nonces. Component parameters and other algorithms are
+refused with a reason rather than ignored.
+
+`packages/identity/src/rfc9421.test.ts` includes RFC 9421 Appendix B.2.6 verbatim: the published
+signature base is reproduced byte for byte, and the RFC's own Ed25519 signature verifies against
+it.
+
+The implementation also still accepts a pre-standard header set it shipped before this alignment
+(`AGENTGATE-REQUEST-V1` over method, path, body hash, timestamp and nonce). That profile is
+documented in `packages/identity/SPEC.md` § 4.1 for clients already using it. It is **not** part
+of this extension and is not proposed for standardization.
 
 ---
 

@@ -12,6 +12,7 @@ import {
   ATTESTATION_VERSION,
   encodeAttestation,
   signAttestation,
+  signHttpMessage,
   signRequest,
 } from "@agentgate/identity";
 import type { SignedAttestation } from "@agentgate/identity";
@@ -229,5 +230,81 @@ describe("agent identity at the HTTP surface (M3)", () => {
     expect(body.error.code).toBe("AGENT_REVOKED");
     expect(body.error.hint).toBe("owner reported the key as lost");
     expect(gate.storage.getOrderByCart(cartId)).toBeUndefined();
+  });
+});
+
+describe("RFC 9421 signatures at the HTTP surface", () => {
+  /** What an agent following the x402 `http-message-signatures` extension sends. */
+  function rfc9421CartRequest(
+    agentSecret: string,
+    options: { attestation?: SignedAttestation } = {},
+  ): Request {
+    const url = "https://shop.test/agentgate/cart";
+    const headers: Record<string, string> = {
+      "content-type": "application/json",
+      ...signHttpMessage(agentSecret, { method: "POST", url, body: CART_BODY }),
+    };
+    if (options.attestation)
+      headers[AGENT_ATTESTATION_HEADER] = encodeAttestation(options.attestation);
+    return new Request(url, { method: "POST", headers, body: CART_BODY });
+  }
+
+  it("accepts a standards-compliant agent without our own headers", async () => {
+    const gate = makeSite({ mode: "identified" });
+    const agent = Keypair.random();
+    const res = await gate.fetch(rfc9421CartRequest(agent.secret()));
+    expect(res.status).toBe(201);
+    const cart = (await res.json()) as { agent: { authenticated: boolean; agentKey: string } };
+    expect(cart.agent.authenticated).toBe(true);
+    expect(cart.agent.agentKey).toBe(agent.publicKey());
+  });
+
+  it("refuses a replay, and a body swapped after signing", async () => {
+    const gate = makeSite({ mode: "identified" });
+    const agent = Keypair.random();
+    const request = rfc9421CartRequest(agent.secret());
+    expect((await gate.fetch(request.clone())).status).toBe(201);
+    const replay = await gate.fetch(request);
+    expect(replay.status).toBe(401);
+    expect(((await replay.json()) as { error: { code: string } }).error.code).toBe(
+      "AGENT_NONCE_REUSED",
+    );
+
+    const signed = rfc9421CartRequest(agent.secret());
+    const tampered = new Request(signed.url, {
+      method: "POST",
+      headers: signed.headers,
+      body: JSON.stringify({ items: [{ itemId: "ebook", quantity: 9 }] }),
+    });
+    const res = await gate.fetch(tampered);
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as { error: { code: string; details: { profile: string } } };
+    expect(body.error.code).toBe("AGENT_SIGNATURE_INVALID");
+    expect(body.error.details.profile).toBe("rfc9421");
+  });
+
+  it("carries an owner attestation through to verified-only mode", async () => {
+    const gate = makeSite({ mode: "verified-only" });
+    const agent = Keypair.random();
+    const owner = Keypair.random();
+    const res = await gate.fetch(
+      rfc9421CartRequest(agent.secret(), { attestation: attestationFor(agent, owner) }),
+    );
+    expect(res.status).toBe(201);
+    const cart = (await res.json()) as { cartId: string; agent: { attested: boolean } };
+    expect(cart.agent.attested).toBe(true);
+    expect((await pay(gate, cart.cartId)).status).toBe(200);
+  });
+
+  it("honours a revocation regardless of which profile signed the request", async () => {
+    const gate = makeSite({ mode: "verified-only" });
+    const agent = Keypair.random();
+    const owner = Keypair.random();
+    await gate.fetch(rfc9421CartRequest(agent.secret(), { attestation: attestationFor(agent, owner) }));
+    gate.identity.revoke(agent.publicKey(), "key rotated");
+
+    const res = await gate.fetch(rfc9421CartRequest(agent.secret()));
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("AGENT_REVOKED");
   });
 });

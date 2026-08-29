@@ -25,5 +25,23 @@ export {
 export type { SignableRequest, SignedRequestHeaders } from "./request.js";
 export { AGENT_STATUSES, MemoryAgentStore, MemoryNonceStore, recordFromAttestation } from "./registry.js";
 export type { AgentRecord, AgentStatus, AgentStore, NonceStore } from "./registry.js";
+export {
+  CONTENT_DIGEST_HEADER,
+  RFC9421_WINDOW_SECONDS,
+  SIGNATURE_HEADER,
+  SIGNATURE_INPUT_HEADER,
+  contentDigest,
+  parseSfDictionary,
+  signHttpMessage,
+  signatureBase,
+  verifyHttpMessageSignature,
+} from "./rfc9421.js";
+export type { HeaderReader, Rfc9421Result, Rfc9421SignOptions, SignedMessage } from "./rfc9421.js";
 export { ANONYMOUS, IDENTITY_MODES, IdentityService } from "./service.js";
-export type { AgentIdentity, HeaderLookup, IdentityMode, IdentityServiceOptions } from "./service.js";
+export type {
+  AgentIdentity,
+  AuthenticatedRequest,
+  HeaderLookup,
+  IdentityMode,
+  IdentityServiceOptions,
+} from "./service.js";
