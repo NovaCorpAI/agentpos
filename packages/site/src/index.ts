@@ -11,6 +11,8 @@ import { GenericConnector, WooCommerceConnector } from "@agentgate/connectors";
 import type { GenericConnectorHooks } from "@agentgate/connectors";
 import type { CoreConfig, FacilitatorClient, Logger, OrderConnector } from "@agentgate/core";
 import { AgentGateError, createLogger } from "@agentgate/core";
+import { ApprovalService, TwilioWhatsAppChannel, WebhookChannel } from "@agentgate/approvals";
+import type { NotificationChannel } from "@agentgate/approvals";
 import { createAgentGateApp } from "./app.js";
 import type { AgentGateSite } from "./app.js";
 import type { AlertEvent, AlertSink } from "./checkout.js";
@@ -34,6 +36,7 @@ export { createAgentGateApp, cartView, orderView } from "./app.js";
 export type { AgentGateDeps, AgentGateSite } from "./app.js";
 export { buildMcpServer, createMcpHandler } from "./mcp.js";
 export { TokenBucketLimiter } from "./ratelimit.js";
+export type { GateForPaymentResult } from "./checkout.js";
 export { generateAndStoreKeypair, loadKeypair, keysDir } from "./keys.js";
 
 export interface CreateAgentGateOptions {
@@ -49,6 +52,10 @@ export interface CreateAgentGateOptions {
   facilitator?: FacilitatorClient;
   logger?: Logger;
   alert?: AlertSink;
+  /** Human approval queue (M2); built from config when omitted. */
+  approvals?: ApprovalService;
+  /** Extra notification channels (e.g. EmailChannel with the merchant's own transport). */
+  approvalChannels?: NotificationChannel[];
   /** Retry loop interval for paid orders without a platform order (default 30s). */
   retryIntervalMs?: number;
 }
@@ -84,6 +91,34 @@ export function buildConnector(
   return new GenericConnector({
     createOrder: async (input) => ({ externalOrderId: `local:${input.orderId}` }),
   });
+}
+
+/**
+ * Notification channels for the approval queue (M2), built from config plus environment
+ * secrets. Email is intentionally absent here: it needs a transport the merchant owns, so it is
+ * wired programmatically via `EmailChannel` (see the package README).
+ */
+export function buildApprovalChannels(
+  site: SiteConfig,
+  secrets: SiteSecrets,
+): NotificationChannel[] {
+  const channels: NotificationChannel[] = [];
+  if (site.approvals.webhookUrl) {
+    channels.push(
+      new WebhookChannel({ url: site.approvals.webhookUrl, secret: secrets.approvalWebhookSecret }),
+    );
+  }
+  if (site.approvals.whatsapp && secrets.twilioAccountSid && secrets.twilioAuthToken) {
+    channels.push(
+      new TwilioWhatsAppChannel({
+        accountSid: secrets.twilioAccountSid,
+        authToken: secrets.twilioAuthToken,
+        from: site.approvals.whatsapp.from,
+        to: site.approvals.whatsapp.to,
+      }),
+    );
+  }
+  return channels;
 }
 
 /** Alert sink: structured log line plus an optional JSON webhook (G1 operations). */
@@ -133,6 +168,21 @@ export async function createAgentGate(options: CreateAgentGateOptions = {}): Pro
     options.storage ??
     new SiteStorage(`${options.cwd ?? process.cwd()}/${site.dataDir}/agentgate.sqlite`);
   const alert = options.alert ?? buildAlertSink(logger, secrets.alertWebhookUrl);
+  const siteUrl = site.siteUrl.replace(/\/+$/, "");
+  const approvals =
+    options.approvals ??
+    (site.approvals.enabled
+      ? new ApprovalService({
+          store: storage.approvalStore(),
+          ttlMinutes: site.approvals.ttlMinutes,
+          channels: options.approvalChannels ?? buildApprovalChannels(site, secrets),
+          links: (r) => ({
+            poll: `${siteUrl}${site.basePath}/approvals/${r.id}`,
+            resolve: `${siteUrl}${site.basePath}/approvals/${r.id}/resolve`,
+          }),
+          logger,
+        })
+      : undefined);
   const built = createAgentGateApp({
     site,
     core,
@@ -140,6 +190,8 @@ export async function createAgentGate(options: CreateAgentGateOptions = {}): Pro
     storage,
     logger,
     alert,
+    ...(approvals ? { approvals } : {}),
+    approvalSecret: secrets.approvalSecret,
     ...(options.facilitator ? { facilitator: options.facilitator } : {}),
   });
   const retryPending = async (): Promise<number> => {
@@ -161,6 +213,14 @@ export async function createAgentGate(options: CreateAgentGateOptions = {}): Pro
                 error: err instanceof Error ? err.message : String(err),
               }),
             );
+            // Silence never approves: expire overdue requests even with no traffic (M2).
+            try {
+              approvals?.expirePending();
+            } catch (err) {
+              logger.error("approval.sweep_failed", {
+                error: err instanceof Error ? err.message : String(err),
+              });
+            }
           }, options.retryIntervalMs ?? 30_000);
           timer.unref();
           logger.info("sidecar.started", {

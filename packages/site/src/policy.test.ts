@@ -95,7 +95,11 @@ const shipping = {
 };
 const buyer = { email: "ada@example.com" };
 
-function build(policy: MerchantPolicyInput, storage = new SiteStorage(":memory:")) {
+function build(
+  policy: MerchantPolicyInput,
+  storage = new SiteStorage(":memory:"),
+  approvalsConfig?: { enabled: boolean; ttlMinutes: number },
+) {
   for (const item of [mug, ebook]) storage.upsertItem(item);
   const created: PaidOrderInput[] = [];
   const connector: OrderConnector & { created: PaidOrderInput[] } = {
@@ -115,6 +119,7 @@ function build(policy: MerchantPolicyInput, storage = new SiteStorage(":memory:"
       payTo,
       platform: "generic",
       policy,
+      ...(approvalsConfig ? { approvals: approvalsConfig } : {}),
     }),
     core,
     connector,
@@ -171,25 +176,33 @@ describe("M1 policy at quote time", () => {
 });
 
 describe("M1 approval threshold", () => {
-  it("quotes the cart but never settles it: the agent is not charged", async () => {
+  it("parks the order for a human instead of charging (approvals enabled, the default)", async () => {
     const t = build({ approvalThresholdUsdc: "5" });
     const cart = await t.read(await t.cart("mug")); // 10 > 5
-    expect(cart.cartId).toBeTruthy();
     expect(cart.policy).toMatchObject({
       decision: "requires_approval",
       code: "POLICY_APPROVAL_REQUIRED",
     });
 
     const res = await t.req(`/agentgate/checkout?cart=${cart.cartId}`, { method: "POST" });
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(202); // accepted, waiting on the merchant
     const body = await t.read(res);
-    expect(body.error.code).toBe("POLICY_APPROVAL_REQUIRED");
-    expect(body.error.hint).toMatch(/Nothing was charged/);
+    expect(body.status).toBe("pending_approval");
+    expect(body.hint).toMatch(/Nothing was charged/);
 
     // no 402 was ever issued, no settlement, no order in the merchant platform
     expect(t.facilitator.settles).toBe(0);
     expect(t.connector.created).toHaveLength(0);
     expect(t.storage.listOrders()).toHaveLength(0);
+  });
+
+  it("refuses outright when the merchant turned the approval queue off", async () => {
+    const t = build({ approvalThresholdUsdc: "5" }, undefined, { enabled: false, ttlMinutes: 30 });
+    const cart = await t.read(await t.cart("mug"));
+    const res = await t.req(`/agentgate/checkout?cart=${cart.cartId}`, { method: "POST" });
+    expect(res.status).toBe(403);
+    expect((await t.read(res)).error.code).toBe("POLICY_APPROVAL_REQUIRED");
+    expect(t.facilitator.settles).toBe(0);
   });
 
   it("lets an order at or below the threshold settle normally", async () => {

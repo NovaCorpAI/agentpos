@@ -117,6 +117,50 @@ Cada rechazo llega al agente con un código que puede entender (`POLICY_ORDER_LI
 `POLICY_PERIOD_LIMIT`, `POLICY_ITEM_EXCLUDED`, `POLICY_SHIPPING_COUNTRY`...) y un mensaje que le
 dice qué hacer.
 
+## Aprobar órdenes grandes a mano (opcional)
+
+Cuando una orden supera `approvalThresholdUsdc`, en vez de rechazarla el sidecar la **deja en
+espera** y te avisa. El agente recibe un `202` con una URL para consultar, y **no se le cobra nada**
+mientras decides.
+
+```json
+{
+  "approvals": {
+    "enabled": true,
+    "ttlMinutes": 30,
+    "webhookUrl": "https://tu-sistema.cl/hooks/agentgate",
+    "whatsapp": { "from": "whatsapp:+14155238886", "to": "whatsapp:+56912345678" }
+  }
+}
+```
+
+En `.env`:
+
+```
+AGENTGATE_APPROVAL_SECRET=<clave larga y aleatoria>
+AGENTGATE_APPROVAL_WEBHOOK_SECRET=<clave del webhook>
+AGENTGATE_TWILIO_ACCOUNT_SID=AC...
+AGENTGATE_TWILIO_AUTH_TOKEN=...
+```
+
+Decidir desde la terminal:
+
+```bash
+npx @agentgate/site approvals                       # lista lo que espera tu decisión
+npx @agentgate/site approvals approve <id>
+npx @agentgate/site approvals reject <id> -r "sin stock"
+```
+
+Tres garantías que conviene que sepas:
+
+- **El silencio rechaza, nunca aprueba.** Si no decides antes del TTL, la orden se rechaza sola y
+  la cotización se libera.
+- **Apruebas exactamente lo que viste.** Ítems, cantidades, montos, destino y datos de envío quedan
+  firmados en una foto inmutable. Si algo cambia después, la aprobación se invalida y el agente
+  debe recotizar.
+- **Nadie puede aprobar por ti.** Las resoluciones por HTTP van firmadas con tu clave secreta;
+  sin firma válida, la respuesta es 401. Aprobar dos veces no cambia la primera decisión.
+
 ## Ver el estado
 
 ```bash

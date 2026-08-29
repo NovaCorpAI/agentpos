@@ -23,6 +23,7 @@ import {
   jsonStringify,
   usdcFromMinor,
 } from "@agentgate/core";
+import type { ApprovalRequest, ApprovalStatus, ApprovalStore } from "@agentgate/approvals";
 
 type Row = { json: string };
 
@@ -65,6 +66,8 @@ export class SiteStorage {
       create table if not exists carts (id text primary key, json text not null, expires_at text not null);
       create table if not exists orders (id text primary key, cart_id text not null unique, status text not null, json text not null, created_at text not null, updated_at text not null);
       create table if not exists payments (tx_hash text primary key, order_id text not null, json text not null);
+      create table if not exists approvals (id text primary key, cart_id text not null, status text not null, json text not null, created_at text not null, expires_at text not null);
+      create index if not exists approvals_cart_idx on approvals(cart_id);
       create table if not exists meta (key text primary key, value text not null);
     `);
   }
@@ -264,6 +267,51 @@ export class SiteStorage {
     return {
       orderId: row.order_id,
       payment: { ...raw, amountMinor: usdcFromMinor(String(raw.amountMinor)) } as PaymentRecord,
+    };
+  }
+
+  // approvals (M2) -----------------------------------------------------------
+  /** ApprovalStore backed by this database, for @agentgate/approvals. */
+  approvalStore(): ApprovalStore {
+    const db = this.db;
+    return {
+      save(request: ApprovalRequest): void {
+        db.prepare(
+          "insert into approvals (id, cart_id, status, json, created_at, expires_at) values (?, ?, ?, ?, ?, ?) on conflict(id) do update set status = excluded.status, json = excluded.json",
+        ).run(
+          request.id,
+          request.cartId,
+          request.status,
+          JSON.stringify(request),
+          request.createdAt,
+          request.expiresAt,
+        );
+      },
+      get(id: string): ApprovalRequest | undefined {
+        const row = db.prepare("select json from approvals where id = ?").get(id) as
+          Row | undefined;
+        return row ? (JSON.parse(row.json) as ApprovalRequest) : undefined;
+      },
+      getByCart(cartId: string): ApprovalRequest | undefined {
+        const row = db
+          .prepare("select json from approvals where cart_id = ? order by created_at desc limit 1")
+          .get(cartId) as Row | undefined;
+        return row ? (JSON.parse(row.json) as ApprovalRequest) : undefined;
+      },
+      list(options: { status?: ApprovalStatus; limit?: number } = {}): ApprovalRequest[] {
+        const rows = (
+          options.status
+            ? db
+                .prepare(
+                  "select json from approvals where status = ? order by created_at desc limit ?",
+                )
+                .all(options.status, options.limit ?? 100)
+            : db
+                .prepare("select json from approvals order by created_at desc limit ?")
+                .all(options.limit ?? 100)
+        ) as Row[];
+        return rows.map((r) => JSON.parse(r.json) as ApprovalRequest);
+      },
     };
   }
 

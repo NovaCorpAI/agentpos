@@ -30,6 +30,7 @@
   },
   "dependencies": {
     "@agentgate/connectors": "workspace:*",
+    "@agentgate/approvals": "workspace:*",
     "@agentgate/core": "workspace:*",
     "@agentgate/policy": "workspace:*",
     "@agentgate/scanner": "workspace:*",

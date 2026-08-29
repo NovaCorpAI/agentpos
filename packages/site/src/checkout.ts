@@ -28,6 +28,7 @@ import {
 } from "@agentgate/core";
 import { OPEN_POLICY, evaluatePolicy, periodStart } from "@agentgate/policy";
 import type { MerchantPolicy, PolicyDecision } from "@agentgate/policy";
+import type { ApprovalRequest, ApprovalService, ApprovalSnapshot } from "@agentgate/approvals";
 import type { CatalogService } from "./catalog.js";
 import type { SiteStorage } from "./storage.js";
 
@@ -40,6 +41,11 @@ export interface AlertEvent {
 }
 
 export type AlertSink = (event: AlertEvent) => void | Promise<void>;
+
+/** Outcome of the payment gate: either the agent may pay now, or a human owes a decision. */
+export type GateForPaymentResult =
+  | { status: "ready"; cart: Cart; approval?: ApprovalRequest }
+  | { status: "pending_approval"; cart: Cart; approval: ApprovalRequest };
 
 /** Terms the facilitator actually settled, as seen by the resource server. */
 export interface SettledTerms {
@@ -61,6 +67,8 @@ export interface CheckoutOptions {
   assetAddress: string;
   /** Merchant policy over agentic sales (M1). Defaults to no restrictions. */
   policy?: MerchantPolicy;
+  /** Human approval queue (M2). Without it, flagged orders are refused instead of parked. */
+  approvals?: ApprovalService;
   /** Immediate connector retries after settlement before giving up (background retry continues). */
   connectorAttempts?: number;
   logger?: Logger;
@@ -76,12 +84,19 @@ export class CheckoutService {
   private readonly logger: Logger;
   private readonly alert: AlertSink;
   private readonly policy: MerchantPolicy;
+  private approvals: ApprovalService | undefined;
 
   constructor(private readonly opts: CheckoutOptions) {
     this.attempts = opts.connectorAttempts ?? 3;
     this.logger = opts.logger ?? silentLogger;
     this.alert = opts.alert ?? (() => {});
     this.policy = opts.policy ?? OPEN_POLICY;
+    this.approvals = opts.approvals;
+  }
+
+  /** Wires the approval queue after construction (the app builds it from the same storage). */
+  setApprovals(approvals: ApprovalService | undefined): void {
+    this.approvals = approvals;
   }
 
   /**
@@ -302,9 +317,11 @@ export class CheckoutService {
    * live availability; any drift expires the cart and asks the agent to re-quote. Never settles
    * against stale terms.
    */
-  async revalidateCart(id: string): Promise<Cart> {
+  private async revalidate(id: string): Promise<{ cart: Cart; decision: PolicyDecision }> {
     const cart = this.getCart(id);
-    if (this.opts.storage.getOrderByCart(id)?.payment) return cart; // already paid: nothing to revalidate
+    // Already paid: nothing to revalidate, and no policy gate to re-apply.
+    if (this.opts.storage.getOrderByCart(id)?.payment)
+      return { cart, decision: { decision: "allowed" } };
     const drift: Array<Record<string, unknown>> = [];
     for (const line of cart.quote.lines) {
       let current: UsdcMinor | undefined;
@@ -356,6 +373,16 @@ export class CheckoutService {
     // changed since the quote. Nothing is charged when this blocks.
     const decision = this.runPolicy(cart.quote, cart.shipping?.country, cart.id);
     this.assertNotDenied(decision);
+    return { cart, decision };
+  }
+
+  /**
+   * Backwards-compatible wrapper: throws when the cart needs approval and no queue is wired.
+   * Sites with M2 enabled call `gateForPayment` instead, which parks the order rather than
+   * refusing it.
+   */
+  async revalidateCart(id: string): Promise<Cart> {
+    const { cart, decision } = await this.revalidate(id);
     if (decision.decision === "requires_approval") {
       throw new AgentGateError("POLICY_APPROVAL_REQUIRED", decision.message, {
         hint: decision.hint,
@@ -363,6 +390,59 @@ export class CheckoutService {
       });
     }
     return cart;
+  }
+
+  /**
+   * The gate every payment passes through (M1 + M2). Returns `ready` when the agent may be shown
+   * x402 terms, or `pending_approval` when a human has to decide first. It never charges: an
+   * order waiting for approval has not been quoted a 402 at all.
+   */
+  async gateForPayment(cartId: string): Promise<GateForPaymentResult> {
+    const { cart, decision } = await this.revalidate(cartId);
+    if (decision.decision !== "requires_approval") return { status: "ready", cart };
+
+    const approvals = this.approvals;
+    if (!approvals) {
+      throw new AgentGateError("POLICY_APPROVAL_REQUIRED", decision.message, {
+        hint: decision.hint,
+        details: { cartId: cart.id, ...decision.details },
+      });
+    }
+    const outcome = await approvals.gate(this.snapshotOf(cart, decision));
+    if (outcome.status === "approved") {
+      this.logger.info("approval.cleared", { cartId, approvalId: outcome.request.id });
+      return { status: "ready", cart, approval: outcome.request };
+    }
+    return { status: "pending_approval", cart, approval: outcome.request };
+  }
+
+  /** What the merchant is asked to approve, and what settlement is later checked against. */
+  private snapshotOf(
+    cart: Cart,
+    decision: Extract<PolicyDecision, { decision: "requires_approval" }>,
+  ): ApprovalSnapshot {
+    return {
+      cartId: cart.id,
+      lines: cart.quote.lines.map((l) => ({
+        itemId: l.itemId,
+        title: l.title,
+        quantity: l.quantity,
+        unitPriceMinor: l.unitPriceUsdc.toString(),
+        lineTotalMinor: l.lineTotalUsdc.toString(),
+      })),
+      totalMinor: cart.quote.totalUsdc.toString(),
+      asset: this.opts.asset,
+      network: this.opts.network,
+      payTo: cart.quote.payTo,
+      buyer: cart.buyer,
+      shipping: cart.shipping,
+      policy: {
+        code: decision.code,
+        message: decision.message,
+        thresholdMinor:
+          typeof decision.details.threshold === "string" ? decision.details.threshold : undefined,
+      },
+    };
   }
 
   /** Called from the protected checkout handler after verify, before settle. Idempotent per cart. */

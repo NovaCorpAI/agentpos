@@ -16,6 +16,7 @@ import {
   validateUcpBusinessProfile,
 } from "@agentgate/core";
 import type { CatalogItemDraft, LlmProvider } from "@agentgate/core";
+import { describeApproval } from "@agentgate/approvals";
 import { scanSite } from "@agentgate/scanner";
 import { createAgentGate, buildConnector } from "./index.js";
 import { SITE_CONFIG_FILE, coreConfigFromEnv, loadSiteConfig, secretsFromEnv } from "./config.js";
@@ -391,6 +392,71 @@ program
               : pc.red(`  retry failed: ${r.connectorError?.message}`),
           );
         }
+      }
+      gate.storage.close();
+    } catch (err) {
+      die(err);
+    }
+  });
+
+// ---------------------------------------------------------------------------
+program
+  .command("approvals")
+  .description("Orders waiting for your decision (M2)")
+  .argument("[action]", "list | approve | reject", "list")
+  .argument("[id]", "approval id, for approve and reject")
+  .option("-r, --reason <text>", "reason shown to the agent when rejecting")
+  .action(async (action: string, id: string | undefined, opts: { reason?: string }) => {
+    const cwd = program.opts<{ cwd: string }>().cwd;
+    loadDotEnv(cwd);
+    try {
+      const gate = await createAgentGate({ cwd });
+      const approvals = gate.approvals;
+      if (!approvals) {
+        throw new AgentGateError(
+          "CONFIG_INVALID",
+          "The approval queue is disabled for this store",
+          {
+            hint: 'Set "approvals": { "enabled": true } in agentgate.config.json.',
+          },
+        );
+      }
+      if (action === "list") {
+        const pending = approvals.list({ status: "pending" });
+        if (pending.length === 0) console.log("nothing waiting for you");
+        for (const a of pending) {
+          console.log(`${pc.bold(a.id)}  ${describeApproval(a)}`);
+          console.log(
+            pc.dim(`   cart ${a.cartId} | expires ${a.expiresAt} | ${a.snapshot.policy.message}`),
+          );
+          if (a.snapshot.shipping)
+            console.log(
+              pc.dim(`   ship to ${a.snapshot.shipping.city}, ${a.snapshot.shipping.country}`),
+            );
+        }
+        console.log(
+          pc.dim(
+            '\nApprove: npx agentgate approvals approve <id>   Reject: npx agentgate approvals reject <id> -r "reason"',
+          ),
+        );
+      } else if (action === "approve" || action === "reject") {
+        if (!id)
+          throw new AgentGateError("CONFIG_INVALID", "Missing approval id", {
+            hint: "npx agentgate approvals list",
+          });
+        const resolved = approvals.resolve(
+          id,
+          action === "approve" ? "approve" : "reject",
+          opts.reason,
+        );
+        const colour = resolved.status === "approved" ? pc.green : pc.yellow;
+        console.log(colour(`${resolved.id}: ${resolved.status}`));
+        if (resolved.status === "approved")
+          console.log(pc.dim("The agent can now pay this cart until the quote expires."));
+      } else {
+        throw new AgentGateError("CONFIG_INVALID", `Unknown action '${action}'`, {
+          hint: "Use list, approve or reject.",
+        });
       }
       gate.storage.close();
     } catch (err) {

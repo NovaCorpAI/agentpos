@@ -48,6 +48,19 @@ export const siteConfigSchema = z.object({
   locale: z.enum(["en", "es"]).default("en"),
   /** Merchant policy over agentic sales (M1). Omitted means: sell everything, no limits. */
   policy: merchantPolicySchema.default(OPEN_POLICY),
+  /** Human approval queue (M2) for orders the policy flags. */
+  approvals: z
+    .object({
+      /** When false, flagged orders are simply refused instead of queued. */
+      enabled: z.boolean().default(true),
+      /** Minutes the merchant has to decide. Silence rejects; it never approves. */
+      ttlMinutes: z.number().int().min(1).max(1440).default(30),
+      /** Signed POST with the approval details (secret in AGENTGATE_APPROVAL_WEBHOOK_SECRET). */
+      webhookUrl: z.url().optional(),
+      /** WhatsApp via Twilio (credentials in AGENTGATE_TWILIO_*). */
+      whatsapp: z.object({ from: z.string().min(1), to: z.string().min(1) }).optional(),
+    })
+    .default({ enabled: true, ttlMinutes: 30 }),
   /** G1: per-minute limits. Agents burst, so allow a small burst on top of the sustained rate. */
   rateLimit: z
     .object({
@@ -72,6 +85,11 @@ export interface SiteSecrets {
   wooConsumerSecret: string | undefined;
   /** Optional URL that receives critical alerts as JSON POSTs (G1 operations). */
   alertWebhookUrl: string | undefined;
+  /** Shared secret the merchant signs approvals with (M2). Without it, resolutions are refused. */
+  approvalSecret: string | undefined;
+  approvalWebhookSecret: string | undefined;
+  twilioAccountSid: string | undefined;
+  twilioAuthToken: string | undefined;
 }
 
 export function parseSiteConfig(input: unknown): SiteConfig {
@@ -111,6 +129,10 @@ export function secretsFromEnv(env: Record<string, string | undefined> = process
     wooConsumerKey: env.AGENTGATE_WOO_CONSUMER_KEY,
     wooConsumerSecret: env.AGENTGATE_WOO_CONSUMER_SECRET,
     alertWebhookUrl: env.AGENTGATE_ALERT_WEBHOOK,
+    approvalSecret: env.AGENTGATE_APPROVAL_SECRET,
+    approvalWebhookSecret: env.AGENTGATE_APPROVAL_WEBHOOK_SECRET,
+    twilioAccountSid: env.AGENTGATE_TWILIO_ACCOUNT_SID,
+    twilioAuthToken: env.AGENTGATE_TWILIO_AUTH_TOKEN,
   };
 }
 

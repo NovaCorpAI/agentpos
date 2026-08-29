@@ -35,6 +35,13 @@ import type {
   UsdcMinor,
 } from "@agentgate/core";
 import { z } from "zod";
+import {
+  ApprovalService,
+  assertValidResolutionSignature,
+  describeApproval,
+  SIGNATURE_HEADER,
+  TIMESTAMP_HEADER,
+} from "@agentgate/approvals";
 import { CatalogService } from "./catalog.js";
 import { CheckoutService } from "./checkout.js";
 import type { AlertSink } from "./checkout.js";
@@ -52,6 +59,10 @@ export interface AgentGateDeps {
   facilitator?: FacilitatorClient;
   logger?: Logger;
   alert?: AlertSink;
+  /** Human approval queue (M2). Built from storage when the site enables approvals. */
+  approvals?: ApprovalService;
+  /** Shared secret the merchant signs approval resolutions with. Without it, resolve answers 401. */
+  approvalSecret?: string | undefined;
   /** Tests only: fetch used for facilitator health checks. */
   healthFetch?: typeof globalThis.fetch;
 }
@@ -64,6 +75,7 @@ export interface SiteRoutes {
   cart: string;
   checkout: string;
   orders: string;
+  approvals: string;
   health: string;
 }
 
@@ -74,6 +86,8 @@ export interface AgentGateSite {
   catalog: CatalogService;
   checkout: CheckoutService;
   logger: Logger;
+  /** Approval queue, when the site enables it (M2). */
+  approvals: ApprovalService | undefined;
   /** Route table for docs and the CLI. */
   routes: SiteRoutes;
 }
@@ -110,6 +124,12 @@ const STATUS_BY_CODE: Record<string, number> = {
   POLICY_PERIOD_LIMIT: 403,
   POLICY_SHIPPING_COUNTRY: 403,
   POLICY_APPROVAL_REQUIRED: 403,
+  // human approvals (M2)
+  APPROVAL_NOT_FOUND: 404,
+  APPROVAL_UNAUTHORIZED: 401,
+  APPROVAL_REJECTED: 403,
+  APPROVAL_EXPIRED: 410,
+  APPROVAL_SNAPSHOT_CHANGED: 409,
 };
 
 function errorResponse(c: Context, err: unknown): Response {
@@ -186,6 +206,22 @@ export function createAgentGateApp(deps: AgentGateDeps): AgentGateSite {
   });
   const base = site.basePath;
   const siteUrl = site.siteUrl.replace(/\/+$/, "");
+  // Approval queue (M2). Enabled by default; a site can turn it off to refuse flagged orders
+  // outright instead of parking them for a human.
+  const approvals =
+    deps.approvals ??
+    (site.approvals.enabled
+      ? new ApprovalService({
+          store: storage.approvalStore(),
+          ttlMinutes: site.approvals.ttlMinutes,
+          links: (r) => ({
+            poll: `${siteUrl}${base}/approvals/${r.id}`,
+            resolve: `${siteUrl}${base}/approvals/${r.id}/resolve`,
+          }),
+          logger,
+        })
+      : undefined);
+  checkout.setApprovals(approvals);
   const routes: SiteRoutes = {
     manifest: `${siteUrl}/.well-known/ucp`,
     catalog: `${siteUrl}${base}/catalog`,
@@ -194,6 +230,7 @@ export function createAgentGateApp(deps: AgentGateDeps): AgentGateSite {
     cart: `${siteUrl}${base}/cart`,
     checkout: `${siteUrl}${base}/checkout?cart=<cartId>`,
     orders: `${siteUrl}${base}/orders/<orderId>`,
+    approvals: `${siteUrl}${base}/approvals/<approvalId>`,
     health: `${siteUrl}${base}/health`,
   };
 
@@ -460,7 +497,23 @@ export function createAgentGateApp(deps: AgentGateDeps): AgentGateSite {
       );
     }
     try {
-      await checkout.revalidateCart(cartId);
+      const gate = await checkout.gateForPayment(cartId);
+      if (gate.status === "pending_approval") {
+        // 202: accepted, waiting on a human. No 402 is issued, so the agent is never charged
+        // for an order the merchant has not approved.
+        return c.json(
+          {
+            status: "pending_approval",
+            approvalId: gate.approval.id,
+            summary: describeApproval(gate.approval),
+            expiresAt: gate.approval.expiresAt,
+            poll: `${siteUrl}${base}/approvals/${gate.approval.id}`,
+            message: gate.approval.snapshot.policy.message,
+            hint: "Nothing was charged. Poll the approval; if it is approved, POST this checkout again to pay.",
+          },
+          202,
+        );
+      }
     } catch (err) {
       return errorResponse(c, err);
     }
@@ -512,6 +565,80 @@ export function createAgentGateApp(deps: AgentGateDeps): AgentGateSite {
     });
   });
 
+  // --- approvals (M2) --------------------------------------------------------
+  if (approvals) {
+    // Polling endpoint for the agent: status only, no buyer data.
+    app.get(`${base}/approvals/:id`, (c) => {
+      const request = approvals.get(c.req.param("id").slice(0, 64));
+      return c.json({
+        approvalId: request.id,
+        cartId: request.cartId,
+        status: request.status,
+        summary: describeApproval(request),
+        snapshotHash: request.snapshotHash,
+        expiresAt: request.expiresAt,
+        resolvedAt: request.resolvedAt,
+        reason: request.reason,
+        ...(request.status === "approved"
+          ? { next: `${siteUrl}${base}/checkout?cart=${request.cartId}` }
+          : {}),
+      });
+    });
+
+    // The merchant decides. Signed with the shared secret: an approval is their word, and
+    // nothing else may speak it.
+    app.post(`${base}/approvals/:id/resolve`, async (c) => {
+      const id = c.req.param("id").slice(0, 64);
+      const body = z
+        .object({ decision: z.enum(["approve", "reject"]), reason: z.string().max(500).optional() })
+        .safeParse(await c.req.json().catch(() => ({})));
+      if (!body.success) {
+        return c.json(
+          {
+            error: {
+              code: "CONFIG_INVALID",
+              message: "Invalid resolution body",
+              hint: 'Send { "decision": "approve" | "reject", "reason"?: string }',
+              retryable: false,
+            },
+          },
+          400,
+        );
+      }
+      if (!deps.approvalSecret) {
+        return c.json(
+          {
+            error: {
+              code: "APPROVAL_UNAUTHORIZED",
+              message: "This store cannot verify resolutions",
+              hint: "Set AGENTGATE_APPROVAL_SECRET on the sidecar and sign with it.",
+              retryable: false,
+            },
+          },
+          401,
+        );
+      }
+      try {
+        assertValidResolutionSignature({
+          secret: deps.approvalSecret,
+          timestamp: c.req.header(TIMESTAMP_HEADER),
+          signature: c.req.header(SIGNATURE_HEADER),
+          approvalId: id,
+          decision: body.data.decision,
+        });
+      } catch (err) {
+        return errorResponse(c, err);
+      }
+      const resolved = approvals.resolve(id, body.data.decision, body.data.reason);
+      return c.json({
+        approvalId: resolved.id,
+        status: resolved.status,
+        resolvedAt: resolved.resolvedAt,
+        reason: resolved.reason,
+      });
+    });
+  }
+
   // --- orders ----------------------------------------------------------------
   app.get(`${base}/orders/:id`, (c) =>
     c.json(orderView(checkout.getOrder(c.req.param("id").slice(0, 64)))),
@@ -528,6 +655,7 @@ export function createAgentGateApp(deps: AgentGateDeps): AgentGateSite {
     catalog,
     checkout,
     logger,
+    approvals,
     routes,
   };
 }

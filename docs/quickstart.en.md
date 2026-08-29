@@ -116,6 +116,49 @@ evaluated when quoting and **again** before charging, because your situation may
 Every rejection reaches the agent with a code it can act on (`POLICY_ORDER_LIMIT`,
 `POLICY_PERIOD_LIMIT`, `POLICY_ITEM_EXCLUDED`, `POLICY_SHIPPING_COUNTRY`...) and an actionable message.
 
+## Approve large orders by hand (optional)
+
+When an order goes above `approvalThresholdUsdc`, the sidecar **parks it** and notifies you instead
+of refusing it. The agent gets a `202` with a polling URL and **is not charged** while you decide.
+
+```json
+{
+  "approvals": {
+    "enabled": true,
+    "ttlMinutes": 30,
+    "webhookUrl": "https://your-system.example/hooks/agentgate",
+    "whatsapp": { "from": "whatsapp:+14155238886", "to": "whatsapp:+56912345678" }
+  }
+}
+```
+
+In `.env`:
+
+```
+AGENTGATE_APPROVAL_SECRET=<long random string>
+AGENTGATE_APPROVAL_WEBHOOK_SECRET=<webhook secret>
+AGENTGATE_TWILIO_ACCOUNT_SID=AC...
+AGENTGATE_TWILIO_AUTH_TOKEN=...
+```
+
+Decide from the terminal:
+
+```bash
+npx @agentgate/site approvals                       # what is waiting for you
+npx @agentgate/site approvals approve <id>
+npx @agentgate/site approvals reject <id> -r "out of stock"
+```
+
+Three guarantees worth knowing:
+
+- **Silence rejects, never approves.** If you do not decide before the TTL, the order is rejected
+  automatically and the quote is released.
+- **You approve exactly what you saw.** Items, quantities, amounts, destination and shipping data
+  are hashed into an immutable snapshot. If anything changes afterwards, the approval is void and
+  the agent must re-quote.
+- **Nobody can approve for you.** HTTP resolutions are signed with your secret; without a valid
+  signature the answer is 401. Resolving twice never flips the first decision.
+
 ## Check status
 
 ```bash
