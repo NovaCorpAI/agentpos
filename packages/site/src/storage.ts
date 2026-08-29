@@ -24,6 +24,7 @@ import {
   usdcFromMinor,
 } from "@agentgate/core";
 import type { ApprovalRequest, ApprovalStatus, ApprovalStore } from "@agentgate/approvals";
+import type { AgentRecord, AgentStatus, AgentStore } from "@agentgate/identity";
 
 type Row = { json: string };
 
@@ -68,6 +69,7 @@ export class SiteStorage {
       create table if not exists payments (tx_hash text primary key, order_id text not null, json text not null);
       create table if not exists approvals (id text primary key, cart_id text not null, status text not null, json text not null, created_at text not null, expires_at text not null);
       create index if not exists approvals_cart_idx on approvals(cart_id);
+      create table if not exists agents (agent_key text primary key, owner text not null, status text not null, json text not null, registered_at text not null);
       create table if not exists meta (key text primary key, value text not null);
     `);
   }
@@ -311,6 +313,32 @@ export class SiteStorage {
                 .all(options.limit ?? 100)
         ) as Row[];
         return rows.map((r) => JSON.parse(r.json) as ApprovalRequest);
+      },
+    };
+  }
+
+  // agents (M3) --------------------------------------------------------------
+  /** AgentStore backed by this database, for @agentgate/identity. Read on every request, so a
+   *  revocation takes effect on the next call rather than on a cache expiry. */
+  agentStore(): AgentStore {
+    const db = this.db;
+    return {
+      save(record: AgentRecord): void {
+        db.prepare(
+          "insert into agents (agent_key, owner, status, json, registered_at) values (?, ?, ?, ?, ?) on conflict(agent_key) do update set owner = excluded.owner, status = excluded.status, json = excluded.json",
+        ).run(record.agentKey, record.owner, record.status, JSON.stringify(record), record.registeredAt);
+      },
+      get(agentKey: string): AgentRecord | undefined {
+        const row = db.prepare("select json from agents where agent_key = ?").get(agentKey) as Row | undefined;
+        return row ? (JSON.parse(row.json) as AgentRecord) : undefined;
+      },
+      list(options: { status?: AgentStatus; limit?: number } = {}): AgentRecord[] {
+        const rows = (
+          options.status
+            ? db.prepare("select json from agents where status = ? order by registered_at desc limit ?").all(options.status, options.limit ?? 200)
+            : db.prepare("select json from agents order by registered_at desc limit ?").all(options.limit ?? 200)
+        ) as Row[];
+        return rows.map((r) => JSON.parse(r.json) as AgentRecord);
       },
     };
   }

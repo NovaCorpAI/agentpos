@@ -42,6 +42,8 @@ import {
   SIGNATURE_HEADER,
   TIMESTAMP_HEADER,
 } from "@agentgate/approvals";
+import { IdentityService } from "@agentgate/identity";
+import type { AgentIdentity } from "@agentgate/identity";
 import { CatalogService } from "./catalog.js";
 import { CheckoutService } from "./checkout.js";
 import type { AlertSink } from "./checkout.js";
@@ -61,6 +63,8 @@ export interface AgentGateDeps {
   alert?: AlertSink;
   /** Human approval queue (M2). Built from storage when the site enables approvals. */
   approvals?: ApprovalService;
+  /** Know Your Agent (M3). Built from storage and site.identity when omitted. */
+  identity?: IdentityService;
   /** Shared secret the merchant signs approval resolutions with. Without it, resolve answers 401. */
   approvalSecret?: string | undefined;
   /** Tests only: fetch used for facilitator health checks. */
@@ -88,6 +92,8 @@ export interface AgentGateSite {
   logger: Logger;
   /** Approval queue, when the site enables it (M2). */
   approvals: ApprovalService | undefined;
+  /** Agent registry and request authentication (M3). */
+  identity: IdentityService;
   /** Route table for docs and the CLI. */
   routes: SiteRoutes;
 }
@@ -130,6 +136,15 @@ const STATUS_BY_CODE: Record<string, number> = {
   APPROVAL_REJECTED: 403,
   APPROVAL_EXPIRED: 410,
   APPROVAL_SNAPSHOT_CHANGED: 409,
+  // agent identity (M3): 401 when the caller failed to prove who it is, 403 when it proved it
+  // and the answer is still no.
+  AGENT_IDENTITY_REQUIRED: 401,
+  AGENT_SIGNATURE_INVALID: 401,
+  AGENT_TIMESTAMP_OUT_OF_WINDOW: 401,
+  AGENT_NONCE_REUSED: 401,
+  AGENT_ATTESTATION_INVALID: 403,
+  AGENT_REVOKED: 403,
+  AGENT_NOT_FOUND: 404,
 };
 
 function errorResponse(c: Context, err: unknown): Response {
@@ -182,6 +197,20 @@ function publicItem(item: CatalogItem, asset: string) {
   };
 }
 
+/** Path + query exactly as sent, which is what the agent signed. */
+function pathWithQuery(url: string): string {
+  const u = new URL(url);
+  return `${u.pathname}${u.search}`;
+}
+
+function safeJson(raw: string): unknown {
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return {};
+  }
+}
+
 const TRACE_HEADER = "x-trace-id";
 const traceOf = (c: Context): string =>
   c.req.header(TRACE_HEADER) ?? c.res.headers.get(TRACE_HEADER) ?? newTraceId();
@@ -222,6 +251,18 @@ export function createAgentGateApp(deps: AgentGateDeps): AgentGateSite {
         })
       : undefined);
   checkout.setApprovals(approvals);
+  // Know Your Agent (M3). The registry lives in the merchant's own database: no directory to
+  // sign up with, and a revocation takes effect on the next request.
+  const identity =
+    deps.identity ??
+    new IdentityService({
+      mode: site.identity.mode,
+      agents: storage.agentStore(),
+      siteHost: new URL(siteUrl).host,
+      autoRegister: site.identity.autoRegister,
+      logger,
+    });
+  setInterval(() => identity.sweepNonces(), 60_000).unref();
   const routes: SiteRoutes = {
     manifest: `${siteUrl}/.well-known/ucp`,
     catalog: `${siteUrl}${base}/catalog`,
@@ -423,7 +464,19 @@ export function createAgentGateApp(deps: AgentGateDeps): AgentGateSite {
 
   // --- cart ------------------------------------------------------------------
   app.post(`${base}/cart`, rateLimit(ipCartLimiter, clientIp, "cart"), async (c) => {
-    const body = createCartSchema.safeParse(await c.req.json().catch(() => ({})));
+    // Raw body, exactly as received: the agent signed its hash, so parsing must not come first.
+    const raw = await c.req.text().catch(() => "");
+    let agent: AgentIdentity;
+    try {
+      agent = identity.authenticate((name) => c.req.header(name), {
+        method: "POST",
+        path: pathWithQuery(c.req.url),
+        body: raw,
+      });
+    } catch (err) {
+      return errorResponse(c, err);
+    }
+    const body = createCartSchema.safeParse(safeJson(raw));
     if (!body.success) {
       return c.json(
         {
@@ -443,6 +496,7 @@ export function createAgentGateApp(deps: AgentGateDeps): AgentGateSite {
       body.data.buyer,
       body.data.shipping,
       traceOf(c),
+      agent,
     );
     return c.json(cartView(cart, core, routes), 201);
   });
@@ -497,6 +551,9 @@ export function createAgentGateApp(deps: AgentGateDeps): AgentGateSite {
       );
     }
     try {
+      // Identity was established when the cart was quoted; here we only re-read the registry, so
+      // a key revoked in between cannot pay (M3).
+      identity.recheck(checkout.getCart(cartId).agent);
       const gate = await checkout.gateForPayment(cartId);
       if (gate.status === "pending_approval") {
         // 202: accepted, waiting on a human. No 402 is issued, so the agent is never charged
@@ -656,6 +713,7 @@ export function createAgentGateApp(deps: AgentGateDeps): AgentGateSite {
     checkout,
     logger,
     approvals,
+    identity,
     routes,
   };
 }
@@ -686,6 +744,8 @@ export function cartView(
       protocol: "x402",
       // Merchant policy outcome (M1): tells the agent up front whether this cart can be paid.
       policy: cart.policy,
+      // What the store recorded about who is buying (M3), so the agent can see it took effect.
+      agent: cart.agent,
       traceId: cart.traceId,
     }),
   ) as Record<string, unknown>;
@@ -708,6 +768,7 @@ export function orderView(order: ReturnType<CheckoutService["getOrder"]>) {
       externalAdminUrl: order.externalAdminUrl,
       connectorError: order.connectorError,
       hold: order.hold,
+      agent: order.agent,
       traceId: order.traceId,
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,

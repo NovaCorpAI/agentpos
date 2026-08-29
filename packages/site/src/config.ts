@@ -7,6 +7,7 @@ import { resolve } from "node:path";
 import { z } from "zod";
 import { AgentGateError, assertNoSecretsInConfig, configFromEnv } from "@agentgate/core";
 import { OPEN_POLICY, merchantPolicySchema } from "@agentgate/policy";
+import { IDENTITY_MODES } from "@agentgate/identity";
 import type { CoreConfig } from "@agentgate/core";
 
 export const SITE_CONFIG_FILE = "agentgate.config.json";
@@ -48,6 +49,17 @@ export const siteConfigSchema = z.object({
   locale: z.enum(["en", "es"]).default("en"),
   /** Merchant policy over agentic sales (M1). Omitted means: sell everything, no limits. */
   policy: merchantPolicySchema.default(OPEN_POLICY),
+  /**
+   * Know Your Agent (M3). `open`: anyone buys. `identified`: identity optional but verified and
+   * recorded when sent. `verified-only`: only agents with a valid owner attestation.
+   */
+  identity: z
+    .object({
+      mode: z.enum(IDENTITY_MODES).default("open"),
+      /** Register an agent the first time it presents a valid attestation. */
+      autoRegister: z.boolean().default(true),
+    })
+    .default({ mode: "open", autoRegister: true }),
   /** Human approval queue (M2) for orders the policy flags. */
   approvals: z
     .object({

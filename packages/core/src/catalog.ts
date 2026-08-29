@@ -93,6 +93,20 @@ export interface CartPolicyState {
   evaluatedAt: string;
 }
 
+/**
+ * Who asked (M3). Structural mirror of `AgentIdentity` in @agentgate/identity, kept here so the
+ * domain types do not depend on the identity package. `authenticated: false` is a legitimate
+ * value: an anonymous wallet is a valid buyer unless the merchant says otherwise.
+ */
+export interface AgentIdentityRecord {
+  authenticated: boolean;
+  agentKey?: string | undefined;
+  owner?: string | undefined;
+  name?: string | undefined;
+  attested: boolean;
+  verifiedAt?: string | undefined;
+}
+
 export interface Cart {
   id: string;
   lines: CartLine[];
@@ -100,6 +114,7 @@ export interface Cart {
   buyer?: BuyerContact;
   shipping?: Address;
   policy?: CartPolicyState;
+  agent?: AgentIdentityRecord;
   traceId?: string;
   createdAt: string;
   expiresAt: string;
@@ -146,6 +161,8 @@ export interface Order {
    * The payment is kept, the platform order is NOT created, and an alert is raised (G1).
    */
   hold?: { reason: "PAYMENT_MISMATCH"; details: Record<string, unknown>; at: string };
+  /** Identity of the agent that placed the order (M3), as verified at cart time. */
+  agent?: AgentIdentityRecord;
   /** Correlates logs across scan, cart, checkout, settle and order creation. */
   traceId?: string;
   createdAt: string;

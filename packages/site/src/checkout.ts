@@ -6,6 +6,7 @@
 import { randomBytes } from "node:crypto";
 import type {
   Address,
+  AgentIdentityRecord,
   BuyerContact,
   Cart,
   CartLine,
@@ -160,6 +161,7 @@ export class CheckoutService {
     buyer?: BuyerContact,
     shipping?: Address,
     traceId?: string,
+    agent?: AgentIdentityRecord,
   ): Promise<Cart> {
     if (lines.length === 0) {
       throw new AgentGateError("CONFIG_INVALID", "Cart needs at least one line", {
@@ -247,6 +249,8 @@ export class CheckoutService {
           : {}),
         evaluatedAt: new Date().toISOString(),
       },
+      // Who asked (M3). Recorded even when anonymous, so the receipt can say so explicitly.
+      ...(agent ? { agent } : {}),
       ...(traceId ? { traceId } : {}),
       createdAt: now.toISOString(),
       expiresAt: new Date(now.getTime() + this.opts.cartTtlMinutes * 60_000).toISOString(),
@@ -458,6 +462,7 @@ export class CheckoutService {
       quote: cart.quote,
       ...(cart.buyer ? { buyer: cart.buyer } : {}),
       ...(cart.shipping ? { shipping: cart.shipping } : {}),
+      ...(cart.agent ? { agent: cart.agent } : {}),
       ...(cart.traceId ? { traceId: cart.traceId } : {}),
       createdAt: now,
       updatedAt: now,

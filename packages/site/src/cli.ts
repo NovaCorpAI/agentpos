@@ -466,6 +466,79 @@ program
 
 // ---------------------------------------------------------------------------
 program
+  .command("agents")
+  .description("Agent registry: who may buy from this store (M3)")
+  .argument("[action]", "list | register | revoke", "list")
+  .argument("[value]", "path to a signed attestation (register) or agent key (revoke)")
+  .option("-r, --reason <text>", "reason shown to the agent when revoking")
+  .option("-s, --status <status>", "filter: active | revoked")
+  .action(
+    async (
+      action: string,
+      value: string | undefined,
+      opts: { reason?: string; status?: string },
+    ) => {
+      const cwd = program.opts<{ cwd: string }>().cwd;
+      loadDotEnv(cwd);
+      try {
+        const gate = await createAgentGate({ cwd });
+        const identity = gate.identity;
+        if (action === "list") {
+          const records = identity.list(
+            opts.status ? { status: opts.status as "active" | "revoked" } : {},
+          );
+          if (records.length === 0)
+            console.log(`no agents registered yet (mode: ${identity.mode})`);
+          for (const r of records) {
+            const colour = r.status === "active" ? pc.green : pc.yellow;
+            console.log(`${colour(r.status.padEnd(7))} ${pc.bold(r.agentKey)}  ${r.name ?? ""}`);
+            console.log(
+              pc.dim(
+                `        owner ${r.owner} | registered ${r.registeredAt}` +
+                  (r.revokedAt
+                    ? ` | revoked ${r.revokedAt} (${r.revokedReason ?? "no reason"})`
+                    : ""),
+              ),
+            );
+          }
+          console.log(pc.dim(`\nStore mode: ${identity.mode}. Change it in ${SITE_CONFIG_FILE}.`));
+        } else if (action === "register") {
+          if (!value)
+            throw new AgentGateError("CONFIG_INVALID", "Missing attestation file", {
+              hint: "npx agentgate agents register ./attestation.json",
+            });
+          const signed = JSON.parse(readFileSync(resolve(cwd, value), "utf8")) as never;
+          const record = identity.register(signed);
+          console.log(pc.green(`registered ${record.agentKey}`));
+          console.log(
+            pc.dim(
+              `   owner ${record.owner} | attestation expires ${record.attestation?.attestation.expiresAt ?? "n/a"}`,
+            ),
+          );
+        } else if (action === "revoke") {
+          if (!value)
+            throw new AgentGateError("CONFIG_INVALID", "Missing agent key", {
+              hint: 'npx agentgate agents revoke G... -r "reason"',
+            });
+          const record = identity.revoke(value, opts.reason);
+          console.log(pc.yellow(`revoked ${record.agentKey}`));
+          console.log(
+            pc.dim("Takes effect on the agent's next request, including carts already quoted."),
+          );
+        } else {
+          throw new AgentGateError("CONFIG_INVALID", `Unknown action '${action}'`, {
+            hint: "Use list, register or revoke.",
+          });
+        }
+        gate.storage.close();
+      } catch (err) {
+        die(err);
+      }
+    },
+  );
+
+// ---------------------------------------------------------------------------
+program
   .command("backup")
   .description("Consistent backup of the local database (SQLite VACUUM INTO)")
   .argument("[dir]", "destination directory", "./backups")

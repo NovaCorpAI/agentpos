@@ -32,6 +32,7 @@
     "@agentgate/connectors": "workspace:*",
     "@agentgate/approvals": "workspace:*",
     "@agentgate/core": "workspace:*",
+    "@agentgate/identity": "workspace:*",
     "@agentgate/policy": "workspace:*",
     "@agentgate/scanner": "workspace:*",
     "@clack/prompts": "^1.7.0",

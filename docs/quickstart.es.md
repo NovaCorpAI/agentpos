@@ -161,6 +161,42 @@ Tres garantías que conviene que sepas:
 - **Nadie puede aprobar por ti.** Las resoluciones por HTTP van firmadas con tu clave secreta;
   sin firma válida, la respuesta es 401. Aprobar dos veces no cambia la primera decisión.
 
+## Decidir quién puede comprar (opcional)
+
+Por defecto compra cualquiera que tenga una billetera, que es lo que la mayoría de las tiendas
+quiere. Si necesitas saber quién está al otro lado, el sidecar puede exigir que los agentes
+**firmen sus peticiones** y que traigan una **atestación de su dueño** ("esta llave actúa por mí").
+
+```json
+{ "identity": { "mode": "identified" } }
+```
+
+| Modo | Qué significa |
+| --- | --- |
+| `open` (por defecto) | Compra cualquiera. Si llega una firma, igual se verifica y se registra. |
+| `identified` | Lo mismo, pero queda registrado en cada orden quién compró. |
+| `verified-only` | Solo compran agentes con una atestación vigente y no revocada de su dueño. |
+
+En todos los modos, una firma que llega **se verifica**: una identidad a medias es peor que
+ninguna. Lo que cambia el modo es qué pasa cuando no hay identidad.
+
+El registro se maneja desde la terminal:
+
+```bash
+npx @agentgate/site agents                                  # quiénes pueden comprar
+npx @agentgate/site agents register ./attestation.json      # respaldado por su dueño
+npx @agentgate/site agents revoke GAGENT... -r "llave perdida"
+```
+
+Dos cosas que conviene saber:
+
+- **La revocación es inmediata.** El registro se lee en cada petición y otra vez al momento de
+  pagar, así que una llave revocada después de cotizar no alcanza a completar la compra.
+- **Esto no es KYC.** Sabes qué llave actúa por qué dueño, nada más: sin documentos, sin datos
+  personales. Reduce el anonimato, no lo elimina.
+
+El formato es público y verificable sin nuestro SDK: ver `packages/identity/SPEC.md`.
+
 ## Ver el estado
 
 ```bash

@@ -9,6 +9,8 @@ npx @agentgate/site confirm   # you set every price
 npx @agentgate/site publish   # verify the payment rail, expose the catalog
 npx @agentgate/site serve     # sidecar on :8402 (reverse-proxy /.well-known/ucp and /agentgate/*)
 npx @agentgate/site status    # orders, tx hashes, connector errors (--retry)
+npx @agentgate/site approvals # orders parked for your decision (M2)
+npx @agentgate/site agents    # who may buy: register | revoke (M3)
 ```
 
 Programmatic use (Node sites):
@@ -35,7 +37,13 @@ const gate = await createAgentGate({
 ```
 
 Surfaces: `/.well-known/ucp`, `/agentgate/catalog`, `/agentgate/feed`, `/agentgate/mcp`,
-`POST /agentgate/cart`, `POST /agentgate/checkout?cart=`, `/agentgate/orders/:id`, `/agentgate/health`.
+`POST /agentgate/cart`, `POST /agentgate/checkout?cart=`, `/agentgate/orders/:id`,
+`/agentgate/approvals/:id`, `/agentgate/health`.
+
+Trust layer, all optional and off by default: `policy` (what may be sold and up to how much),
+`approvals` (park large orders for a human; the agent is never charged while you decide) and
+`identity` (require agents to sign their requests, and their owners to vouch for them). See
+`@agentgate/policy`, `@agentgate/approvals` and `@agentgate/identity`.
 
 Storage: `node:sqlite` in `.agentgate/agentgate.sqlite` (no native dependencies). Secrets stay in
 `.env` on the merchant's server. See `docs/quickstart.en.md` / `docs/quickstart.es.md`.

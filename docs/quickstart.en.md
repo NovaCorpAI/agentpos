@@ -159,6 +159,42 @@ Three guarantees worth knowing:
 - **Nobody can approve for you.** HTTP resolutions are signed with your secret; without a valid
   signature the answer is 401. Resolving twice never flips the first decision.
 
+## Decide who may buy (optional)
+
+By default anyone with a wallet can buy, which is what most stores want. If you need to know who
+is on the other side, the sidecar can require agents to **sign their requests** and to carry an
+**attestation from their owner** ("this key acts for me").
+
+```json
+{ "identity": { "mode": "identified" } }
+```
+
+| Mode | What it means |
+| --- | --- |
+| `open` (default) | Anyone buys. A signature, if sent, is still verified and recorded. |
+| `identified` | Same, but you are recording who bought on every order. |
+| `verified-only` | Only agents with a valid, unrevoked owner attestation may buy. |
+
+In every mode a signature that arrives **is verified**: a half-checked identity is worse than
+none. What the mode changes is what happens when identity is absent.
+
+Manage the register from the terminal:
+
+```bash
+npx @agentgate/site agents                                  # who may buy
+npx @agentgate/site agents register ./attestation.json      # vouched by its owner
+npx @agentgate/site agents revoke GAGENT... -r "key lost"
+```
+
+Two things worth knowing:
+
+- **Revocation is immediate.** The register is read on every request and again when a cart is
+  paid, so a key revoked after quoting cannot complete the purchase.
+- **It is not KYC.** You learn which key acts for which owner, nothing more: no documents, no
+  personal data. It reduces anonymity; it does not eliminate it.
+
+The wire format is public and verifiable without our SDK: see `packages/identity/SPEC.md`.
+
 ## Check status
 
 ```bash
