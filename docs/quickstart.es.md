@@ -197,6 +197,34 @@ Dos cosas que conviene saber:
 
 El formato es público y verificable sin nuestro SDK: ver `packages/identity/SPEC.md`.
 
+## Guardar prueba de cada venta (activo por defecto)
+
+Cada orden deja un **comprobante firmado**, encadenado al anterior: qué se ofreció, a qué precio,
+qué dijeron tus reglas, quién aprobó, quién compró y el hash de la transacción. Los rechazos
+también dejan comprobante, porque "eso no lo vendimos" también es algo que puedes necesitar
+mostrar.
+
+```bash
+npx @agentgate/site receipts                 # comprobantes recientes, altura de la cadena, llave
+npx @agentgate/site receipts verify          # esta intacta la cadena?
+npx @agentgate/site receipts export --from 2026-08-01 --to 2026-08-31 -o agosto.json
+```
+
+El comprador recibe su copia en `GET /agentgate/orders/<orderId>/receipt` y puede verificarla sin
+preguntarte nada.
+
+Tres cosas que conviene saber:
+
+- **Un comprobante nunca te va a costar una venta.** Si no se puede escribir, la orden igual se
+  completa y el hueco aparece en `receipts verify`.
+- **Alterar un comprobante se nota.** Si lo cambias se rompe su hash; si lo vuelves a firmar, el
+  siguiente sigue apuntando al hash viejo.
+- **Respalda la llave de firma** (`.agentgate/receipt-signer.json`) junto con tu base de datos. No
+  guarda dinero y jamas debe recibirlo. Si la pierdes, los comprobantes antiguos siguen siendo
+  verificables, pero la cadena parte de nuevo con otra llave.
+
+Para desactivarlo: `{ "receipts": { "enabled": false } }`.
+
 ## Ver el estado
 
 ```bash

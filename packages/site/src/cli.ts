@@ -17,6 +17,7 @@ import {
 } from "@agentgate/core";
 import type { CatalogItemDraft, LlmProvider } from "@agentgate/core";
 import { describeApproval } from "@agentgate/approvals";
+import { exportAuditTrail, formatAuditTrail, verifyChain } from "@agentgate/receipts";
 import { scanSite } from "@agentgate/scanner";
 import { createAgentGate, buildConnector } from "./index.js";
 import { SITE_CONFIG_FILE, coreConfigFromEnv, loadSiteConfig, secretsFromEnv } from "./config.js";
@@ -528,6 +529,84 @@ program
         } else {
           throw new AgentGateError("CONFIG_INVALID", `Unknown action '${action}'`, {
             hint: "Use list, register or revoke.",
+          });
+        }
+        gate.storage.close();
+      } catch (err) {
+        die(err);
+      }
+    },
+  );
+
+// ---------------------------------------------------------------------------
+program
+  .command("receipts")
+  .description("Signed audit chain: what you sold, refused and held (M4)")
+  .argument("[action]", "list | verify | export", "list")
+  .option("--from <iso>", "period start (ISO date or timestamp)")
+  .option("--to <iso>", "period end (ISO date or timestamp)")
+  .option("-o, --out <file>", "write the export to this file instead of stdout")
+  .option("-n, --limit <n>", "how many receipts to list", "20")
+  .action(
+    async (
+      action: string,
+      opts: { from?: string; to?: string; out?: string; limit: string },
+    ) => {
+      const cwd = program.opts<{ cwd: string }>().cwd;
+      loadDotEnv(cwd);
+      try {
+        const gate = await createAgentGate({ cwd });
+        const chain = gate.receipts;
+        if (!chain) {
+          throw new AgentGateError("CONFIG_INVALID", "This store keeps no receipts", {
+            hint: 'Set "receipts": { "enabled": true } in agentgate.config.json.',
+          });
+        }
+        const period = {
+          ...(opts.from ? { from: opts.from } : {}),
+          ...(opts.to ? { to: opts.to } : {}),
+        };
+
+        if (action === "list") {
+          const all = chain.list(period);
+          const shown = all.slice(-Number(opts.limit));
+          console.log(pc.dim(`signing key ${chain.signer} | chain height ${all.length}`));
+          if (shown.length === 0) console.log("no receipts yet");
+          for (const r of shown) {
+            const label = r.body.event.startsWith("order.settled") ? pc.green : pc.yellow;
+            console.log(
+              `#${String(r.body.seq).padStart(4)} ${r.body.at} ${label(r.body.event.padEnd(19))} ${r.body.order?.id ?? r.body.cart?.id ?? ""}`,
+            );
+            console.log(pc.dim(`      ${r.hash}${r.body.payment ? ` | tx ${r.body.payment.txHash}` : ""}`));
+          }
+          console.log(pc.dim("\nVerify the chain: npx agentgate receipts verify"));
+        } else if (action === "verify") {
+          const all = chain.list(period);
+          const result = verifyChain(all);
+          if (result.valid) {
+            console.log(
+              pc.green(`chain OK: ${all.length} receipt(s), all signed by ${chain.signer}, unbroken`),
+            );
+          } else {
+            console.log(pc.red(`chain BROKEN: ${result.issues.length} issue(s)`));
+            for (const issue of result.issues)
+              console.log(pc.red(`  [${issue.code}] ${issue.message}${issue.seq ? ` (#${issue.seq})` : ""}`));
+            process.exitCode = 1;
+          }
+        } else if (action === "export") {
+          const trail = exportAuditTrail(chain, period);
+          const text = formatAuditTrail(trail);
+          if (opts.out) {
+            const dest = resolve(cwd, opts.out);
+            writeFileSync(dest, JSON.stringify(trail, null, 2));
+            console.log(text);
+            console.log(pc.green(`\nwritten: ${dest}`));
+          } else {
+            console.log(text);
+          }
+        } else {
+          throw new AgentGateError("CONFIG_INVALID", `Unknown action '${action}'`, {
+            hint: "Use list, verify or export.",
           });
         }
         gate.storage.close();

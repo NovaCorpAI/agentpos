@@ -34,6 +34,7 @@
     "@agentgate/core": "workspace:*",
     "@agentgate/identity": "workspace:*",
     "@agentgate/policy": "workspace:*",
+    "@agentgate/receipts": "workspace:*",
     "@agentgate/scanner": "workspace:*",
     "@clack/prompts": "^1.7.0",
     "@hono/node-server": "^2.1.1",

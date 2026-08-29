@@ -1,5 +1,5 @@
 export { ApprovalService, MemoryApprovalStore, DEFAULT_TTL_MINUTES } from "./service.js";
-export type { ApprovalServiceOptions, GateResult } from "./service.js";
+export type { ApprovalEvent, ApprovalServiceOptions, GateResult } from "./service.js";
 export { canonicalize, hashSnapshot } from "./snapshot.js";
 export {
   assertValidResolutionSignature,

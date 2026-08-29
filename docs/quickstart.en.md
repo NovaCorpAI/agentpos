@@ -195,6 +195,33 @@ Two things worth knowing:
 
 The wire format is public and verifiable without our SDK: see `packages/identity/SPEC.md`.
 
+## Keep proof of every sale (on by default)
+
+Every order leaves a **signed receipt**, chained to the one before it: what was offered, at what
+price, what your rules said, who approved it, who bought, and the transaction hash. Refusals get a
+receipt too, because "we did not sell that" is also something you may need to show.
+
+```bash
+npx @agentgate/site receipts                 # recent receipts, chain height, signing key
+npx @agentgate/site receipts verify          # is the chain intact?
+npx @agentgate/site receipts export --from 2026-08-01 --to 2026-08-31 -o august.json
+```
+
+The buyer gets their own copy at `GET /agentgate/orders/<orderId>/receipt`, and can verify it
+without asking you anything.
+
+Three things to know:
+
+- **A receipt can never cost you a sale.** If it cannot be written, the order still completes and
+  the gap shows up in `receipts verify`.
+- **Editing is detectable.** Change a receipt and its hash breaks; re-sign it and the next one
+  still points at the old hash.
+- **Back up the signing key** (`.agentgate/receipt-signer.json`) with your database. It holds no
+  money and must never receive any. Lose it and old receipts stay verifiable, but the chain
+  restarts under a new key.
+
+To turn it off: `{ "receipts": { "enabled": false } }`.
+
 ## Check status
 
 ```bash

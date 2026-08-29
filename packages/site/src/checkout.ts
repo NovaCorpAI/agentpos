@@ -20,6 +20,7 @@ import type {
   UsdcMinor,
 } from "@agentgate/core";
 import {
+  ADAPTER_VERSION,
   AgentGateError,
   addUsdc,
   compareUsdc,
@@ -30,6 +31,7 @@ import {
 import { OPEN_POLICY, evaluatePolicy, periodStart } from "@agentgate/policy";
 import type { MerchantPolicy, PolicyDecision } from "@agentgate/policy";
 import type { ApprovalRequest, ApprovalService, ApprovalSnapshot } from "@agentgate/approvals";
+import type { ReceiptChain, ReceiptTerms } from "@agentgate/receipts";
 import type { CatalogService } from "./catalog.js";
 import type { SiteStorage } from "./storage.js";
 
@@ -70,6 +72,8 @@ export interface CheckoutOptions {
   policy?: MerchantPolicy;
   /** Human approval queue (M2). Without it, flagged orders are refused instead of parked. */
   approvals?: ApprovalService;
+  /** Signed audit chain (M4). Without it the store simply keeps no receipts. */
+  receipts?: ReceiptChain;
   /** Immediate connector retries after settlement before giving up (background retry continues). */
   connectorAttempts?: number;
   logger?: Logger;
@@ -86,6 +90,7 @@ export class CheckoutService {
   private readonly alert: AlertSink;
   private readonly policy: MerchantPolicy;
   private approvals: ApprovalService | undefined;
+  private receipts: ReceiptChain | undefined;
 
   constructor(private readonly opts: CheckoutOptions) {
     this.attempts = opts.connectorAttempts ?? 3;
@@ -93,11 +98,91 @@ export class CheckoutService {
     this.alert = opts.alert ?? (() => {});
     this.policy = opts.policy ?? OPEN_POLICY;
     this.approvals = opts.approvals;
+    this.receipts = opts.receipts;
   }
 
   /** Wires the approval queue after construction (the app builds it from the same storage). */
   setApprovals(approvals: ApprovalService | undefined): void {
     this.approvals = approvals;
+  }
+
+  /** Wires the audit chain after construction (the app builds it from the same storage). */
+  setReceipts(receipts: ReceiptChain | undefined): void {
+    this.receipts = receipts;
+  }
+
+  /** Terms exactly as they were offered, in the shape a receipt records them. */
+  private termsOf(quote: Quote): ReceiptTerms {
+    return {
+      lines: quote.lines.map((l) => ({
+        itemId: l.itemId,
+        title: l.title,
+        quantity: l.quantity,
+        unitPriceMinor: l.unitPriceUsdc.toString(),
+        lineTotalMinor: l.lineTotalUsdc.toString(),
+      })),
+      totalMinor: quote.totalUsdc.toString(),
+      payTo: quote.payTo,
+      network: this.opts.network,
+      asset: this.opts.asset,
+      assetAddress: this.opts.assetAddress,
+    };
+  }
+
+  /**
+   * Everything a receipt says about an order, gathered in one place: the terms offered, the
+   * policy that let it through, the human who approved it if one did, who bought, and what
+   * settled. The cart may already have been swept, in which case the policy is simply absent
+   * rather than invented.
+   */
+  private receiptContext(order: Order) {
+    const cart = this.opts.storage.getCart(order.cartId);
+    const approval = this.approvals?.store.getByCart(order.cartId);
+    return {
+      ...(cart?.policy
+        ? {
+            policy: {
+              decision: cart.policy.decision,
+              ...(cart.policy.code ? { code: cart.policy.code } : {}),
+              ...(cart.policy.message ? { message: cart.policy.message } : {}),
+              evaluatedAt: cart.policy.evaluatedAt,
+            },
+          }
+        : {}),
+      ...(approval
+        ? {
+            approval: {
+              id: approval.id,
+              status: approval.status,
+              snapshotHash: approval.snapshotHash,
+              ...(approval.resolvedAt ? { resolvedAt: approval.resolvedAt } : {}),
+              ...(approval.reason ? { reason: approval.reason } : {}),
+            },
+          }
+        : {}),
+      order: {
+        id: order.id,
+        cartId: order.cartId,
+        status: order.status,
+        ...(order.externalOrderId ? { externalOrderId: order.externalOrderId } : {}),
+      },
+      terms: this.termsOf(order.quote),
+      ...(order.agent ? { agent: order.agent } : {}),
+      ...(order.payment
+        ? {
+            payment: {
+              txHash: order.payment.txHash,
+              network: order.payment.network,
+              asset: order.payment.asset,
+              amountMinor: order.payment.amountMinor.toString(),
+              ...(order.payment.payer ? { payer: order.payment.payer } : {}),
+              ts: order.payment.ts,
+            },
+          }
+        : {}),
+      adapterVersion: ADAPTER_VERSION,
+      ...(order.traceId ? { traceId: order.traceId } : {}),
+    };
   }
 
   /**
@@ -135,9 +220,32 @@ export class CheckoutService {
     return decision;
   }
 
-  /** Denied decisions become typed errors the agent can reason about. */
-  private assertNotDenied(decision: PolicyDecision): void {
+  /**
+   * Denied decisions become typed errors the agent can reason about, and a receipt (M4): a sale
+   * the store refused is evidence too, and the merchant may later need to prove it refused it.
+   */
+  private assertNotDenied(
+    decision: PolicyDecision,
+    context?: { quote: Quote; agent?: AgentIdentityRecord | undefined; traceId?: string | undefined; cartId?: string },
+  ): void {
     if (decision.decision !== "denied") return;
+    if (context) {
+      this.receipts?.append({
+        event: "policy.denied",
+        at: new Date().toISOString(),
+        terms: this.termsOf(context.quote),
+        policy: {
+          decision: "denied",
+          code: decision.code,
+          message: decision.message,
+          evaluatedAt: new Date().toISOString(),
+        },
+        ...(context.agent ? { agent: context.agent } : {}),
+        ...(context.cartId ? { cart: { id: context.cartId } } : {}),
+        adapterVersion: ADAPTER_VERSION,
+        ...(context.traceId ? { traceId: context.traceId } : {}),
+      });
+    }
     throw new AgentGateError(decision.code, decision.message, {
       hint: decision.hint,
       details: decision.details,
@@ -233,7 +341,7 @@ export class CheckoutService {
     // Merchant policy, first pass (M1). A denial stops the quote here: the agent gets a typed
     // reason instead of a cart it could never pay.
     const decision = this.runPolicy(quote, shipping?.country);
-    this.assertNotDenied(decision);
+    this.assertNotDenied(decision, { quote, agent, traceId });
 
     const now = new Date();
     const cart: Cart = {
@@ -376,7 +484,12 @@ export class CheckoutService {
     // Merchant policy, second pass (M1): suspension, exclusions and period volume can have
     // changed since the quote. Nothing is charged when this blocks.
     const decision = this.runPolicy(cart.quote, cart.shipping?.country, cart.id);
-    this.assertNotDenied(decision);
+    this.assertNotDenied(decision, {
+      quote: cart.quote,
+      agent: cart.agent,
+      traceId: cart.traceId,
+      cartId: cart.id,
+    });
     return { cart, decision };
   }
 
@@ -513,6 +626,14 @@ export class CheckoutService {
         updatedAt: new Date().toISOString(),
       };
       this.opts.storage.saveOrder(held);
+      // The store was paid something it did not quote. Record it before alerting: this is
+      // precisely the case a merchant will later have to account for.
+      this.receipts?.append({
+        ...this.receiptContext(held),
+        event: "order.held",
+        at: new Date().toISOString(),
+        discrepancy: { mismatch },
+      });
       await this.raise({
         severity: "critical",
         code: "PAYMENT_MISMATCH",
@@ -526,7 +647,19 @@ export class CheckoutService {
     const paid: Order = { ...order, status: "paid", payment, updatedAt: new Date().toISOString() };
     this.opts.storage.saveOrder(paid);
     log.info("payment.settled", { amount: payment.amountMinor, payer: payment.payer });
-    return this.pushToConnector(paid);
+    const final = await this.pushToConnector(paid);
+    // One receipt per settled order, written after the platform order so the receipt names it.
+    // A connector failure does not withhold the receipt: the buyer paid, and that is the fact
+    // the receipt exists to record.
+    this.receipts?.append({
+      ...this.receiptContext(final),
+      event: "order.settled",
+      at: new Date().toISOString(),
+      ...(final.connectorError
+        ? { discrepancy: { connectorError: final.connectorError } }
+        : {}),
+    });
+    return final;
   }
 
   private mismatch(
@@ -686,6 +819,12 @@ export class CheckoutService {
       orderId: order.id,
       cartId,
       reason,
+    });
+    this.receipts?.append({
+      ...this.receiptContext(order),
+      event: "order.failed",
+      at: new Date().toISOString(),
+      discrepancy: { reason },
     });
     await this.raise({
       severity: "warning",

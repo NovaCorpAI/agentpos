@@ -25,6 +25,7 @@ import {
 } from "@agentgate/core";
 import type { ApprovalRequest, ApprovalStatus, ApprovalStore } from "@agentgate/approvals";
 import type { AgentRecord, AgentStatus, AgentStore } from "@agentgate/identity";
+import type { Receipt, ReceiptStore } from "@agentgate/receipts";
 
 type Row = { json: string };
 
@@ -70,6 +71,9 @@ export class SiteStorage {
       create table if not exists approvals (id text primary key, cart_id text not null, status text not null, json text not null, created_at text not null, expires_at text not null);
       create index if not exists approvals_cart_idx on approvals(cart_id);
       create table if not exists agents (agent_key text primary key, owner text not null, status text not null, json text not null, registered_at text not null);
+      create table if not exists receipts (seq integer primary key, hash text not null unique, prev text not null, event text not null, order_id text, at text not null, json text not null);
+      create index if not exists receipts_order_idx on receipts(order_id);
+      create index if not exists receipts_at_idx on receipts(at);
       create table if not exists meta (key text primary key, value text not null);
     `);
   }
@@ -339,6 +343,56 @@ export class SiteStorage {
             : db.prepare("select json from agents order by registered_at desc limit ?").all(options.limit ?? 200)
         ) as Row[];
         return rows.map((r) => JSON.parse(r.json) as AgentRecord);
+      },
+    };
+  }
+
+  // receipts (M4) ------------------------------------------------------------
+  /**
+   * Append-only receipt chain. `seq` is the primary key and `hash` is unique, so a duplicated or
+   * re-numbered link is refused by the database rather than by convention.
+   */
+  receiptStore(): ReceiptStore {
+    const db = this.db;
+    return {
+      append(receipt: Receipt): void {
+        db.prepare(
+          "insert into receipts (seq, hash, prev, event, order_id, at, json) values (?, ?, ?, ?, ?, ?, ?)",
+        ).run(
+          receipt.body.seq,
+          receipt.hash,
+          receipt.body.prev,
+          receipt.body.event,
+          receipt.body.order?.id ?? null,
+          receipt.body.at,
+          JSON.stringify(receipt),
+        );
+      },
+      last(): Receipt | undefined {
+        const row = db.prepare("select json from receipts order by seq desc limit 1").get() as
+          | Row
+          | undefined;
+        return row ? (JSON.parse(row.json) as Receipt) : undefined;
+      },
+      get(hash: string): Receipt | undefined {
+        const row = db.prepare("select json from receipts where hash = ?").get(hash) as
+          | Row
+          | undefined;
+        return row ? (JSON.parse(row.json) as Receipt) : undefined;
+      },
+      list(options: { from?: string; to?: string; limit?: number } = {}): Receipt[] {
+        const rows = db
+          .prepare(
+            "select json from receipts where at >= ? and at <= ? order by seq asc limit ?",
+          )
+          .all(options.from ?? "", options.to ?? "9999", options.limit ?? 100_000) as Row[];
+        return rows.map((r) => JSON.parse(r.json) as Receipt);
+      },
+      byOrder(orderId: string): Receipt[] {
+        const rows = db
+          .prepare("select json from receipts where order_id = ? order by seq asc")
+          .all(orderId) as Row[];
+        return rows.map((r) => JSON.parse(r.json) as Receipt);
       },
     };
   }

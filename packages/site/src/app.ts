@@ -42,6 +42,7 @@ import {
   SIGNATURE_HEADER,
   TIMESTAMP_HEADER,
 } from "@agentgate/approvals";
+import { ReceiptChain, verifyChain, verifyReceipt } from "@agentgate/receipts";
 import { IdentityService } from "@agentgate/identity";
 import type { AgentIdentity } from "@agentgate/identity";
 import { CatalogService } from "./catalog.js";
@@ -50,6 +51,7 @@ import type { AlertSink } from "./checkout.js";
 import type { SiteConfig } from "./config.js";
 import { createMcpHandler } from "./mcp.js";
 import { TokenBucketLimiter, clientIp, rateLimit } from "./ratelimit.js";
+import { loadOrCreateReceiptSigner } from "./receipt-key.js";
 import { SiteStorage } from "./storage.js";
 
 export interface AgentGateDeps {
@@ -65,6 +67,10 @@ export interface AgentGateDeps {
   approvals?: ApprovalService;
   /** Know Your Agent (M3). Built from storage and site.identity when omitted. */
   identity?: IdentityService;
+  /** Signed audit chain (M4). Built from storage and the store's receipt key when omitted. */
+  receipts?: ReceiptChain;
+  /** Overrides the receipt signing secret (tests, or a merchant managing their own key). */
+  receiptSecret?: string | undefined;
   /** Shared secret the merchant signs approval resolutions with. Without it, resolve answers 401. */
   approvalSecret?: string | undefined;
   /** Tests only: fetch used for facilitator health checks. */
@@ -80,6 +86,7 @@ export interface SiteRoutes {
   checkout: string;
   orders: string;
   approvals: string;
+  receipts: string;
   health: string;
 }
 
@@ -94,6 +101,8 @@ export interface AgentGateSite {
   approvals: ApprovalService | undefined;
   /** Agent registry and request authentication (M3). */
   identity: IdentityService;
+  /** Signed audit chain, when the site keeps receipts (M4). */
+  receipts: ReceiptChain | undefined;
   /** Route table for docs and the CLI. */
   routes: SiteRoutes;
 }
@@ -136,6 +145,8 @@ const STATUS_BY_CODE: Record<string, number> = {
   APPROVAL_REJECTED: 403,
   APPROVAL_EXPIRED: 410,
   APPROVAL_SNAPSHOT_CHANGED: 409,
+  // verifiable receipts (M4)
+  RECEIPT_NOT_FOUND: 404,
   // agent identity (M3): 401 when the caller failed to prove who it is, 403 when it proved it
   // and the answer is still no.
   AGENT_IDENTITY_REQUIRED: 401,
@@ -235,6 +246,9 @@ export function createAgentGateApp(deps: AgentGateDeps): AgentGateSite {
   });
   const base = site.basePath;
   const siteUrl = site.siteUrl.replace(/\/+$/, "");
+  // Signed audit chain (M4). Declared before the approval queue so the queue can record its
+  // decisions into it; assigned just below, before any request can arrive.
+  let receipts: ReceiptChain | undefined;
   // Approval queue (M2). Enabled by default; a site can turn it off to refuse flagged orders
   // outright instead of parking them for a human.
   const approvals =
@@ -247,10 +261,59 @@ export function createAgentGateApp(deps: AgentGateDeps): AgentGateSite {
             poll: `${siteUrl}${base}/approvals/${r.id}`,
             resolve: `${siteUrl}${base}/approvals/${r.id}/resolve`,
           }),
+          // Every decision enters the audit chain, including the expiry nobody made: silence is
+          // a decision too, and the merchant may have to account for it.
+          onEvent: (event, request) => {
+            receipts?.append({
+              event: event === "requested" ? "approval.requested" : "approval.resolved",
+              at: new Date().toISOString(),
+              cart: { id: request.cartId },
+              terms: {
+                lines: request.snapshot.lines,
+                totalMinor: request.snapshot.totalMinor,
+                payTo: request.snapshot.payTo,
+                network: core.caip2,
+                asset: core.checkoutAsset,
+                assetAddress: assetAddress(core),
+              },
+              policy: {
+                decision: "requires_approval",
+                code: request.snapshot.policy.code,
+                message: request.snapshot.policy.message,
+                evaluatedAt: request.createdAt,
+              },
+              approval: {
+                id: request.id,
+                status: request.status,
+                snapshotHash: request.snapshotHash,
+                ...(request.resolvedAt ? { resolvedAt: request.resolvedAt } : {}),
+                ...(request.reason ? { reason: request.reason } : {}),
+              },
+              adapterVersion: ADAPTER_VERSION,
+            });
+          },
           logger,
         })
       : undefined);
   checkout.setApprovals(approvals);
+
+  if (site.receipts.enabled) {
+    const signer = deps.receiptSecret
+      ? { secret: deps.receiptSecret }
+      : loadOrCreateReceiptSigner(site.dataDir);
+    receipts =
+      deps.receipts ??
+      new ReceiptChain({
+        store: storage.receiptStore(),
+        signerSecret: signer.secret,
+        storeName: site.displayName,
+        storeUrl: siteUrl,
+        logger,
+      });
+  } else {
+    receipts = deps.receipts;
+  }
+  checkout.setReceipts(receipts);
   // Know Your Agent (M3). The registry lives in the merchant's own database: no directory to
   // sign up with, and a revocation takes effect on the next request.
   const identity =
@@ -272,6 +335,7 @@ export function createAgentGateApp(deps: AgentGateDeps): AgentGateSite {
     checkout: `${siteUrl}${base}/checkout?cart=<cartId>`,
     orders: `${siteUrl}${base}/orders/<orderId>`,
     approvals: `${siteUrl}${base}/approvals/<approvalId>`,
+    receipts: `${siteUrl}${base}/orders/<orderId>/receipt`,
     health: `${siteUrl}${base}/health`,
   };
 
@@ -415,6 +479,10 @@ export function createAgentGateApp(deps: AgentGateDeps): AgentGateSite {
         asset: core.checkoutAsset,
         facilitator,
         orders: { stuck },
+        // The key third parties check this store's receipts against (M4).
+        ...(receipts
+          ? { receipts: { signer: receipts.signer, chainHeight: receipts.head()?.body.seq ?? 0 } }
+          : {}),
       },
       ok ? 200 : 503,
     );
@@ -701,6 +769,49 @@ export function createAgentGateApp(deps: AgentGateDeps): AgentGateSite {
     c.json(orderView(checkout.getOrder(c.req.param("id").slice(0, 64)))),
   );
 
+  // --- receipts (M4) ---------------------------------------------------------
+  if (receipts && site.receipts.publicOrderReceipts) {
+    const chain = receipts;
+    // The buyer's copy. Handed out whole, signature included, so the agent (or the human behind
+    // it) can verify it later without asking us anything.
+    app.get(`${base}/orders/:id/receipt`, (c) => {
+      const orderId = c.req.param("id").slice(0, 64);
+      // 404 on an unknown order comes from getOrder, so an existing order with no receipt is
+      // distinguishable from an order that never existed.
+      checkout.getOrder(orderId);
+      const found = chain.forOrder(orderId);
+      if (found.length === 0) {
+        return errorResponse(
+          c,
+          new AgentGateError("RECEIPT_NOT_FOUND", `No receipt for order '${orderId}' yet`, {
+            hint: "Receipts are written when a payment settles; poll the order until it is paid.",
+            retryable: true,
+          }),
+        );
+      }
+      return c.json({
+        receipts: found,
+        verification: verifyChain(found),
+        howToVerify:
+          "Recompute sha256 over the canonical JSON of `body` and check `signature` against `body.store.signer` (Ed25519). See packages/receipts/SPEC.md.",
+      });
+    });
+
+    app.get(`${base}/receipts/:hash`, (c) => {
+      const hash = c.req.param("hash").slice(0, 64);
+      const receipt = chain.get(hash);
+      if (!receipt) {
+        return errorResponse(
+          c,
+          new AgentGateError("RECEIPT_NOT_FOUND", `No receipt with hash '${hash}'`, {
+            hint: "Receipt hashes come from the order receipt or the store's audit export.",
+          }),
+        );
+      }
+      return c.json({ receipt, verification: verifyReceipt(receipt) });
+    });
+  }
+
   // --- MCP -------------------------------------------------------------------
   const mcp = createMcpHandler({ site, core, catalog, checkout, routes });
   app.all(`${base}/mcp`, (c) => mcp(c.req.raw));
@@ -714,6 +825,7 @@ export function createAgentGateApp(deps: AgentGateDeps): AgentGateSite {
     logger,
     approvals,
     identity,
+    receipts,
     routes,
   };
 }

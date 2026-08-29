@@ -11,6 +11,7 @@ npx @agentgate/site serve     # sidecar on :8402 (reverse-proxy /.well-known/ucp
 npx @agentgate/site status    # orders, tx hashes, connector errors (--retry)
 npx @agentgate/site approvals # orders parked for your decision (M2)
 npx @agentgate/site agents    # who may buy: register | revoke (M3)
+npx @agentgate/site receipts  # signed audit chain: verify | export (M4)
 ```
 
 Programmatic use (Node sites):
@@ -38,12 +39,14 @@ const gate = await createAgentGate({
 
 Surfaces: `/.well-known/ucp`, `/agentgate/catalog`, `/agentgate/feed`, `/agentgate/mcp`,
 `POST /agentgate/cart`, `POST /agentgate/checkout?cart=`, `/agentgate/orders/:id`,
-`/agentgate/approvals/:id`, `/agentgate/health`.
+`/agentgate/approvals/:id`, `/agentgate/orders/:id/receipt`, `/agentgate/receipts/:hash`,
+`/agentgate/health`.
 
 Trust layer, all optional and off by default: `policy` (what may be sold and up to how much),
 `approvals` (park large orders for a human; the agent is never charged while you decide) and
-`identity` (require agents to sign their requests, and their owners to vouch for them). See
-`@agentgate/policy`, `@agentgate/approvals` and `@agentgate/identity`.
+`identity` (require agents to sign their requests, and their owners to vouch for them), plus
+`receipts` (a signed, chained record of every sale and every refusal, on by default). See
+`@agentgate/policy`, `@agentgate/approvals`, `@agentgate/identity` and `@agentgate/receipts`.
 
 Storage: `node:sqlite` in `.agentgate/agentgate.sqlite` (no native dependencies). Secrets stay in
 `.env` on the merchant's server. See `docs/quickstart.en.md` / `docs/quickstart.es.md`.

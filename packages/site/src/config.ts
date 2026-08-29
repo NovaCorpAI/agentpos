@@ -73,6 +73,17 @@ export const siteConfigSchema = z.object({
       whatsapp: z.object({ from: z.string().min(1), to: z.string().min(1) }).optional(),
     })
     .default({ enabled: true, ttlMinutes: 30 }),
+  /**
+   * Signed audit chain (M4). On by default: a store that keeps no evidence of its own sales has
+   * nothing to show when one is disputed.
+   */
+  receipts: z
+    .object({
+      enabled: z.boolean().default(true),
+      /** Serve each order's receipt at /agentgate/orders/:id/receipt so the buyer can keep it. */
+      publicOrderReceipts: z.boolean().default(true),
+    })
+    .default({ enabled: true, publicOrderReceipts: true }),
   /** G1: per-minute limits. Agents burst, so allow a small burst on top of the sustained rate. */
   rateLimit: z
     .object({
@@ -100,6 +111,8 @@ export interface SiteSecrets {
   /** Shared secret the merchant signs approvals with (M2). Without it, resolutions are refused. */
   approvalSecret: string | undefined;
   approvalWebhookSecret: string | undefined;
+  /** Optional: the store's receipt signing key. Generated in the data dir when unset. */
+  receiptSecret: string | undefined;
   twilioAccountSid: string | undefined;
   twilioAuthToken: string | undefined;
 }
@@ -143,6 +156,7 @@ export function secretsFromEnv(env: Record<string, string | undefined> = process
     alertWebhookUrl: env.AGENTGATE_ALERT_WEBHOOK,
     approvalSecret: env.AGENTGATE_APPROVAL_SECRET,
     approvalWebhookSecret: env.AGENTGATE_APPROVAL_WEBHOOK_SECRET,
+    receiptSecret: env.AGENTGATE_RECEIPT_SECRET,
     twilioAccountSid: env.AGENTGATE_TWILIO_ACCOUNT_SID,
     twilioAuthToken: env.AGENTGATE_TWILIO_AUTH_TOKEN,
   };

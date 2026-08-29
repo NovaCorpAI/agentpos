@@ -29,8 +29,16 @@ export interface ApprovalServiceOptions {
   channels?: NotificationChannel[];
   /** Builds the URLs included in notifications. */
   links?: (request: ApprovalRequest) => ApprovalLinks;
+  /**
+   * Called on every state change, including the automatic expiry. The audit chain (M4) subscribes
+   * here so that "nobody answered" is recorded as firmly as "the merchant said yes".
+   * Never throws into the queue: an observer that fails is logged and ignored.
+   */
+  onEvent?: (event: ApprovalEvent, request: ApprovalRequest) => void;
   logger?: Logger;
 }
+
+export type ApprovalEvent = "requested" | "resolved" | "expired";
 
 export type GateResult =
   | { status: "approved"; request: ApprovalRequest }
@@ -112,6 +120,7 @@ export class ApprovalService {
       expiresAt: new Date(now.getTime() + this.ttlMinutes * 60_000).toISOString(),
     };
     this.opts.store.save(request);
+    this.emit("requested", request);
     this.logger.info("approval.requested", {
       approvalId: request.id,
       cartId: request.cartId,
@@ -177,6 +186,7 @@ export class ApprovalService {
       resolvedAt: now.toISOString(),
     };
     this.opts.store.save(resolved);
+    this.emit("resolved", resolved);
     this.logger.info("approval.resolved", {
       approvalId: id,
       status: resolved.status,
@@ -222,8 +232,21 @@ export class ApprovalService {
       resolvedAt: now.toISOString(),
     };
     this.opts.store.save(expired);
+    this.emit("expired", expired);
     this.logger.info("approval.expired", { approvalId: request.id, cartId: request.cartId });
     return expired;
+  }
+
+  private emit(event: ApprovalEvent, request: ApprovalRequest): void {
+    try {
+      this.opts.onEvent?.(event, request);
+    } catch (err) {
+      this.logger.error("approval.observer_failed", {
+        event,
+        approvalId: request.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 }
 
