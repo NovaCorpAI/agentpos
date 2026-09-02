@@ -1,0 +1,48 @@
+# Production deployment: facilitator + Caddy (TLS). On the VPS, from this directory:
+#
+#   docker compose -f docker-compose.prod.yml --env-file /root/.agentgate/facilitator/mainnet.env up -d --build
+#
+# The env file is the one `keygen` produced, completed with RPC_URL, ASSETS and KEYS. It is copied
+# to the VPS over SSH (scp), never through a chat or a repo.
+#
+# Caddy terminates TLS for facilitator.novacorplabs.com with automatic Let's Encrypt certificates.
+# The Cloudflare DNS record for that name must be DNS-only (grey cloud), not proxied: Caddy needs
+# to answer the ACME challenge itself. The facilitator port is never exposed to the internet
+# directly; only Caddy reaches it, on the internal network.
+services:
+  facilitator:
+    build:
+      context: ../../..
+      dockerfile: apps/facilitator/Dockerfile
+    image: agentgate-facilitator:prod
+    restart: unless-stopped
+    expose:
+      - "8403"
+    environment:
+      AGENTGATE_FACILITATOR_NETWORK: ${AGENTGATE_FACILITATOR_NETWORK:?}
+      AGENTGATE_FACILITATOR_SIGNER_SECRET: ${AGENTGATE_FACILITATOR_SIGNER_SECRET:?}
+      AGENTGATE_FACILITATOR_KEYS: ${AGENTGATE_FACILITATOR_KEYS:?}
+      AGENTGATE_FACILITATOR_ASSETS: ${AGENTGATE_FACILITATOR_ASSETS:?}
+      AGENTGATE_FACILITATOR_RPC_URL: ${AGENTGATE_FACILITATOR_RPC_URL:?}
+      AGENTGATE_FACILITATOR_MAX_FEE_STROOPS: ${AGENTGATE_FACILITATOR_MAX_FEE_STROOPS:-50000}
+    networks: [internal]
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks: [internal]
+    depends_on: [facilitator]
+
+networks:
+  internal: {}
+
+volumes:
+  caddy-data: {}
+  caddy-config: {}

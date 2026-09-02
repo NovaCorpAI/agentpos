@@ -1,0 +1,12 @@
+# TLS front for the facilitator. Certificates are automatic (Let's Encrypt); the DNS record for
+# this name must be DNS-only in Cloudflare (grey cloud) so the ACME challenge reaches Caddy.
+#
+# No rate limiting here on purpose: the stock caddy image does not ship the rate_limit module,
+# and a directive it cannot parse would keep the whole front from starting. The facilitator
+# authenticates every call itself (constant-time key check, 401 otherwise), which is the control
+# that actually protects the fee balance. If junk traffic ever becomes a real cost, add
+# Cloudflare proxying with an Origin Rule for ACME, or build Caddy with mholt/caddy-ratelimit.
+facilitator.novacorplabs.com {
+	reverse_proxy facilitator:8403
+	encode gzip
+}
