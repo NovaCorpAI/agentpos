@@ -19,7 +19,9 @@ try {
     allowedAssets: config.allowedAssets.length,
     apiKeys: config.apiKeys.length,
     maxFeeStroops: config.maxFeeStroops,
-    rpcUrl: config.rpcUrl ?? "(sdk default)",
+    // Host only: an RPC URL can embed the provider's API key, and a log line is one grep away
+    // from a transcript. The full URL exists in the environment and nowhere else.
+    rpcHost: config.rpcUrl ? new URL(config.rpcUrl).host : "(sdk default)",
   });
   // Printed, not just logged: the operator must fund this exact account, and a wrong address here
   // is the difference between "it works" and "every settlement fails at 3am".

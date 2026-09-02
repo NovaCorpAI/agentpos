@@ -2,6 +2,8 @@
 #   docker build -f apps/facilitator/Dockerfile -t agentgate-facilitator .
 FROM node:22-alpine AS build
 WORKDIR /app
+# CI=true: pnpm prune must not stop to ask for a TTY confirmation inside a build.
+ENV CI=true
 RUN corepack enable
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json tsconfig.base.json ./
 COPY packages/core ./packages/core
