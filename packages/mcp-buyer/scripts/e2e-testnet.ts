@@ -257,7 +257,7 @@ async function main(): Promise<void> {
   close();
   rmSync(home, { recursive: true, force: true });
   console.log(
-    `\nE2E OK in ${((Date.now() - t0) / 1000).toFixed(1)}s: agent under mandate bought "${mug.title}" on testnet, order #${result.order.externalOrderId} paid in WooCommerce, tx ${result.receipt.txHash}`,
+    `\nE2E OK in ${((Date.now() - t0) / 1000).toFixed(1)}s: agent under mandate bought "${mug.title}" on ${MAINNET ? "MAINNET" : "testnet"}, order #${result.order.externalOrderId} paid in WooCommerce, tx ${result.receipt.txHash}`,
   );
 }
 
