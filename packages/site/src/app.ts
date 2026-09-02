@@ -47,6 +47,7 @@ import { ReceiptChain, verifyChain, verifyReceipt } from "@agentgate/receipts";
 import { IdentityService } from "@agentgate/identity";
 import type { AgentIdentity } from "@agentgate/identity";
 import { CatalogService } from "./catalog.js";
+import { buildDashboardHtml } from "./dashboard.js";
 import { CheckoutService } from "./checkout.js";
 import type { AlertSink } from "./checkout.js";
 import type { SiteConfig } from "./config.js";
@@ -89,6 +90,7 @@ export interface SiteRoutes {
   approvals: string;
   receipts: string;
   metrics: string;
+  dashboard: string;
   health: string;
 }
 
@@ -339,6 +341,7 @@ export function createAgentGateApp(deps: AgentGateDeps): AgentGateSite {
     approvals: `${siteUrl}${base}/approvals/<approvalId>`,
     receipts: `${siteUrl}${base}/orders/<orderId>/receipt`,
     metrics: `${siteUrl}${base}/metrics`,
+    dashboard: `${siteUrl}${base}/dashboard`,
     health: `${siteUrl}${base}/health`,
   };
 
@@ -546,8 +549,11 @@ export function createAgentGateApp(deps: AgentGateDeps): AgentGateSite {
   });
 
   // Aggregated public metrics (G2). Counts and totals only: publishable without publishing
-  // anyone's customers. `?days=` bounds the window; the default is 30.
+  // anyone's customers. `?days=` bounds the window; the default is 30. CORS is open on purpose:
+  // the payload is aggregates by construction, and a browser page (the store's own dashboard,
+  // or anyone verifying our traction claims) must be able to read it cross-origin.
   app.get(`${base}/metrics`, (c) => {
+    c.header("access-control-allow-origin", "*");
     const days = Math.min(365, Math.max(1, Number(c.req.query("days") ?? 30) || 30));
     const now = new Date();
     const metrics = storage.publicMetrics(new Date(now.getTime() - days * 86_400_000), now);
@@ -565,6 +571,18 @@ export function createAgentGateApp(deps: AgentGateDeps): AgentGateSite {
       note: "Aggregates only. No buyer data, no addresses, no order ids. Latency is checkout to platform order.",
     });
   });
+
+  // The store's own dashboard: a self-contained page rendering /metrics, served from the
+  // store's domain. The traction artifact is "my store sells to agents" on THEIR url, not a
+  // central page of ours (guardrail 7).
+  const dashboardHtml = buildDashboardHtml({
+    displayName: site.displayName,
+    basePath: base,
+    locale: site.locale,
+    network: core.caip2,
+    asset: core.checkoutAsset,
+  });
+  app.get(`${base}/dashboard`, (c) => c.html(dashboardHtml));
 
   app.get(`${base}/health`, async (c) => {
     const facilitator = await facilitatorStatus();

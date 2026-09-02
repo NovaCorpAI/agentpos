@@ -258,3 +258,30 @@ describe("public metrics (G2)", () => {
     expect(body.latencyMs.p50).toBeUndefined();
   });
 });
+
+describe("the store's own dashboard (G2)", () => {
+  it("serves a self-contained page from the store's domain", async () => {
+    const res = await makeSite().fetch(new Request("https://shop.test/agentgate/dashboard"));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/html");
+    const html = await res.text();
+    expect(html).toContain("Test Shop");
+    expect(html).toContain("/agentgate/metrics");
+    // Self-contained: no external scripts, styles or fonts. It must work behind any CSP and
+    // leak nothing about who views it.
+    expect(html).not.toMatch(/src="https?:\/\//);
+    expect(html).not.toMatch(/href="https?:\/\//);
+  });
+
+  it("escapes the store name so a merchant cannot inject markup into their own page", async () => {
+    const gate = makeSite({ displayName: 'Shop <script>alert(1)</script>' });
+    const html = await (await gate.fetch(new Request("https://shop.test/agentgate/dashboard"))).text();
+    expect(html).not.toContain("<script>alert(1)</script>");
+    expect(html).toContain("&lt;script&gt;");
+  });
+
+  it("metrics answers with open CORS so browser pages can read the aggregates", async () => {
+    const res = await makeSite().fetch(new Request("https://shop.test/agentgate/metrics"));
+    expect(res.headers.get("access-control-allow-origin")).toBe("*");
+  });
+});
