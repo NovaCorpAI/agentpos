@@ -19,6 +19,9 @@ services:
     expose:
       - "8403"
     environment:
+      # IPv4 first: the Ankr whitelist holds the VPS's IPv4, and a dual-stack host would
+      # otherwise reach rpc.ankr.com over IPv6 and be refused (verified live: -4 ok, -6 403).
+      NODE_OPTIONS: --dns-result-order=ipv4first
       AGENTGATE_FACILITATOR_NETWORK: ${AGENTGATE_FACILITATOR_NETWORK:?}
       AGENTGATE_FACILITATOR_SIGNER_SECRET: ${AGENTGATE_FACILITATOR_SIGNER_SECRET:?}
       AGENTGATE_FACILITATOR_KEYS: ${AGENTGATE_FACILITATOR_KEYS:?}
