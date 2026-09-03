@@ -6,8 +6,8 @@
  * offline and a spec site going down cannot change what we accept. That only stays honest if
  * re-vendoring is a command rather than a memory, hence this script.
  *
- *   pnpm --filter @agentgate/core vendor:schemas            # check for drift, write nothing
- *   pnpm --filter @agentgate/core vendor:schemas -- --write # update the vendored copies
+ *   pnpm --filter @agentpos/core vendor:schemas            # check for drift, write nothing
+ *   pnpm --filter @agentpos/core vendor:schemas -- --write # update the vendored copies
  *
  * After writing, update PROTOCOL_VERSIONS in src/adapter/versions.ts, run the conformance tests,
  * and record the change in docs/adapter-versions.md.
@@ -61,7 +61,7 @@ interface TreeEntry {
 async function listTree(source: Source): Promise<string[]> {
   const url = `https://api.github.com/repos/${source.repo}/git/trees/${encodeURIComponent(source.ref)}?recursive=1`;
   const res = await fetch(url, {
-    headers: { accept: "application/vnd.github+json", "user-agent": "agentgate-vendor-schemas" },
+    headers: { accept: "application/vnd.github+json", "user-agent": "agentpos-vendor-schemas" },
   });
   if (!res.ok) throw new Error(`${source.name}: GitHub answered ${res.status} for ${url}`);
   const body = (await res.json()) as { tree?: TreeEntry[]; truncated?: boolean };
@@ -73,7 +73,7 @@ async function listTree(source: Source): Promise<string[]> {
 
 async function fetchRaw(source: Source, path: string): Promise<string> {
   const url = `https://raw.githubusercontent.com/${source.repo}/${source.ref}/${path}`;
-  const res = await fetch(url, { headers: { "user-agent": "agentgate-vendor-schemas" } });
+  const res = await fetch(url, { headers: { "user-agent": "agentpos-vendor-schemas" } });
   if (!res.ok) throw new Error(`${source.name}: ${res.status} for ${url}`);
   return res.text();
 }

@@ -3,8 +3,8 @@
  */
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { addUsdc, usdcFromMinor } from "@agentgate/core";
-import type { UsdcMinor } from "@agentgate/core";
+import { addUsdc, usdcFromMinor } from "@agentpos/core";
+import type { UsdcMinor } from "@agentpos/core";
 import { profilesDir } from "./profile.js";
 
 export interface SpendingEntry {

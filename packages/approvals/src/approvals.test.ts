@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { AgentGateError, createMemoryLogger } from "@agentgate/core";
+import { AgentPOSError, createMemoryLogger } from "@agentpos/core";
 import { ApprovalService, MemoryApprovalStore } from "./service.js";
 import { canonicalize, hashSnapshot } from "./snapshot.js";
 import {
@@ -47,8 +47,8 @@ function service(over: { ttlMinutes?: number; channels?: NotificationChannel[] }
     ...(over.ttlMinutes !== undefined ? { ttlMinutes: over.ttlMinutes } : {}),
     ...(over.channels ? { channels: over.channels } : {}),
     links: (r) => ({
-      poll: `https://shop.test/agentgate/approvals/${r.id}`,
-      resolve: `https://shop.test/agentgate/approvals/${r.id}/resolve`,
+      poll: `https://shop.test/agentpos/approvals/${r.id}`,
+      resolve: `https://shop.test/agentpos/approvals/${r.id}/resolve`,
     }),
     logger,
   });
@@ -109,7 +109,7 @@ describe("approval queue", () => {
 
   it("cannot resolve an unknown approval", () => {
     const { svc } = service();
-    expect(() => svc.resolve("apr_nope", "approve")).toThrowError(AgentGateError);
+    expect(() => svc.resolve("apr_nope", "approve")).toThrowError(AgentPOSError);
   });
 
   it("voids the approval when the order changes underneath it", async () => {
@@ -181,7 +181,7 @@ describe("resolution signatures", () => {
       assertValidResolutionSignature({ ...base, ...patch });
       expect.unreachable();
     } catch (err) {
-      expect((err as AgentGateError).code).toBe("APPROVAL_UNAUTHORIZED");
+      expect((err as AgentPOSError).code).toBe("APPROVAL_UNAUTHORIZED");
     }
   });
 });
@@ -192,7 +192,7 @@ describe("notification channels", () => {
     const { svc } = service({
       channels: [
         new WebhookChannel({
-          url: "https://hooks.test/agentgate",
+          url: "https://hooks.test/agentpos",
           secret: "hook-secret",
           fetchImpl,
         }),
@@ -201,12 +201,12 @@ describe("notification channels", () => {
     const { request } = await svc.gate(snapshot());
     expect(fetchImpl).toHaveBeenCalledOnce();
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toBe("https://hooks.test/agentgate");
+    expect(url).toBe("https://hooks.test/agentpos");
     const headers = init.headers as Record<string, string>;
-    expect(headers["x-agentgate-signature"]).toMatch(/^sha256=[0-9a-f]{64}$/);
+    expect(headers["x-agentpos-signature"]).toMatch(/^sha256=[0-9a-f]{64}$/);
     const body = JSON.parse(String(init.body)) as Record<string, unknown>;
     expect(body).toMatchObject({
-      type: "agentgate.approval.requested",
+      type: "agentpos.approval.requested",
       approvalId: request.id,
       snapshotHash: request.snapshotHash,
     });

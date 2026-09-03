@@ -4,8 +4,8 @@
  *   buyer side:  BuyerService with a human mandate -> search -> cart -> buy (real facilitator)
  *   proof:       tx hash on-chain, spending log entry, order PAID in WooCommerce with the hash.
  *
- * Requirements: `pnpm demo:up` (http://localhost:8080) and AGENTGATE_FACILITATOR_API_KEY in .env.
- * Uses AGENTGATE_CHECKOUT_ASSET=XLM so friendbot can fund the buyer (no USDC faucet in CI).
+ * Requirements: `pnpm demo:up` (http://localhost:8080) and AGENTPOS_FACILITATOR_API_KEY in .env.
+ * Uses AGENTPOS_CHECKOUT_ASSET=XLM so friendbot can fund the buyer (no USDC faucet in CI).
  */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -21,16 +21,16 @@ import {
   TransactionBuilder,
 } from "@stellar/stellar-sdk";
 import {
-  AgentGateError,
+  AgentPOSError,
   FRIENDBOT_URL,
   configFromEnv,
   createLocalKeypairSigner,
   createLogger,
   formatUsdc,
-} from "@agentgate/core";
-import { WooCommerceConnector } from "@agentgate/connectors";
-import { scanSite } from "@agentgate/scanner";
-import { createAgentGate, SiteStorage } from "@agentgate/site";
+} from "@agentpos/core";
+import { WooCommerceConnector } from "@agentpos/connectors";
+import { scanSite } from "@agentpos/scanner";
+import { createAgentPOS, SiteStorage } from "@agentpos/site";
 import { BuyerService } from "../src/buyer.js";
 import { mandateSchema } from "../src/mandate.js";
 import type { Profile } from "../src/profile.js";
@@ -47,9 +47,9 @@ for (const candidate of ["../../../.env", "../.env"]) {
 
 const WOO_URL = process.env.DEMO_STORE_URL ?? "http://localhost:8080";
 const WOO_CK =
-  process.env.AGENTGATE_WOO_CONSUMER_KEY ?? "ck_agentgatedemo000000000000000000000000000";
+  process.env.AGENTPOS_WOO_CONSUMER_KEY ?? "ck_agentposdemo000000000000000000000000000";
 const WOO_CS =
-  process.env.AGENTGATE_WOO_CONSUMER_SECRET ?? "cs_agentgatedemo000000000000000000000000000";
+  process.env.AGENTPOS_WOO_CONSUMER_SECRET ?? "cs_agentposdemo000000000000000000000000000";
 
 /**
  * Mainnet mode (G2 first real purchase): E2E_NETWORK=mainnet. No friendbot, no trustline
@@ -59,16 +59,16 @@ const WOO_CS =
 const MAINNET = process.env.E2E_NETWORK === "mainnet";
 const core = configFromEnv({
   ...process.env,
-  AGENTGATE_NETWORK: MAINNET ? "mainnet" : "testnet",
-  AGENTGATE_ALLOW_MAINNET: MAINNET ? "true" : "false",
-  AGENTGATE_CHECKOUT_ASSET: MAINNET ? "USDC" : (process.env.AGENTGATE_CHECKOUT_ASSET ?? "XLM"),
-  ...(MAINNET && !process.env.AGENTGATE_RPC_URL && process.env.AGENTGATE_RPC_URL_MAINNET
-    ? { AGENTGATE_RPC_URL: process.env.AGENTGATE_RPC_URL_MAINNET }
+  AGENTPOS_NETWORK: MAINNET ? "mainnet" : "testnet",
+  AGENTPOS_ALLOW_MAINNET: MAINNET ? "true" : "false",
+  AGENTPOS_CHECKOUT_ASSET: MAINNET ? "USDC" : (process.env.AGENTPOS_CHECKOUT_ASSET ?? "XLM"),
+  ...(MAINNET && !process.env.AGENTPOS_RPC_URL && process.env.AGENTPOS_RPC_URL_MAINNET
+    ? { AGENTPOS_RPC_URL: process.env.AGENTPOS_RPC_URL_MAINNET }
     : {}),
 });
 if (core.facilitatorApiKeys.length === 0)
   throw new Error(
-    `facilitator API key missing for ${core.network} (AGENTGATE_FACILITATOR_API_KEY_${core.network.toUpperCase()})`,
+    `facilitator API key missing for ${core.network} (AGENTPOS_FACILITATOR_API_KEY_${core.network.toUpperCase()})`,
   );
 const ITEM_QUERY = process.env.E2E_ITEM ?? (MAINNET ? "sticker" : "mug");
 
@@ -136,10 +136,10 @@ async function main(): Promise<void> {
     allowInsecureHttp: true,
   });
   const storage = new SiteStorage(":memory:");
-  const gate = await createAgentGate({
+  const gate = await createAgentPOS({
     site: {
       siteUrl: WOO_URL,
-      displayName: "AgentGate Demo Store",
+      displayName: "AgentPOS Demo Store",
       payTo: sellerAddress,
       platform: "woocommerce",
       woocommerce: { baseUrl: WOO_URL, allowInsecureHttp: true },
@@ -167,8 +167,8 @@ async function main(): Promise<void> {
   step(`sidecar listening at ${siteUrl}`);
 
   // ---- buyer side: a human mandate, an agent acting inside it -------------------
-  const home = mkdtempSync(join(tmpdir(), "agentgate-e2e-"));
-  process.env.AGENTGATE_HOME = home;
+  const home = mkdtempSync(join(tmpdir(), "agentpos-e2e-"));
+  process.env.AGENTPOS_HOME = home;
   const makeProfile = (maxPerTx: string): Profile => ({
     name: "e2e",
     network: core.network,
@@ -218,7 +218,7 @@ async function main(): Promise<void> {
     await buyer.buy(siteUrl, tooBig.cartId);
     throw new Error("mandate did not block an over-limit purchase");
   } catch (err) {
-    if (!(err instanceof AgentGateError) || err.code !== "MANDATE_EXCEEDED") throw err;
+    if (!(err instanceof AgentPOSError) || err.code !== "MANDATE_EXCEEDED") throw err;
     step(
       `mandate blocked ${tooBig.quote.total} ${core.checkoutAsset} (> maxPerTx ${mug.price.amount}): ${err.code}`,
     );
@@ -262,7 +262,7 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  if (err instanceof AgentGateError)
+  if (err instanceof AgentPOSError)
     console.error(`E2E FAILED ${err.code}: ${err.message}\nhint: ${err.hint}`, err.details ?? "");
   else console.error("E2E FAILED", err);
   process.exit(1);

@@ -1,6 +1,6 @@
 # Quickstart: from WooCommerce to an agent-buyable store in 15 minutes (testnet)
 
-AgentGate runs next to your site, reads your catalog, publishes it in the formats AI agents
+AgentPOS runs next to your site, reads your catalog, publishes it in the formats AI agents
 understand, charges USDC on Stellar and creates the order in your WooCommerce. No marketplace,
 no custody: payments go straight to your wallet and you remain the merchant of record.
 
@@ -16,35 +16,35 @@ no custody: payments go straight to your wallet and you remain the merchant of r
 ## 1. Install and initialize
 
 ```bash
-mkdir agentgate-sidecar && cd agentgate-sidecar
-npx @agentgate/site init
+mkdir agentpos-sidecar && cd agentpos-sidecar
+npx @agentpos/site init
 ```
 
 Answer the prompts: site URL, store name, `WooCommerce`, your store URL, your Stellar address.
-The command writes `agentgate.config.json` and a `.env` with empty slots. Fill them:
+The command writes `agentpos.config.json` and a `.env` with empty slots. Fill them:
 
 ```
-AGENTGATE_NETWORK=testnet
-AGENTGATE_FACILITATOR_API_KEY=<from channels.openzeppelin.com>
-AGENTGATE_WOO_CONSUMER_KEY=ck_...
-AGENTGATE_WOO_CONSUMER_SECRET=cs_...
+AGENTPOS_NETWORK=testnet
+AGENTPOS_FACILITATOR_API_KEY=<from channels.openzeppelin.com>
+AGENTPOS_WOO_CONSUMER_KEY=ck_...
+AGENTPOS_WOO_CONSUMER_SECRET=cs_...
 ```
 
 ## 2. Scan
 
 ```bash
-npx @agentgate/site scan
+npx @agentpos/site scan
 ```
 
-AgentGate reads products through your WooCommerce API and your sitemap and prints
+AgentPOS reads products through your WooCommerce API and your sitemap and prints
 "this is what I understood": one line per item with the source price and a suggested USDC
 price (1:1 for USD stores; other currencies are left for you to set). Nothing is published.
 
 ## 3. Confirm
 
 ```bash
-npx @agentgate/site confirm        # interactive, item by item
-npx @agentgate/site confirm --all  # accept every suggested price (USD stores)
+npx @agentpos/site confirm        # interactive, item by item
+npx @agentpos/site confirm --all  # accept every suggested price (USD stores)
 ```
 
 You decide which items agents may buy and at what USDC price, every time.
@@ -52,8 +52,8 @@ You decide which items agents may buy and at what USDC price, every time.
 ## 4. Publish and serve
 
 ```bash
-npx @agentgate/site publish
-npx @agentgate/site serve --port 8402
+npx @agentpos/site publish
+npx @agentpos/site serve --port 8402
 ```
 
 `publish` checks the facilitator with your key and marks confirmed items as published.
@@ -61,14 +61,14 @@ npx @agentgate/site serve --port 8402
 
 ```
 /.well-known/ucp   -> http://127.0.0.1:8402/.well-known/ucp
-/agentgate/*       -> http://127.0.0.1:8402/agentgate/*
+/agentpos/*       -> http://127.0.0.1:8402/agentpos/*
 ```
 
 nginx example:
 
 ```nginx
 location /.well-known/ucp { proxy_pass http://127.0.0.1:8402; }
-location /agentgate/      { proxy_pass http://127.0.0.1:8402; }
+location /agentpos/      { proxy_pass http://127.0.0.1:8402; }
 ```
 
 ## 5. What agents see
@@ -76,20 +76,20 @@ location /agentgate/      { proxy_pass http://127.0.0.1:8402; }
 | URL                                                   | Purpose                                                                                        |
 | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | `https://your-site/.well-known/ucp`                   | UCP discovery manifest with the `x402-stellar` payment handler                                 |
-| `https://your-site/agentgate/catalog`                 | Published items, prices in USDC, search with `?q=`                                             |
-| `https://your-site/agentgate/feed`                    | ACP product feed                                                                               |
-| `https://your-site/agentgate/mcp`                     | MCP server: `search_items`, `get_item`, `create_cart`, `get_order`, `get_payment_instructions` |
-| `POST https://your-site/agentgate/cart`               | Quote for `{ items, buyer, shipping }`                                                         |
-| `POST https://your-site/agentgate/checkout?cart=<id>` | x402 checkout: 402 with terms, then payment                                                    |
-| `https://your-site/agentgate/orders/<id>`             | Order status, tx hash, WooCommerce order number                                                |
+| `https://your-site/agentpos/catalog`                 | Published items, prices in USDC, search with `?q=`                                             |
+| `https://your-site/agentpos/feed`                    | ACP product feed                                                                               |
+| `https://your-site/agentpos/mcp`                     | MCP server: `search_items`, `get_item`, `create_cart`, `get_order`, `get_payment_instructions` |
+| `POST https://your-site/agentpos/cart`               | Quote for `{ items, buyer, shipping }`                                                         |
+| `POST https://your-site/agentpos/checkout?cart=<id>` | x402 checkout: 402 with terms, then payment                                                    |
+| `https://your-site/agentpos/orders/<id>`             | Order status, tx hash, WooCommerce order number                                                |
 
 When an agent pays, the facilitator settles on Stellar and the order appears in WooCommerce as
-**Processing**, paid with `payment_method = agentgate`, `transaction_id = <stellar tx hash>` and
-`_agentgate_*` metadata. You fulfil it like any other order.
+**Processing**, paid with `payment_method = agentpos`, `transaction_id = <stellar tx hash>` and
+`_agentpos_*` metadata. You fulfil it like any other order.
 
 ## Set rules for agentic sales (optional)
 
-You can bound what agents may buy from `agentgate.config.json`, in the `policy` block. Rules are
+You can bound what agents may buy from `agentpos.config.json`, in the `policy` block. Rules are
 evaluated when quoting and **again** before charging, because your situation may have changed:
 
 ```json
@@ -126,7 +126,7 @@ of refusing it. The agent gets a `202` with a polling URL and **is not charged**
   "approvals": {
     "enabled": true,
     "ttlMinutes": 30,
-    "webhookUrl": "https://your-system.example/hooks/agentgate",
+    "webhookUrl": "https://your-system.example/hooks/agentpos",
     "whatsapp": { "from": "whatsapp:+14155238886", "to": "whatsapp:+56912345678" }
   }
 }
@@ -135,18 +135,18 @@ of refusing it. The agent gets a `202` with a polling URL and **is not charged**
 In `.env`:
 
 ```
-AGENTGATE_APPROVAL_SECRET=<long random string>
-AGENTGATE_APPROVAL_WEBHOOK_SECRET=<webhook secret>
-AGENTGATE_TWILIO_ACCOUNT_SID=AC...
-AGENTGATE_TWILIO_AUTH_TOKEN=...
+AGENTPOS_APPROVAL_SECRET=<long random string>
+AGENTPOS_APPROVAL_WEBHOOK_SECRET=<webhook secret>
+AGENTPOS_TWILIO_ACCOUNT_SID=AC...
+AGENTPOS_TWILIO_AUTH_TOKEN=...
 ```
 
 Decide from the terminal:
 
 ```bash
-npx @agentgate/site approvals                       # what is waiting for you
-npx @agentgate/site approvals approve <id>
-npx @agentgate/site approvals reject <id> -r "out of stock"
+npx @agentpos/site approvals                       # what is waiting for you
+npx @agentpos/site approvals approve <id>
+npx @agentpos/site approvals reject <id> -r "out of stock"
 ```
 
 Three guarantees worth knowing:
@@ -181,9 +181,9 @@ none. What the mode changes is what happens when identity is absent.
 Manage the register from the terminal:
 
 ```bash
-npx @agentgate/site agents                                  # who may buy
-npx @agentgate/site agents register ./attestation.json      # vouched by its owner
-npx @agentgate/site agents revoke GAGENT... -r "key lost"
+npx @agentpos/site agents                                  # who may buy
+npx @agentpos/site agents register ./attestation.json      # vouched by its owner
+npx @agentpos/site agents revoke GAGENT... -r "key lost"
 ```
 
 Two things worth knowing:
@@ -195,7 +195,7 @@ Two things worth knowing:
 
 Agents sign with [RFC 9421 HTTP Message Signatures](https://www.rfc-editor.org/rfc/rfc9421.html),
 the standard the x402 ecosystem uses, so any compliant client works without learning anything
-AgentGate-specific. The full profile is in `packages/identity/SPEC.md`.
+AgentPOS-specific. The full profile is in `packages/identity/SPEC.md`.
 
 ## Keep proof of every sale (on by default)
 
@@ -204,12 +204,12 @@ price, what your rules said, who approved it, who bought, and the transaction ha
 receipt too, because "we did not sell that" is also something you may need to show.
 
 ```bash
-npx @agentgate/site receipts                 # recent receipts, chain height, signing key
-npx @agentgate/site receipts verify          # is the chain intact?
-npx @agentgate/site receipts export --from 2026-08-01 --to 2026-08-31 -o august.json
+npx @agentpos/site receipts                 # recent receipts, chain height, signing key
+npx @agentpos/site receipts verify          # is the chain intact?
+npx @agentpos/site receipts export --from 2026-08-01 --to 2026-08-31 -o august.json
 ```
 
-The buyer gets their own copy at `GET /agentgate/orders/<orderId>/receipt`, and can verify it
+The buyer gets their own copy at `GET /agentpos/orders/<orderId>/receipt`, and can verify it
 without asking you anything.
 
 Three things to know:
@@ -218,7 +218,7 @@ Three things to know:
   the gap shows up in `receipts verify`.
 - **Editing is detectable.** Change a receipt and its hash breaks; re-sign it and the next one
   still points at the old hash.
-- **Back up the signing key** (`.agentgate/receipt-signer.json`) with your database. It holds no
+- **Back up the signing key** (`.agentpos/receipt-signer.json`) with your database. It holds no
   money and must never receive any. Lose it and old receipts stay verifiable, but the chain
   restarts under a new key.
 
@@ -227,8 +227,8 @@ To turn it off: `{ "receipts": { "enabled": false } }`.
 ## Check status
 
 ```bash
-npx @agentgate/site status          # items, recent orders, connector errors
-npx @agentgate/site status --retry  # re-create WooCommerce orders that failed after payment
+npx @agentpos/site status          # items, recent orders, connector errors
+npx @agentpos/site status --retry  # re-create WooCommerce orders that failed after payment
 ```
 
 ## Try it with a real agent (testnet)
@@ -238,7 +238,7 @@ cart, pays through the real facilitator and verifies the order in WooCommerce:
 
 ```bash
 pnpm demo:up              # local WooCommerce with seed products
-pnpm e2e:testnet          # needs AGENTGATE_FACILITATOR_API_KEY in .env
+pnpm e2e:testnet          # needs AGENTPOS_FACILITATOR_API_KEY in .env
 ```
 
 ## Which facilitator, and who pays the fees
@@ -248,8 +248,8 @@ signed transaction and submits it to the network, paying the (tiny) transaction 
 talks to one through two settings:
 
 ```
-AGENTGATE_FACILITATOR_URL=...
-AGENTGATE_FACILITATOR_API_KEY=...
+AGENTPOS_FACILITATOR_URL=...
+AGENTPOS_FACILITATOR_API_KEY=...
 ```
 
 You can point them at any facilitator. Two you should know about:
@@ -261,14 +261,14 @@ You can point them at any facilitator. Two you should know about:
 - **Your own.** `apps/facilitator` in this repo is a minimal facilitator on the official SDKs. If
   you run it, **you pay your own fees**, from a separate account that holds XLM and nothing else.
   Measured cost: about 0.0023 XLM per sale. It refuses to start without an asset allowlist, API
-  keys, and (on mainnet) an explicit RPC. `pnpm --filter @agentgate/facilitator keygen` creates
+  keys, and (on mainnet) an explicit RPC. `pnpm --filter @agentpos/facilitator keygen` creates
   the fee account without ever printing its secret. Full guide in `apps/facilitator/README.md`.
 
 Whichever you use, the money still moves buyer → your wallet inside one transaction. The
-facilitator never holds it, and neither do we. AgentGate does not operate a facilitator for
+facilitator never holds it, and neither do we. AgentPOS does not operate a facilitator for
 merchants: the one we run is for our own tests and demo store.
 
 ## Going to mainnet
 
-Mainnet is locked behind `AGENTGATE_ALLOW_MAINNET=true` and a facilitator that settles
+Mainnet is locked behind `AGENTPOS_ALLOW_MAINNET=true` and a facilitator that settles
 `stellar:pubnet`. See `plan/ROADMAP.md`, gate G2.

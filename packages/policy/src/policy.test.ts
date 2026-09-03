@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { usdc, usdcFromMinor } from "@agentgate/core";
+import { usdc, usdcFromMinor } from "@agentpos/core";
 import {
   OPEN_POLICY,
   evaluatePolicy,

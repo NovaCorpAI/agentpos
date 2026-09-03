@@ -1,5 +1,5 @@
 /**
- * Generic connector (SPEC 08): custom stacks implement two or three functions and AgentGate
+ * Generic connector (SPEC 08): custom stacks implement two or three functions and AgentPOS
  * calls them. createOrder runs ONLY after settlement.
  */
 import type {
@@ -8,7 +8,7 @@ import type {
   ConnectorProduct,
   OrderConnector,
   PaidOrderInput,
-} from "@agentgate/core";
+} from "@agentpos/core";
 
 export interface GenericConnectorHooks {
   listProducts?: () => Promise<ConnectorProduct[]>;

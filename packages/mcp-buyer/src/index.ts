@@ -12,7 +12,7 @@ export {
   approve,
   listPending,
   requestApproval,
-  agentgateHome,
+  agentposHome,
 } from "./profile.js";
 export type { Profile, ProfileJson, PendingApproval } from "./profile.js";
 export { SpendingLog } from "./spending.js";

@@ -8,7 +8,7 @@ import { bodyLimit } from "hono/body-limit";
 import { paymentMiddleware } from "@x402/hono";
 import type { HTTPTransportContext } from "@x402/core/server";
 import {
-  AgentGateError,
+  AgentPOSError,
   ADAPTER_VERSION,
   assetAddress,
   addressSchema,
@@ -25,7 +25,7 @@ import {
   silentLogger,
   toReceipt,
   usdcFromMinor,
-} from "@agentgate/core";
+} from "@agentpos/core";
 import type {
   CatalogItem,
   CoreConfig,
@@ -34,7 +34,7 @@ import type {
   Logger,
   OrderConnector,
   UsdcMinor,
-} from "@agentgate/core";
+} from "@agentpos/core";
 import { z } from "zod";
 import {
   ApprovalService,
@@ -42,10 +42,10 @@ import {
   describeApproval,
   SIGNATURE_HEADER,
   TIMESTAMP_HEADER,
-} from "@agentgate/approvals";
-import { ReceiptChain, verifyChain, verifyReceipt } from "@agentgate/receipts";
-import { IdentityService } from "@agentgate/identity";
-import type { AgentIdentity } from "@agentgate/identity";
+} from "@agentpos/approvals";
+import { ReceiptChain, verifyChain, verifyReceipt } from "@agentpos/receipts";
+import { IdentityService } from "@agentpos/identity";
+import type { AgentIdentity } from "@agentpos/identity";
 import { CatalogService } from "./catalog.js";
 import { buildDashboardHtml } from "./dashboard.js";
 import { CheckoutService } from "./checkout.js";
@@ -56,7 +56,7 @@ import { TokenBucketLimiter, clientIp, rateLimit } from "./ratelimit.js";
 import { loadOrCreateReceiptSigner } from "./receipt-key.js";
 import { SiteStorage } from "./storage.js";
 
-export interface AgentGateDeps {
+export interface AgentPOSDeps {
   site: SiteConfig;
   core: CoreConfig;
   connector: OrderConnector;
@@ -94,7 +94,7 @@ export interface SiteRoutes {
   health: string;
 }
 
-export interface AgentGateSite {
+export interface AgentPOSSite {
   app: Hono;
   fetch: (request: Request) => Promise<Response>;
   storage: SiteStorage;
@@ -163,7 +163,7 @@ const STATUS_BY_CODE: Record<string, number> = {
 };
 
 function errorResponse(c: Context, err: unknown): Response {
-  if (err instanceof AgentGateError) {
+  if (err instanceof AgentPOSError) {
     // details may carry bigint money values: serialize through the bigint-safe encoder.
     return c.body(
       jsonStringify({ error: err.toJSON() }),
@@ -189,7 +189,7 @@ function errorResponse(c: Context, err: unknown): Response {
 /** Published items always carry a confirmed price; anything else is a data bug, not a user error. */
 export function priceOf(item: CatalogItem): UsdcMinor {
   if (item.priceUsdc === undefined) {
-    throw new AgentGateError("INTERNAL", `Item '${item.id}' has no confirmed price`, {
+    throw new AgentPOSError("INTERNAL", `Item '${item.id}' has no confirmed price`, {
       hint: "Only confirmed items can be published.",
     });
   }
@@ -230,10 +230,10 @@ const TRACE_HEADER = "x-trace-id";
 const traceOf = (c: Context): string =>
   c.req.header(TRACE_HEADER) ?? c.res.headers.get(TRACE_HEADER) ?? newTraceId();
 
-export function createAgentGateApp(deps: AgentGateDeps): AgentGateSite {
+export function createAgentPOSApp(deps: AgentPOSDeps): AgentPOSSite {
   const { site, core } = deps;
   const logger = deps.logger ?? silentLogger;
-  const storage = deps.storage ?? new SiteStorage(`${site.dataDir}/agentgate.sqlite`);
+  const storage = deps.storage ?? new SiteStorage(`${site.dataDir}/agentpos.sqlite`);
   const catalog = new CatalogService(storage);
   const checkout = new CheckoutService({
     storage,
@@ -427,7 +427,7 @@ export function createAgentGateApp(deps: AgentGateDeps): AgentGateSite {
       traceId: c.res.headers.get(TRACE_HEADER),
       path: c.req.path,
       error: err.message,
-      code: err instanceof AgentGateError ? err.code : undefined,
+      code: err instanceof AgentPOSError ? err.code : undefined,
     });
     return errorResponse(c, err);
   });
@@ -542,7 +542,7 @@ export function createAgentGateApp(deps: AgentGateDeps): AgentGateSite {
           ]
         : []),
       "- Every refusal carries a machine-readable code and an actionable hint. Read it before retrying.",
-      `- Powered by AgentGate (Apache-2.0), adapter ${ADAPTER_VERSION}.`,
+      `- Powered by AgentPOS (Apache-2.0), adapter ${ADAPTER_VERSION}.`,
       "",
     ];
     return c.text(`${lines.join("\n")}`);
@@ -630,7 +630,7 @@ export function createAgentGateApp(deps: AgentGateDeps): AgentGateSite {
   // ACP feed: fiat prices (ISO 4217 minor units) as the schema requires; items without a fiat
   // source price are listed without price. USDC terms live in the UCP handler and /catalog.
   app.get(`${base}/feed`, (c) => {
-    c.header("X-AgentGate-Adapter", ADAPTER_VERSION);
+    c.header("X-AgentPOS-Adapter", ADAPTER_VERSION);
     return c.json(
       buildAcpFeed(
         catalog.published().map((i) => ({
@@ -855,7 +855,7 @@ export function createAgentGateApp(deps: AgentGateDeps): AgentGateSite {
             error: {
               code: "APPROVAL_UNAUTHORIZED",
               message: "This store cannot verify resolutions",
-              hint: "Set AGENTGATE_APPROVAL_SECRET on the sidecar and sign with it.",
+              hint: "Set AGENTPOS_APPROVAL_SECRET on the sidecar and sign with it.",
               retryable: false,
             },
           },
@@ -902,7 +902,7 @@ export function createAgentGateApp(deps: AgentGateDeps): AgentGateSite {
       if (found.length === 0) {
         return errorResponse(
           c,
-          new AgentGateError("RECEIPT_NOT_FOUND", `No receipt for order '${orderId}' yet`, {
+          new AgentPOSError("RECEIPT_NOT_FOUND", `No receipt for order '${orderId}' yet`, {
             hint: "Receipts are written when a payment settles; poll the order until it is paid.",
             retryable: true,
           }),
@@ -922,7 +922,7 @@ export function createAgentGateApp(deps: AgentGateDeps): AgentGateSite {
       if (!receipt) {
         return errorResponse(
           c,
-          new AgentGateError("RECEIPT_NOT_FOUND", `No receipt with hash '${hash}'`, {
+          new AgentPOSError("RECEIPT_NOT_FOUND", `No receipt with hash '${hash}'`, {
             hint: "Receipt hashes come from the order receipt or the store's audit export.",
           }),
         );

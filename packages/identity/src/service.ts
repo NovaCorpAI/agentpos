@@ -9,9 +9,9 @@
  * A signature is always verified when present, in every mode. The mode decides what happens
  * when identity is absent, never whether a bad signature is tolerated.
  */
-import { AgentGateError } from "@agentgate/core";
-import type { Logger } from "@agentgate/core";
-import { silentLogger } from "@agentgate/core";
+import { AgentPOSError } from "@agentpos/core";
+import type { Logger } from "@agentpos/core";
+import { silentLogger } from "@agentpos/core";
 import { decodeAttestation, verifyAttestation } from "./attestation.js";
 import type { SignedAttestation } from "./attestation.js";
 import {
@@ -106,7 +106,7 @@ export class IdentityService {
     now: Date,
   ): AgentIdentity {
     if (!request.url) {
-      throw new AgentGateError("AGENT_SIGNATURE_INVALID", "This endpoint cannot verify RFC 9421 signatures", {
+      throw new AgentPOSError("AGENT_SIGNATURE_INVALID", "This endpoint cannot verify RFC 9421 signatures", {
         hint: `Send the ${AGENT_ID_HEADER} header set instead, or report this: the server did not pass the request URL to the verifier.`,
       });
     }
@@ -116,7 +116,7 @@ export class IdentityService {
     );
     if (!result.ok) {
       const clockSkew = result.reason?.includes("away from server time") || result.reason === "Signature has expired";
-      throw new AgentGateError(
+      throw new AgentPOSError(
         clockSkew ? "AGENT_TIMESTAMP_OUT_OF_WINDOW" : "AGENT_SIGNATURE_INVALID",
         result.reason ?? "The RFC 9421 signature on this request is not acceptable",
         {
@@ -129,7 +129,7 @@ export class IdentityService {
     }
     const agentKey = result.keyid as string;
     if (!this.nonces.useOnce(result.replayKey as string, new Date(now.getTime() + RFC9421_WINDOW_SECONDS * 1000))) {
-      throw new AgentGateError("AGENT_NONCE_REUSED", "This signature was already used", {
+      throw new AgentPOSError("AGENT_NONCE_REUSED", "This signature was already used", {
         hint: "Use a fresh `nonce` parameter for every request; replays are refused.",
       });
     }
@@ -150,7 +150,7 @@ export class IdentityService {
 
     if (!agentKey && !signature) {
       if (this.mode === "verified-only") {
-        throw new AgentGateError("AGENT_IDENTITY_REQUIRED", "This store only sells to identified agents", {
+        throw new AgentPOSError("AGENT_IDENTITY_REQUIRED", "This store only sells to identified agents", {
           hint: `Sign the request with your agent key and send ${AGENT_ID_HEADER}, ${AGENT_TIMESTAMP_HEADER}, ${AGENT_NONCE_HEADER} and ${AGENT_SIGNATURE_HEADER}, plus ${AGENT_ATTESTATION_HEADER} with an owner attestation.`,
           details: { mode: this.mode },
         });
@@ -160,25 +160,25 @@ export class IdentityService {
 
     // From here identity was offered, so it must hold up, whatever the mode.
     if (!agentKey || !signature || !timestamp || !nonce) {
-      throw new AgentGateError("AGENT_SIGNATURE_INVALID", "Incomplete agent signature headers", {
+      throw new AgentPOSError("AGENT_SIGNATURE_INVALID", "Incomplete agent signature headers", {
         hint: `Send all of ${AGENT_ID_HEADER}, ${AGENT_TIMESTAMP_HEADER}, ${AGENT_NONCE_HEADER} and ${AGENT_SIGNATURE_HEADER}.`,
       });
     }
     const ts = Number(timestamp);
     if (!Number.isFinite(ts) || Math.abs(now.getTime() / 1000 - ts) > REQUEST_WINDOW_SECONDS) {
-      throw new AgentGateError("AGENT_TIMESTAMP_OUT_OF_WINDOW", "Agent signature timestamp is outside the accepted window", {
+      throw new AgentPOSError("AGENT_TIMESTAMP_OUT_OF_WINDOW", "Agent signature timestamp is outside the accepted window", {
         hint: `Signatures are valid for ${REQUEST_WINDOW_SECONDS}s; check your clock and re-sign.`,
         details: { windowSeconds: REQUEST_WINDOW_SECONDS },
       });
     }
     if (!verifyRequestSignature(agentKey, { ...request, timestamp, nonce }, signature)) {
-      throw new AgentGateError("AGENT_SIGNATURE_INVALID", "Agent signature does not match this request", {
+      throw new AgentPOSError("AGENT_SIGNATURE_INVALID", "Agent signature does not match this request", {
         hint: "Sign method, path, body hash, timestamp and nonce with your agent key (see the identity SPEC).",
       });
     }
     // Nonce is spent only after the signature checks out, so noise cannot exhaust the store.
     if (!this.nonces.useOnce(`${agentKey}:${nonce}`, new Date(now.getTime() + REQUEST_WINDOW_SECONDS * 1000))) {
-      throw new AgentGateError("AGENT_NONCE_REUSED", "This signature was already used", {
+      throw new AgentPOSError("AGENT_NONCE_REUSED", "This signature was already used", {
         hint: "Use a fresh nonce for every request; replays are refused.",
       });
     }
@@ -193,7 +193,7 @@ export class IdentityService {
   private identityFor(agentKey: string, attestationHeader: string | undefined, now: Date): AgentIdentity {
     const record = this.agents.get(agentKey);
     if (record?.status === "revoked") {
-      throw new AgentGateError("AGENT_REVOKED", "This agent key was revoked", {
+      throw new AgentPOSError("AGENT_REVOKED", "This agent key was revoked", {
         hint: record.revokedReason ?? "Ask the merchant to register the agent again.",
         details: { agentKey, revokedAt: record.revokedAt },
       });
@@ -201,7 +201,7 @@ export class IdentityService {
 
     const attested = this.checkAttestation(agentKey, attestationHeader, record, now);
     if (this.mode === "verified-only" && !attested.ok) {
-      throw new AgentGateError("AGENT_ATTESTATION_INVALID", `This store only sells to attested agents: ${attested.reason}`, {
+      throw new AgentPOSError("AGENT_ATTESTATION_INVALID", `This store only sells to attested agents: ${attested.reason}`, {
         hint: `Send ${AGENT_ATTESTATION_HEADER} with an owner attestation for this key, or ask the merchant to register it.`,
         details: { agentKey, reason: attested.reason },
       });
@@ -251,7 +251,7 @@ export class IdentityService {
   recheck(identity: AgentIdentity | undefined): void {
     if (!identity?.agentKey) {
       if (this.mode === "verified-only") {
-        throw new AgentGateError("AGENT_IDENTITY_REQUIRED", "This store only sells to identified agents", {
+        throw new AgentPOSError("AGENT_IDENTITY_REQUIRED", "This store only sells to identified agents", {
           hint: "Create the cart with a signed request; the identity established there is carried to payment.",
           details: { mode: this.mode },
         });
@@ -260,13 +260,13 @@ export class IdentityService {
     }
     const record = this.agents.get(identity.agentKey);
     if (record?.status === "revoked") {
-      throw new AgentGateError("AGENT_REVOKED", "This agent key was revoked", {
+      throw new AgentPOSError("AGENT_REVOKED", "This agent key was revoked", {
         hint: record.revokedReason ?? "The cart was quoted before the key was revoked; ask the merchant to register it again.",
         details: { agentKey: identity.agentKey, revokedAt: record.revokedAt },
       });
     }
     if (this.mode === "verified-only" && !identity.attested) {
-      throw new AgentGateError("AGENT_ATTESTATION_INVALID", "This store only sells to attested agents", {
+      throw new AgentPOSError("AGENT_ATTESTATION_INVALID", "This store only sells to attested agents", {
         hint: "Create the cart presenting an owner attestation for this key.",
         details: { agentKey: identity.agentKey },
       });
@@ -277,7 +277,7 @@ export class IdentityService {
   register(signed: SignedAttestation, metadata?: Record<string, string>, now: Date = new Date()): AgentRecord {
     const check = verifyAttestation(signed, { now });
     if (!check.valid || !check.attestation) {
-      throw new AgentGateError("AGENT_ATTESTATION_INVALID", `Cannot register: ${check.reason ?? "invalid attestation"}`, {
+      throw new AgentPOSError("AGENT_ATTESTATION_INVALID", `Cannot register: ${check.reason ?? "invalid attestation"}`, {
         hint: "The owner must sign the attestation with the key named in `owner`.",
       });
     }
@@ -294,7 +294,7 @@ export class IdentityService {
   revoke(agentKey: string, reason?: string, now: Date = new Date()): AgentRecord {
     const record = this.agents.get(agentKey);
     if (!record) {
-      throw new AgentGateError("AGENT_NOT_FOUND", `Unknown agent '${agentKey}'`, { hint: "List registered agents with `agentgate agents list`." });
+      throw new AgentPOSError("AGENT_NOT_FOUND", `Unknown agent '${agentKey}'`, { hint: "List registered agents with `agentpos agents list`." });
     }
     const revoked: AgentRecord = {
       ...record,

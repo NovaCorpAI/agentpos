@@ -1,10 +1,10 @@
-# @agentgate/core
+# @agentpos/core
 
-Shared foundation for every AgentGate package.
+Shared foundation for every AgentPOS package.
 
 - `config`: network (testnet default, mainnet gated), facilitator URLs, CAIP-2 ids, USDC issuers.
 - `money`: branded integer types (`UsdcMinor`, `Stroops`), 7 decimals, no floats.
-- `errors`: `AgentGateError { code, message, hint, retryable }` with a closed code set.
+- `errors`: `AgentPOSError { code, message, hint, retryable }` with a closed code set.
 - `adapter/x402`: the only module that imports `@x402/*`. Resource server, route config with
   integer prices, buyer client, settle -> receipt.
 - `adapter/ucp`, `adapter/acp`: discovery surfaces (skeletons; schema validation in Phase 2).
@@ -14,7 +14,7 @@ Shared foundation for every AgentGate package.
 - `fiscal`: `FiscalAdapter` interface (plugins live elsewhere).
 
 ```ts
-import { resolveConfig, usdc, createResourceServer, buildRouteConfig } from "@agentgate/core";
+import { resolveConfig, usdc, createResourceServer, buildRouteConfig } from "@agentpos/core";
 
 const cfg = resolveConfig(); // testnet
 const server = createResourceServer(cfg);

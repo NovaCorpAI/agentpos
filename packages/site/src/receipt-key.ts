@@ -5,14 +5,14 @@
  * proves that a receipt came from this store and has not been rewritten since. It lives on the
  * merchant's own machine, next to their database, and never reaches us (guardrail 1).
  *
- * Resolution order: `AGENTGATE_RECEIPT_SECRET` if set, otherwise a file in the data directory,
+ * Resolution order: `AGENTPOS_RECEIPT_SECRET` if set, otherwise a file in the data directory,
  * created on first use. Generating it silently is deliberate: a store that would have to read a
  * setup guide before its receipts start chaining is a store with no receipts.
  */
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { Keypair } from "@stellar/stellar-sdk";
-import { AgentGateError } from "@agentgate/core";
+import { AgentPOSError } from "@agentpos/core";
 
 export const RECEIPT_KEY_FILE = "receipt-signer.json";
 
@@ -27,7 +27,7 @@ interface ReceiptKeyFile {
 export interface ReceiptSigner {
   secret: string;
   publicKey: string;
-  /** Where it came from, for `agentgate status` and the runbook. */
+  /** Where it came from, for `agentpos status` and the runbook. */
   source: "env" | "file";
   path?: string;
 }
@@ -36,13 +36,13 @@ export function loadOrCreateReceiptSigner(
   dataDir: string,
   env: Record<string, string | undefined> = process.env,
 ): ReceiptSigner {
-  const fromEnv = env.AGENTGATE_RECEIPT_SECRET;
+  const fromEnv = env.AGENTPOS_RECEIPT_SECRET;
   if (fromEnv) {
     try {
       const kp = Keypair.fromSecret(fromEnv.trim());
       return { secret: kp.secret(), publicKey: kp.publicKey(), source: "env" };
     } catch {
-      throw new AgentGateError("INVALID_SECRET_KEY", "AGENTGATE_RECEIPT_SECRET is not a valid key", {
+      throw new AgentPOSError("INVALID_SECRET_KEY", "AGENTPOS_RECEIPT_SECRET is not a valid key", {
         hint: "It must be a Stellar secret seed (S...). Unset it to let the sidecar manage its own receipt key.",
       });
     }

@@ -4,7 +4,7 @@
  * merchant sells at; the USDC/x402 terms live in the UCP payment handler and our catalog.
  */
 import type { SourcePrice } from "../catalog.js";
-import { AgentGateError } from "../errors.js";
+import { AgentPOSError } from "../errors.js";
 
 export interface AcpFeedItemInput {
   id: string;
@@ -66,14 +66,14 @@ const MINOR_UNITS: Record<string, number> = {
 export function fiatToMinorUnits(price: SourcePrice): AcpPrice {
   const currency = price.currency.toUpperCase();
   if (!/^[A-Z]{3}$/.test(currency)) {
-    throw new AgentGateError("INVALID_AMOUNT", `Not an ISO 4217 currency: ${price.currency}`, {
+    throw new AgentPOSError("INVALID_AMOUNT", `Not an ISO 4217 currency: ${price.currency}`, {
       hint: "ACP feeds require a three-letter ISO 4217 currency; USDC prices are published via the UCP payment handler instead.",
     });
   }
   const exponent = MINOR_UNITS[currency] ?? 2;
   const match = /^(\d+)(?:\.(\d+))?$/.exec(price.amount.replace(/,/g, ""));
   if (!match) {
-    throw new AgentGateError("INVALID_AMOUNT", `Invalid price amount: ${price.amount}`, {
+    throw new AgentPOSError("INVALID_AMOUNT", `Invalid price amount: ${price.amount}`, {
       hint: "Use a decimal string such as '12.50'.",
     });
   }

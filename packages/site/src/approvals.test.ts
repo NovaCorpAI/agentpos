@@ -13,15 +13,15 @@ import type {
   SupportedResponse,
   VerifyResponse,
 } from "@x402/core/types";
-import { createMemoryLogger, resolveConfig, usdc } from "@agentgate/core";
-import type { CatalogItem, OrderConnector, PaidOrderInput } from "@agentgate/core";
+import { createMemoryLogger, resolveConfig, usdc } from "@agentpos/core";
+import type { CatalogItem, OrderConnector, PaidOrderInput } from "@agentpos/core";
 import {
   SIGNATURE_HEADER,
   TIMESTAMP_HEADER,
   hashSnapshot,
   signResolution,
-} from "@agentgate/approvals";
-import { createAgentGateApp } from "./app.js";
+} from "@agentpos/approvals";
+import { createAgentPOSApp } from "./app.js";
 import { parseSiteConfig } from "./config.js";
 import { SiteStorage } from "./storage.js";
 import { payLikeAnAgent } from "./test-utils.js";
@@ -98,7 +98,7 @@ function build(options: { secret?: string | undefined; ttlMinutes?: number } = {
     },
   };
   const facilitator = stub();
-  const gate = createAgentGateApp({
+  const gate = createAgentPOSApp({
     site: parseSiteConfig({
       siteUrl: "https://shop.test",
       displayName: "Approval Shop",
@@ -122,16 +122,16 @@ function build(options: { secret?: string | undefined; ttlMinutes?: number } = {
   const read = (r: Response): Promise<any> => r.json() as Promise<any>;
   const newCart = async () =>
     read(
-      await req("/agentgate/cart", {
+      await req("/agentpos/cart", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ items: [{ itemId: "mug", quantity: 1 }] }),
       }),
     );
   const checkout = (cartId: string) =>
-    req(`/agentgate/checkout?cart=${cartId}`, { method: "POST" });
+    req(`/agentpos/checkout?cart=${cartId}`, { method: "POST" });
   const pay = (cartId: string) =>
-    payLikeAnAgent(gate.fetch, `https://shop.test/agentgate/checkout?cart=${cartId}`, {
+    payLikeAnAgent(gate.fetch, `https://shop.test/agentpos/checkout?cart=${cartId}`, {
       method: "POST",
     });
   const resolve = (
@@ -140,7 +140,7 @@ function build(options: { secret?: string | undefined; ttlMinutes?: number } = {
     opts: { secret?: string; timestamp?: string; reason?: string } = {},
   ) => {
     const timestamp = opts.timestamp ?? String(Math.floor(Date.now() / 1000));
-    return req(`/agentgate/approvals/${id}/resolve`, {
+    return req(`/agentpos/approvals/${id}/resolve`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -167,13 +167,13 @@ describe("M2 approval flow", () => {
     });
     expect(t.facilitator.settles).toBe(0);
 
-    const polled = await t.read(await t.req(`/agentgate/approvals/${pending.approvalId}`));
+    const polled = await t.read(await t.req(`/agentpos/approvals/${pending.approvalId}`));
     expect(polled.status).toBe("pending");
     expect(polled.snapshotHash).toMatch(/^[0-9a-f]{64}$/);
 
     const resolved = await t.read(await t.resolve(pending.approvalId, "approve"));
     expect(resolved.status).toBe("approved");
-    const afterApproval = await t.read(await t.req(`/agentgate/approvals/${pending.approvalId}`));
+    const afterApproval = await t.read(await t.req(`/agentpos/approvals/${pending.approvalId}`));
     expect(afterApproval.next).toContain(`cart=${cart.cartId}`);
 
     // Now, and only now, the agent gets 402 terms and pays.
@@ -224,7 +224,7 @@ describe("M2 approval flow", () => {
       expiresAt: new Date(Date.now() - 1000).toISOString(),
     });
 
-    const polled = await t.read(await t.req(`/agentgate/approvals/${pending.approvalId}`));
+    const polled = await t.read(await t.req(`/agentpos/approvals/${pending.approvalId}`));
     expect(polled.status).toBe("expired");
     expect(polled.reason).toMatch(/rejected automatically/i);
 
@@ -251,7 +251,7 @@ describe("M2 resolution authentication", () => {
     });
     expect(stale.status).toBe(401);
 
-    const unsigned = await t.req(`/agentgate/approvals/${id}/resolve`, {
+    const unsigned = await t.req(`/agentpos/approvals/${id}/resolve`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ decision: "approve" }),
@@ -260,7 +260,7 @@ describe("M2 resolution authentication", () => {
 
     // A signature for "reject" cannot be replayed to approve.
     const ts = String(Math.floor(Date.now() / 1000));
-    const swapped = await t.req(`/agentgate/approvals/${id}/resolve`, {
+    const swapped = await t.req(`/agentpos/approvals/${id}/resolve`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -281,7 +281,7 @@ describe("M2 resolution authentication", () => {
     const pending = await t.read(await t.checkout(cart.cartId));
     const res = await t.resolve(pending.approvalId, "approve");
     expect(res.status).toBe(401);
-    expect((await t.read(res)).error.hint).toMatch(/AGENTGATE_APPROVAL_SECRET/);
+    expect((await t.read(res)).error.hint).toMatch(/AGENTPOS_APPROVAL_SECRET/);
   });
 
   it("is idempotent: replaying a resolution never flips the decision", async () => {
@@ -301,6 +301,6 @@ describe("M2 resolution authentication", () => {
 
   it("returns 404 for an unknown approval", async () => {
     const t = build();
-    expect((await t.req("/agentgate/approvals/apr_nope")).status).toBe(404);
+    expect((await t.req("/agentpos/approvals/apr_nope")).status).toBe(404);
   });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { AnthropicProvider, OpenAICompatibleProvider, createLlm } from "./llm.js";
-import { AgentGateError } from "./errors.js";
+import { AgentPOSError } from "./errors.js";
 
 function fakeFetch(status: number, body: unknown) {
   return vi.fn(
@@ -37,8 +37,8 @@ describe("llm router", () => {
       await llm.complete({ prompt: "hi" });
       expect.unreachable();
     } catch (err) {
-      expect((err as AgentGateError).code).toBe("LLM_REQUEST_FAILED");
-      expect((err as AgentGateError).retryable).toBe(true);
+      expect((err as AgentPOSError).code).toBe("LLM_REQUEST_FAILED");
+      expect((err as AgentPOSError).retryable).toBe(true);
     }
   });
 
@@ -56,10 +56,10 @@ describe("llm router", () => {
 
   it("validates provider configuration", () => {
     expect(() => createLlm({ provider: "anthropic", model: "claude-opus-5" })).toThrowError(
-      AgentGateError,
+      AgentPOSError,
     );
     expect(() => createLlm({ provider: "openai-compatible", model: "m" })).toThrowError(
-      AgentGateError,
+      AgentPOSError,
     );
   });
 });

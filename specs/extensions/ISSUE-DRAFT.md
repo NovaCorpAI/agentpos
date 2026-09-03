@@ -84,10 +84,10 @@ more than it proves is worse than none, because it invites reliance it has not e
 
 Draft spec, written in the format of `specs/extensions/`:
 `specs/extensions/agent-commerce-receipts.md` in
-https://github.com/NovaCorpAI/agentgate
+https://github.com/NovaCorpAI/agentpos
 
-Reference implementation is Apache-2.0 and running, not a sketch: `@agentgate/identity` and
-`@agentgate/receipts`. It verifies RFC 9421 with conformance tests against Appendix B.2.6
+Reference implementation is Apache-2.0 and running, not a sketch: `@agentpos/identity` and
+`@agentpos/receipts`. It verifies RFC 9421 with conformance tests against Appendix B.2.6
 verbatim (the published signature base is reproduced byte for byte and the RFC's own Ed25519
 signature verifies against it), and receipt verification is exercised against a real settled
 payment on a public explorer. Settlement is on Stellar via the Built on Stellar facilitator, but

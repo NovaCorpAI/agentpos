@@ -1,5 +1,5 @@
 # Minimal x402 facilitator. Built from the monorepo root:
-#   docker build -f apps/facilitator/Dockerfile -t agentgate-facilitator .
+#   docker build -f apps/facilitator/Dockerfile -t agentpos-facilitator .
 FROM node:22-alpine AS build
 WORKDIR /app
 # CI=true: pnpm prune must not stop to ask for a TTY confirmation inside a build.
@@ -8,9 +8,9 @@ RUN corepack enable
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json tsconfig.base.json ./
 COPY packages/core ./packages/core
 COPY apps/facilitator ./apps/facilitator
-RUN pnpm install --frozen-lockfile --filter @agentgate/facilitator... \
- && pnpm --filter @agentgate/core build \
- && pnpm --filter @agentgate/facilitator build \
+RUN pnpm install --frozen-lockfile --filter @agentpos/facilitator... \
+ && pnpm --filter @agentpos/core build \
+ && pnpm --filter @agentpos/facilitator build \
  && pnpm prune --prod
 
 FROM node:22-alpine

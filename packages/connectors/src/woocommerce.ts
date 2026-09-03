@@ -3,14 +3,14 @@
  * Orders are created ONLY from a PaidOrderInput, i.e. after on-chain settlement.
  */
 import { z } from "zod";
-import { AgentGateError, formatUsdc } from "@agentgate/core";
+import { AgentPOSError, formatUsdc } from "@agentpos/core";
 import type {
   AvailabilityResult,
   ConnectorOrderResult,
   ConnectorProduct,
   OrderConnector,
   PaidOrderInput,
-} from "@agentgate/core";
+} from "@agentpos/core";
 import { connectorHttpError } from "./errors.js";
 
 export interface WooCommerceConnectorOptions {
@@ -83,7 +83,7 @@ export class WooCommerceConnector implements OrderConnector {
   constructor(private readonly options: WooCommerceConnectorOptions) {
     const url = new URL(options.baseUrl);
     if (url.protocol !== "https:" && !options.allowInsecureHttp) {
-      throw new AgentGateError(
+      throw new AgentPOSError(
         "CONFIG_INVALID",
         "WooCommerce connector requires an https:// store URL",
         {
@@ -115,7 +115,7 @@ export class WooCommerceConnector implements OrderConnector {
         ...(body ? { body: JSON.stringify(body) } : {}),
       });
     } catch (cause) {
-      throw new AgentGateError("INTERNAL", "WooCommerce store unreachable", {
+      throw new AgentPOSError("INTERNAL", "WooCommerce store unreachable", {
         hint: "Check the store URL and that the sidecar can reach it.",
         retryable: true,
         cause,
@@ -212,7 +212,7 @@ export class WooCommerceConnector implements OrderConnector {
   async createOrder(input: PaidOrderInput): Promise<ConnectorOrderResult> {
     const missing = input.lines.filter((l) => !l.externalId);
     if (missing.length) {
-      throw new AgentGateError(
+      throw new AgentPOSError(
         "CONFIG_INVALID",
         "Every line needs a WooCommerce product id (externalId)",
         {
@@ -239,11 +239,11 @@ export class WooCommerceConnector implements OrderConnector {
     const body = {
       status: "processing",
       set_paid: true,
-      payment_method: "agentgate",
-      payment_method_title: `Stablecoin (${input.payment.asset} on Stellar) via AgentGate`,
+      payment_method: "agentpos",
+      payment_method_title: `Stablecoin (${input.payment.asset} on Stellar) via AgentPOS`,
       transaction_id: input.payment.txHash,
-      created_via: "agentgate",
-      customer_note: `Paid by an AI agent via AgentGate. Total ${formatUsdc(input.totalUsdc)} ${input.payment.asset}. tx ${input.payment.txHash}`,
+      created_via: "agentpos",
+      customer_note: `Paid by an AI agent via AgentPOS. Total ${formatUsdc(input.totalUsdc)} ${input.payment.asset}. tx ${input.payment.txHash}`,
       billing: {
         ...(address ?? { first_name: first, last_name: last }),
         email: input.buyer?.email ?? "",
@@ -254,12 +254,12 @@ export class WooCommerceConnector implements OrderConnector {
         quantity: l.quantity,
       })),
       meta_data: [
-        { key: "_agentgate_order_id", value: input.orderId },
-        { key: "_agentgate_tx_hash", value: input.payment.txHash },
-        { key: "_agentgate_network", value: input.payment.network },
-        { key: "_agentgate_asset", value: input.payment.asset },
-        { key: "_agentgate_amount_minor", value: input.payment.amountMinor.toString() },
-        { key: "_agentgate_payer", value: input.payment.payer ?? "" },
+        { key: "_agentpos_order_id", value: input.orderId },
+        { key: "_agentpos_tx_hash", value: input.payment.txHash },
+        { key: "_agentpos_network", value: input.payment.network },
+        { key: "_agentpos_asset", value: input.payment.asset },
+        { key: "_agentpos_amount_minor", value: input.payment.amountMinor.toString() },
+        { key: "_agentpos_payer", value: input.payment.payer ?? "" },
       ],
     };
     const order = await this.request("POST", "/orders", body, wooOrderSchema);

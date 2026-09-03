@@ -1,4 +1,4 @@
-# SPEC 05: Scanner del sitio propio (`@agentgate/scanner`)
+# SPEC 05: Scanner del sitio propio (`@agentpos/scanner`)
 
 ## Objetivo
 
@@ -34,7 +34,7 @@ Pipeline:
 4. Precio: se captura el precio fiat y moneda de origen; se SUGIERE USDC
    por tipo de cambio del momento, marcado como sugerencia. El humano lo
    confirma siempre (guardrail 5).
-5. Salida: `agentgate.catalog.draft.json` + tabla "esto entendí" con
+5. Salida: `agentpos.catalog.draft.json` + tabla "esto entendí" con
    confianza por item.
 
 ## Sync

@@ -6,7 +6,7 @@
  * be committed is exactly the wrong place for it.
  */
 import { z } from "zod";
-import { AgentGateError } from "@agentgate/core";
+import { AgentPOSError } from "@agentpos/core";
 
 export const NETWORKS = ["testnet", "mainnet"] as const;
 export type NetworkName = (typeof NETWORKS)[number];
@@ -68,23 +68,23 @@ export function configFromEnv(
   env: Record<string, string | undefined> = process.env,
 ): FacilitatorConfig {
   const parsed = schema.safeParse({
-    network: env.AGENTGATE_FACILITATOR_NETWORK ?? "testnet",
-    signerSecret: env.AGENTGATE_FACILITATOR_SIGNER_SECRET ?? "",
-    ...(env.AGENTGATE_FACILITATOR_RPC_URL ? { rpcUrl: env.AGENTGATE_FACILITATOR_RPC_URL } : {}),
-    allowedAssets: list(env.AGENTGATE_FACILITATOR_ASSETS),
-    apiKeys: list(env.AGENTGATE_FACILITATOR_KEYS),
-    ...(env.AGENTGATE_FACILITATOR_MAX_FEE_STROOPS
-      ? { maxFeeStroops: Number(env.AGENTGATE_FACILITATOR_MAX_FEE_STROOPS) }
+    network: env.AGENTPOS_FACILITATOR_NETWORK ?? "testnet",
+    signerSecret: env.AGENTPOS_FACILITATOR_SIGNER_SECRET ?? "",
+    ...(env.AGENTPOS_FACILITATOR_RPC_URL ? { rpcUrl: env.AGENTPOS_FACILITATOR_RPC_URL } : {}),
+    allowedAssets: list(env.AGENTPOS_FACILITATOR_ASSETS),
+    apiKeys: list(env.AGENTPOS_FACILITATOR_KEYS),
+    ...(env.AGENTPOS_FACILITATOR_MAX_FEE_STROOPS
+      ? { maxFeeStroops: Number(env.AGENTPOS_FACILITATOR_MAX_FEE_STROOPS) }
       : {}),
     ...(env.PORT ? { port: Number(env.PORT) } : {}),
-    ...(env.AGENTGATE_FACILITATOR_MIN_BALANCE_STROOPS
-      ? { minBalanceStroops: Number(env.AGENTGATE_FACILITATOR_MIN_BALANCE_STROOPS) }
+    ...(env.AGENTPOS_FACILITATOR_MIN_BALANCE_STROOPS
+      ? { minBalanceStroops: Number(env.AGENTPOS_FACILITATOR_MIN_BALANCE_STROOPS) }
       : {}),
   });
 
   if (!parsed.success) {
-    throw new AgentGateError("CONFIG_INVALID", "Invalid facilitator configuration", {
-      hint: "Set AGENTGATE_FACILITATOR_SIGNER_SECRET and AGENTGATE_FACILITATOR_KEYS. See apps/facilitator/README.md.",
+    throw new AgentPOSError("CONFIG_INVALID", "Invalid facilitator configuration", {
+      hint: "Set AGENTPOS_FACILITATOR_SIGNER_SECRET and AGENTPOS_FACILITATOR_KEYS. See apps/facilitator/README.md.",
       details: { issues: parsed.error.issues },
     });
   }
@@ -93,13 +93,13 @@ export function configFromEnv(
   // Mainnet refuses to guess. A public RPC that rate-limits or lags is a bad thing to discover
   // while someone's money is in flight.
   if (cfg.network === "mainnet" && !cfg.rpcUrl) {
-    throw new AgentGateError("RPC_URL_REQUIRED", "Mainnet requires an explicit Soroban RPC URL", {
-      hint: "Set AGENTGATE_FACILITATOR_RPC_URL to an RPC you trust and pay for.",
+    throw new AgentPOSError("RPC_URL_REQUIRED", "Mainnet requires an explicit Soroban RPC URL", {
+      hint: "Set AGENTPOS_FACILITATOR_RPC_URL to an RPC you trust and pay for.",
     });
   }
   if (cfg.allowedAssets.length === 0) {
-    throw new AgentGateError("CONFIG_INVALID", "Refusing to start with no asset allowlist", {
-      hint: "Set AGENTGATE_FACILITATOR_ASSETS to the contract ids you will settle (comma separated). An empty allowlist lets a caller spend your fees on any token.",
+    throw new AgentPOSError("CONFIG_INVALID", "Refusing to start with no asset allowlist", {
+      hint: "Set AGENTPOS_FACILITATOR_ASSETS to the contract ids you will settle (comma separated). An empty allowlist lets a caller spend your fees on any token.",
     });
   }
 

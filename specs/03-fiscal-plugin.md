@@ -1,4 +1,4 @@
-# SPEC 03: Fiscal como plugin (`@agentgate/fiscal`)
+# SPEC 03: Fiscal como plugin (`@agentpos/fiscal`)
 
 ## Posición
 

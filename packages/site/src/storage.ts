@@ -1,6 +1,6 @@
 /**
  * Local storage on `node:sqlite` (built into Node >= 22.5): zero native dependencies, so a
- * merchant can `npx agentgate serve` on any box without compilers. The site is the source of
+ * merchant can `npx agentpos serve` on any box without compilers. The site is the source of
  * truth for its catalog and orders. Rows keep a JSON document plus lookup columns.
  */
 import { DatabaseSync } from "node:sqlite";
@@ -14,7 +14,7 @@ import type {
   Order,
   OrderStatus,
   PaymentRecord,
-} from "@agentgate/core";
+} from "@agentpos/core";
 import {
   catalogItemFromJson,
   catalogItemToJson,
@@ -22,10 +22,10 @@ import {
   draftToJson,
   jsonStringify,
   usdcFromMinor,
-} from "@agentgate/core";
-import type { ApprovalRequest, ApprovalStatus, ApprovalStore } from "@agentgate/approvals";
-import type { AgentRecord, AgentStatus, AgentStore } from "@agentgate/identity";
-import type { Receipt, ReceiptStore } from "@agentgate/receipts";
+} from "@agentpos/core";
+import type { ApprovalRequest, ApprovalStatus, ApprovalStore } from "@agentpos/approvals";
+import type { AgentRecord, AgentStatus, AgentStore } from "@agentpos/identity";
+import type { Receipt, ReceiptStore } from "@agentpos/receipts";
 
 type Row = { json: string };
 
@@ -372,7 +372,7 @@ export class SiteStorage {
   }
 
   // approvals (M2) -----------------------------------------------------------
-  /** ApprovalStore backed by this database, for @agentgate/approvals. */
+  /** ApprovalStore backed by this database, for @agentpos/approvals. */
   approvalStore(): ApprovalStore {
     const db = this.db;
     return {
@@ -417,7 +417,7 @@ export class SiteStorage {
   }
 
   // agents (M3) --------------------------------------------------------------
-  /** AgentStore backed by this database, for @agentgate/identity. Read on every request, so a
+  /** AgentStore backed by this database, for @agentpos/identity. Read on every request, so a
    *  revocation takes effect on the next call rather than on a cache expiry. */
   agentStore(): AgentStore {
     const db = this.db;

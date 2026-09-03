@@ -1,7 +1,7 @@
 {
-  "name": "@agentgate/receipts",
+  "name": "@agentpos/receipts",
   "version": "0.0.1",
-  "description": "AgentGate verifiable receipts: a signed, hash-chained record per store of what was offered, what the policy said, who approved, who bought and what settled on chain. Verifiable by third parties without database access.",
+  "description": "AgentPOS verifiable receipts: a signed, hash-chained record per store of what was offered, what the policy said, who approved, who bought and what settled on chain. Verifiable by third parties without database access.",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -23,7 +23,7 @@
     "lint": "eslint src"
   },
   "dependencies": {
-    "@agentgate/core": "workspace:*",
+    "@agentpos/core": "workspace:*",
     "@stellar/stellar-sdk": "^16.2.0",
     "zod": "^4.4.3"
   },

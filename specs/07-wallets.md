@@ -39,7 +39,7 @@ Interfaz `SignerProvider` con implementaciones:
 1. **Spending wallet local (default v1):** el agente firma con keypair
    local dedicado, fondeado por el humano como "tarjeta prepago" +
    mandato. Un agente headless no puede clickear popups de Freighter.
-2. **Perfiles múltiples:** `~/.agentgate/profiles/<name>.json` (wallet +
+2. **Perfiles múltiples:** `~/.agentpos/profiles/<name>.json` (wallet +
    mandato + network + dirección de envío opcional). Tool `list_profiles`;
    `buy` acepta `profile?`.
 3. **Aprobación remota (fase Build, diseñar slot):** `buy` sobre el umbral

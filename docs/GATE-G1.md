@@ -3,8 +3,8 @@
 Estado: **CERRADO el 2026-08-26.** `pnpm gate:check` 100% verde en local y en CI (run
 33007207677, job `gate-g1`); el founder confirmó explícitamente el desbloqueo y
 `MAINNET_READY` pasó a `true` en `packages/core/src/config.ts` en un commit dedicado. Cada
-despliegue en mainnet sigue exigiendo `AGENTGATE_ALLOW_MAINNET=true`, key de facilitador de
-mainnet y `AGENTGATE_RPC_URL`. El reporte automático se escribe en `docs/gate-g1.report.json`
+despliegue en mainnet sigue exigiendo `AGENTPOS_ALLOW_MAINNET=true`, key de facilitador de
+mainnet y `AGENTPOS_RPC_URL`. El reporte automático se escribe en `docs/gate-g1.report.json`
 y el job de CI lo mantiene verde en cada push; si algún ítem pasa a rojo, el criterio es
 revertir `MAINNET_READY` antes de publicar una nueva versión.
 
@@ -18,19 +18,19 @@ revertir `MAINNET_READY` antes de publicar una nueva versión.
 | Caminos tristes                                                                           | tests: pago parcial (hold), asset/destino distintos (hold), verify falla (sin orden), settle falla (pendiente + alerta), plataforma caída tras settle (pago guardado, alerta, cola de reintentos persistente con backoff, alerta de estancamiento a la hora) |
 | Sanitización de inputs                                                                    | zod en cada frontera; body máx. 64 KB (413); carritos máx. 50 líneas; `q` truncado a 200; ids truncados                                                                                                                                                      |
 | Rate limiting                                                                             | token bucket por IP en cart y checkout y por cart en intentos de checkout; 429 con `Retry-After`                                                                                                                                                             |
-| Cero custodia al arrancar                                                                 | `assertNoSecretsInConfig` rechaza cualquier seed `S...` en `agentgate.config.json`                                                                                                                                                                           |
+| Cero custodia al arrancar                                                                 | `assertNoSecretsInConfig` rechaza cualquier seed `S...` en `agentpos.config.json`                                                                                                                                                                           |
 | Historial git sin secretos                                                                | gitleaks sobre todo el historial (docker)                                                                                                                                                                                                                    |
 | Auditoría de dependencias                                                                 | `pnpm audit --prod` sin vulnerabilidades; `pnpm-lock.yaml` en el repo                                                                                                                                                                                        |
 | Facilitador                                                                               | `/supported` responde y soporta `exact@<red>` con la key configurada                                                                                                                                                                                         |
 | Carga                                                                                     | 40 agentes concurrentes: 40 órdenes, 40 pagos únicos, cero duplicados                                                                                                                                                                                        |
-| Salud y alertas                                                                           | `/health` reporta facilitador y órdenes atascadas (503 si hay); alertas por log JSON y webhook (`AGENTGATE_ALERT_WEBHOOK`)                                                                                                                                   |
+| Salud y alertas                                                                           | `/health` reporta facilitador y órdenes atascadas (503 si hay); alertas por log JSON y webhook (`AGENTPOS_ALERT_WEBHOOK`)                                                                                                                                   |
 | Trazabilidad                                                                              | `traceId` por request (header `x-trace-id`), en cart, orden y logs JSON                                                                                                                                                                                      |
 
 ## Criterios manuales (marcar con evidencia enlazada)
 
 - [x] secrets-history: gitleaks sobre 14 commits, 0 fugas, 2026-08-26 (docs/GATE-G1.md#evidencia)
 - [x] runbook: procedimientos por alerta (docs/RUNBOOK.md)
-- [x] backup-restore: `agentgate backup` + restauración por copia en un data dir real, 2026-08-26 (docs/GATE-G1.md#evidencia)
+- [x] backup-restore: `agentpos backup` + restauración por copia en un data dir real, 2026-08-26 (docs/GATE-G1.md#evidencia)
 - [x] dependency-review: revisión manual de dependencias directas, 2026-08-26 (docs/GATE-G1.md#evidencia)
 - [x] e2e-testnet: XLM y USDC reales, 2026-08-25 (docs/GATE-G1.md#evidencia)
 
@@ -53,4 +53,4 @@ revertir `MAINNET_READY` antes de publicar una nueva versión.
 - Rate limiting por wallet pagadora: requiere decodificar la auth entry firmada; queda para M3
   (identidad del agente), donde la wallet se conoce antes de cotizar.
 - Memo legal y política de conversión: fuera de código (founder), condición para el lanzamiento.
-- Backup/restore (2026-08-26): `agentgate backup ./backups` produjo `agentgate-<ts>.sqlite` (VACUUM INTO); se borró la base viva, se copió el backup a `.agentgate/agentgate.sqlite` y `agentgate status` volvió a leer el estado. Test automático `backs up the database consistently` en `gate.test.ts`.
+- Backup/restore (2026-08-26): `agentpos backup ./backups` produjo `agentpos-<ts>.sqlite` (VACUUM INTO); se borró la base viva, se copió el backup a `.agentpos/agentpos.sqlite` y `agentpos status` volvió a leer el estado. Test automático `backs up the database consistently` en `gate.test.ts`.

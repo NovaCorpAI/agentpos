@@ -12,7 +12,7 @@ import type {
   SettleResponse,
   VerifyResponse,
 } from "@x402/core/types";
-import type { AgentGateError } from "@agentgate/core";
+import type { AgentPOSError } from "@agentpos/core";
 import { createFacilitatorApp, toStroops } from "./app.js";
 import { configFromEnv } from "./config.js";
 import type { FacilitatorConfig } from "./config.js";
@@ -23,10 +23,10 @@ const OTHER_ASSET = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 const KEY = "test-key-at-least-16-chars";
 
 const baseEnv = {
-  AGENTGATE_FACILITATOR_NETWORK: "testnet",
-  AGENTGATE_FACILITATOR_SIGNER_SECRET: signer.secret(),
-  AGENTGATE_FACILITATOR_ASSETS: USDC,
-  AGENTGATE_FACILITATOR_KEYS: KEY,
+  AGENTPOS_FACILITATOR_NETWORK: "testnet",
+  AGENTPOS_FACILITATOR_SIGNER_SECRET: signer.secret(),
+  AGENTPOS_FACILITATOR_ASSETS: USDC,
+  AGENTPOS_FACILITATOR_KEYS: KEY,
 };
 
 function config(overrides: Record<string, string | undefined> = {}): FacilitatorConfig {
@@ -93,39 +93,39 @@ function post(path: string, body: unknown, key: string | null = KEY): Request {
 
 describe("configuration", () => {
   it("refuses to start without an asset allowlist", () => {
-    expect(() => config({ AGENTGATE_FACILITATOR_ASSETS: "" })).toThrow(
+    expect(() => config({ AGENTPOS_FACILITATOR_ASSETS: "" })).toThrow(
       /Refusing to start with no asset allowlist/,
     );
   });
 
   it("refuses mainnet without an explicit RPC URL", () => {
     try {
-      config({ AGENTGATE_FACILITATOR_NETWORK: "mainnet" });
+      config({ AGENTPOS_FACILITATOR_NETWORK: "mainnet" });
       throw new Error("should have refused");
     } catch (err) {
-      expect((err as AgentGateError).code).toBe("RPC_URL_REQUIRED");
+      expect((err as AgentPOSError).code).toBe("RPC_URL_REQUIRED");
     }
   });
 
   it("accepts mainnet with an RPC URL, and maps the CAIP-2 network", () => {
     const cfg = config({
-      AGENTGATE_FACILITATOR_NETWORK: "mainnet",
-      AGENTGATE_FACILITATOR_RPC_URL: "https://rpc.example/soroban",
+      AGENTPOS_FACILITATOR_NETWORK: "mainnet",
+      AGENTPOS_FACILITATOR_RPC_URL: "https://rpc.example/soroban",
     });
     expect(cfg.caip2).toBe("stellar:pubnet");
     expect(cfg.horizonUrl).toBe("https://horizon.stellar.org");
   });
 
   it("refuses a missing signer, a bad signer and a short API key", () => {
-    expect(() => config({ AGENTGATE_FACILITATOR_SIGNER_SECRET: "" })).toThrow(/Invalid facilitator configuration/);
-    expect(() => config({ AGENTGATE_FACILITATOR_SIGNER_SECRET: "not-a-seed" })).toThrow();
-    expect(() => config({ AGENTGATE_FACILITATOR_KEYS: "short" })).toThrow();
-    expect(() => config({ AGENTGATE_FACILITATOR_KEYS: "" })).toThrow();
+    expect(() => config({ AGENTPOS_FACILITATOR_SIGNER_SECRET: "" })).toThrow(/Invalid facilitator configuration/);
+    expect(() => config({ AGENTPOS_FACILITATOR_SIGNER_SECRET: "not-a-seed" })).toThrow();
+    expect(() => config({ AGENTPOS_FACILITATOR_KEYS: "short" })).toThrow();
+    expect(() => config({ AGENTPOS_FACILITATOR_KEYS: "" })).toThrow();
   });
 
   it("keeps a sane default fee ceiling", () => {
     expect(config().maxFeeStroops).toBe(50_000);
-    expect(config({ AGENTGATE_FACILITATOR_MAX_FEE_STROOPS: "120000" }).maxFeeStroops).toBe(120_000);
+    expect(config({ AGENTPOS_FACILITATOR_MAX_FEE_STROOPS: "120000" }).maxFeeStroops).toBe(120_000);
   });
 });
 

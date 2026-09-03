@@ -1,7 +1,7 @@
 {
-  "name": "@agentgate/identity",
+  "name": "@agentpos/identity",
   "version": "0.0.1",
-  "description": "AgentGate Know Your Agent: Ed25519 request signatures, owner attestations and a revocable agent registry, so a merchant can require that whoever buys is an identifiable agent with a vouched owner.",
+  "description": "AgentPOS Know Your Agent: Ed25519 request signatures, owner attestations and a revocable agent registry, so a merchant can require that whoever buys is an identifiable agent with a vouched owner.",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -23,7 +23,7 @@
     "lint": "eslint src"
   },
   "dependencies": {
-    "@agentgate/core": "workspace:*",
+    "@agentpos/core": "workspace:*",
     "@stellar/stellar-sdk": "^16.2.0",
     "zod": "^4.4.3"
   },

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AgentGateError } from "./errors.js";
+import { AgentPOSError } from "./errors.js";
 
 export const NETWORKS = ["testnet", "mainnet"] as const;
 export type NetworkName = (typeof NETWORKS)[number];
@@ -73,7 +73,7 @@ export interface CoreConfig {
  *
  * 2026-08-26: gate G1 closed (10/10 green locally and in CI, run 33007207677) and mainnet
  * unlocked with the founder's explicit confirmation. Mainnet still requires
- * AGENTGATE_ALLOW_MAINNET=true, a mainnet facilitator key and an RPC URL per deployment.
+ * AGENTPOS_ALLOW_MAINNET=true, a mainnet facilitator key and an RPC URL per deployment.
  */
 export const MAINNET_READY = true;
 
@@ -88,7 +88,7 @@ export function resolveConfig(
 ): CoreConfig {
   const parsed = coreConfigSchema.safeParse(input);
   if (!parsed.success) {
-    throw new AgentGateError("CONFIG_INVALID", "Invalid AgentGate configuration", {
+    throw new AgentPOSError("CONFIG_INVALID", "Invalid AgentPOS configuration", {
       hint: "Check the fields listed in details against packages/core/src/config.ts.",
       details: { issues: parsed.error.issues },
     });
@@ -97,7 +97,7 @@ export function resolveConfig(
 
   const ready = options.mainnetReady ?? MAINNET_READY;
   if (cfg.network === "mainnet" && !ready) {
-    throw new AgentGateError(
+    throw new AgentPOSError(
       "MAINNET_NOT_CONFIRMED",
       "Mainnet is locked: production gate G1 is not closed in this release",
       {
@@ -106,18 +106,18 @@ export function resolveConfig(
     );
   }
   if (cfg.network === "mainnet" && !cfg.allowMainnet) {
-    throw new AgentGateError("MAINNET_NOT_CONFIRMED", "Mainnet requires an explicit flag", {
-      hint: "Set allowMainnet: true (AGENTGATE_ALLOW_MAINNET=true) and a mainnet facilitator API key.",
+    throw new AgentPOSError("MAINNET_NOT_CONFIRMED", "Mainnet requires an explicit flag", {
+      hint: "Set allowMainnet: true (AGENTPOS_ALLOW_MAINNET=true) and a mainnet facilitator API key.",
     });
   }
   if (cfg.network === "mainnet" && !cfg.rpcUrl) {
-    throw new AgentGateError("RPC_URL_REQUIRED", "Mainnet requires an explicit Soroban RPC URL", {
-      hint: "Set rpcUrl (AGENTGATE_RPC_URL) to a mainnet RPC provider; the SDK ships no public mainnet default.",
+    throw new AgentPOSError("RPC_URL_REQUIRED", "Mainnet requires an explicit Soroban RPC URL", {
+      hint: "Set rpcUrl (AGENTPOS_RPC_URL) to a mainnet RPC provider; the SDK ships no public mainnet default.",
     });
   }
 
   if (cfg.network === "mainnet" && cfg.checkoutAsset !== "USDC") {
-    throw new AgentGateError("CONFIG_INVALID", "Mainnet checkout must use USDC", {
+    throw new AgentPOSError("CONFIG_INVALID", "Mainnet checkout must use USDC", {
       hint: "checkoutAsset: 'XLM' is a testnet-only convenience for automated e2e.",
     });
   }
@@ -150,11 +150,11 @@ export function assertNoSecretsInConfig(config: unknown, label = "configuration"
   const visit = (value: unknown, path: string): void => {
     if (typeof value === "string") {
       if (STELLAR_SEED.test(value)) {
-        throw new AgentGateError(
+        throw new AgentPOSError(
           "SECRET_IN_CONFIG",
           `A Stellar secret seed was found in ${label} at ${path}`,
           {
-            hint: "AgentGate never stores merchant private keys. Put only the PUBLIC address (G...) in the config and keep the seed in your wallet.",
+            hint: "AgentPOS never stores merchant private keys. Put only the PUBLIC address (G...) in the config and keep the seed in your wallet.",
             details: { path },
           },
         );
@@ -170,35 +170,35 @@ export function assertNoSecretsInConfig(config: unknown, label = "configuration"
   visit(config, "");
 }
 
-/** Reads AGENTGATE_* variables. Pass `process.env` (or a test object). */
+/** Reads AGENTPOS_* variables. Pass `process.env` (or a test object). */
 export function configFromEnv(env: Record<string, string | undefined>): CoreConfig {
   const input: CoreConfigInput = {};
-  if (env.AGENTGATE_NETWORK) input.network = env.AGENTGATE_NETWORK as NetworkName;
+  if (env.AGENTPOS_NETWORK) input.network = env.AGENTPOS_NETWORK as NetworkName;
   // Facilitator keys are per network. Prefer the network-specific variable, fall back to the generic one.
-  const network = (env.AGENTGATE_NETWORK as NetworkName | undefined) ?? "testnet";
+  const network = (env.AGENTPOS_NETWORK as NetworkName | undefined) ?? "testnet";
   const keySource =
     (network === "mainnet"
-      ? env.AGENTGATE_FACILITATOR_API_KEY_MAINNET
-      : env.AGENTGATE_FACILITATOR_API_KEY_TESTNET) ?? env.AGENTGATE_FACILITATOR_API_KEY;
+      ? env.AGENTPOS_FACILITATOR_API_KEY_MAINNET
+      : env.AGENTPOS_FACILITATOR_API_KEY_TESTNET) ?? env.AGENTPOS_FACILITATOR_API_KEY;
   const apiKeys = keySource
     ?.split(",")
     .map((k) => k.trim())
     .filter(Boolean);
-  const allow = envBool(env.AGENTGATE_ALLOW_MAINNET);
+  const allow = envBool(env.AGENTPOS_ALLOW_MAINNET);
   if (allow !== undefined) input.allowMainnet = allow;
-  if (env.AGENTGATE_CHECKOUT_ASSET)
-    input.checkoutAsset = env.AGENTGATE_CHECKOUT_ASSET as "USDC" | "XLM";
-  if (env.AGENTGATE_FACILITATOR_URL) input.facilitatorUrl = env.AGENTGATE_FACILITATOR_URL;
+  if (env.AGENTPOS_CHECKOUT_ASSET)
+    input.checkoutAsset = env.AGENTPOS_CHECKOUT_ASSET as "USDC" | "XLM";
+  if (env.AGENTPOS_FACILITATOR_URL) input.facilitatorUrl = env.AGENTPOS_FACILITATOR_URL;
   if (apiKeys && apiKeys.length > 0) input.facilitatorApiKeys = apiKeys;
-  if (env.AGENTGATE_RPC_URL) input.rpcUrl = env.AGENTGATE_RPC_URL;
+  if (env.AGENTPOS_RPC_URL) input.rpcUrl = env.AGENTPOS_RPC_URL;
   const llm: NonNullable<CoreConfigInput["llm"]> = {};
-  if (env.AGENTGATE_LLM_PROVIDER) {
-    llm.provider = env.AGENTGATE_LLM_PROVIDER as "anthropic" | "openai-compatible";
+  if (env.AGENTPOS_LLM_PROVIDER) {
+    llm.provider = env.AGENTPOS_LLM_PROVIDER as "anthropic" | "openai-compatible";
   }
-  if (env.AGENTGATE_LLM_MODEL) llm.model = env.AGENTGATE_LLM_MODEL;
-  const llmKey = env.AGENTGATE_LLM_API_KEY ?? env.ANTHROPIC_API_KEY;
+  if (env.AGENTPOS_LLM_MODEL) llm.model = env.AGENTPOS_LLM_MODEL;
+  const llmKey = env.AGENTPOS_LLM_API_KEY ?? env.ANTHROPIC_API_KEY;
   if (llmKey) llm.apiKey = llmKey;
-  if (env.AGENTGATE_LLM_BASE_URL) llm.baseUrl = env.AGENTGATE_LLM_BASE_URL;
+  if (env.AGENTPOS_LLM_BASE_URL) llm.baseUrl = env.AGENTPOS_LLM_BASE_URL;
   if (Object.keys(llm).length > 0) input.llm = llm;
   return resolveConfig(input);
 }

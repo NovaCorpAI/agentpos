@@ -18,20 +18,20 @@ import type {
   QuoteLine,
   SettlementReceipt,
   UsdcMinor,
-} from "@agentgate/core";
+} from "@agentpos/core";
 import {
   ADAPTER_VERSION,
-  AgentGateError,
+  AgentPOSError,
   addUsdc,
   compareUsdc,
   mulUsdc,
   silentLogger,
   usdcFromMinor,
-} from "@agentgate/core";
-import { OPEN_POLICY, evaluatePolicy, periodStart } from "@agentgate/policy";
-import type { MerchantPolicy, PolicyDecision } from "@agentgate/policy";
-import type { ApprovalRequest, ApprovalService, ApprovalSnapshot } from "@agentgate/approvals";
-import type { ReceiptChain, ReceiptTerms } from "@agentgate/receipts";
+} from "@agentpos/core";
+import { OPEN_POLICY, evaluatePolicy, periodStart } from "@agentpos/policy";
+import type { MerchantPolicy, PolicyDecision } from "@agentpos/policy";
+import type { ApprovalRequest, ApprovalService, ApprovalSnapshot } from "@agentpos/approvals";
+import type { ReceiptChain, ReceiptTerms } from "@agentpos/receipts";
 import type { CatalogService } from "./catalog.js";
 import type { SiteStorage } from "./storage.js";
 
@@ -246,7 +246,7 @@ export class CheckoutService {
         ...(context.traceId ? { traceId: context.traceId } : {}),
       });
     }
-    throw new AgentGateError(decision.code, decision.message, {
+    throw new AgentPOSError(decision.code, decision.message, {
       hint: decision.hint,
       details: decision.details,
     });
@@ -272,7 +272,7 @@ export class CheckoutService {
     agent?: AgentIdentityRecord,
   ): Promise<Cart> {
     if (lines.length === 0) {
-      throw new AgentGateError("CONFIG_INVALID", "Cart needs at least one line", {
+      throw new AgentPOSError("CONFIG_INVALID", "Cart needs at least one line", {
         hint: "Send items: [{ itemId, quantity }].",
       });
     }
@@ -294,7 +294,7 @@ export class CheckoutService {
 
     const payTos = new Set(items.map(({ item }) => item.payTo ?? this.opts.defaultPayTo));
     if (payTos.size > 1) {
-      throw new AgentGateError(
+      throw new AgentPOSError(
         "MIXED_PAYTO",
         "Items in this cart are paid to different addresses",
         {
@@ -322,12 +322,12 @@ export class CheckoutService {
     );
     const requiresShipping = quoteLines.some((l) => l.physical);
     if (requiresShipping && !shipping) {
-      throw new AgentGateError("SHIPPING_REQUIRED", "Physical items need a shipping address", {
+      throw new AgentPOSError("SHIPPING_REQUIRED", "Physical items need a shipping address", {
         hint: "Include shipping: { name, line1, city, postalCode, country } when creating the cart.",
       });
     }
     if (requiresShipping && !buyer?.email) {
-      throw new AgentGateError(
+      throw new AgentPOSError(
         "SHIPPING_REQUIRED",
         "Physical items need a buyer email for order updates",
         {
@@ -394,7 +394,7 @@ export class CheckoutService {
       return i.stockMode === "tracked" ? !a?.available : a !== undefined && a.available === false;
     });
     if (unavailable.length) {
-      throw new AgentGateError(
+      throw new AgentPOSError(
         "OUT_OF_STOCK",
         "Some items are not available in the requested quantity",
         {
@@ -408,15 +408,15 @@ export class CheckoutService {
   getCart(id: string): Cart {
     const cart = this.opts.storage.getCart(id);
     if (!cart) {
-      throw new AgentGateError("CART_NOT_FOUND", `Unknown cart '${id}'`, {
-        hint: "Create a cart first (POST /agentgate/cart).",
+      throw new AgentPOSError("CART_NOT_FOUND", `Unknown cart '${id}'`, {
+        hint: "Create a cart first (POST /agentpos/cart).",
       });
     }
     if (
       new Date(cart.expiresAt).getTime() < Date.now() &&
       !this.opts.storage.getOrderByCart(id)?.payment
     ) {
-      throw new AgentGateError("CART_EXPIRED", `Cart '${id}' expired`, {
+      throw new AgentPOSError("CART_EXPIRED", `Cart '${id}' expired`, {
         hint: "Create a new cart; quotes are valid for a limited time.",
         details: { expiresAt: cart.expiresAt },
       });
@@ -463,7 +463,7 @@ export class CheckoutService {
           })),
         );
       } catch (err) {
-        if (err instanceof AgentGateError && err.code === "OUT_OF_STOCK")
+        if (err instanceof AgentPOSError && err.code === "OUT_OF_STOCK")
           drift.push({ reason: "out_of_stock", ...err.details });
         else throw err;
       }
@@ -471,7 +471,7 @@ export class CheckoutService {
     if (drift.length > 0) {
       this.opts.storage.saveCart({ ...cart, expiresAt: new Date(0).toISOString() });
       this.logger.warn("cart.requote_required", { traceId: cart.traceId, cartId: id, drift });
-      throw new AgentGateError(
+      throw new AgentPOSError(
         "REQUOTE_REQUIRED",
         "Price or availability changed since the quote",
         {
@@ -501,7 +501,7 @@ export class CheckoutService {
   async revalidateCart(id: string): Promise<Cart> {
     const { cart, decision } = await this.revalidate(id);
     if (decision.decision === "requires_approval") {
-      throw new AgentGateError("POLICY_APPROVAL_REQUIRED", decision.message, {
+      throw new AgentPOSError("POLICY_APPROVAL_REQUIRED", decision.message, {
         hint: decision.hint,
         details: { cartId: cart.id, ...decision.details },
       });
@@ -520,7 +520,7 @@ export class CheckoutService {
 
     const approvals = this.approvals;
     if (!approvals) {
-      throw new AgentGateError("POLICY_APPROVAL_REQUIRED", decision.message, {
+      throw new AgentPOSError("POLICY_APPROVAL_REQUIRED", decision.message, {
         hint: decision.hint,
         details: { cartId: cart.id, ...decision.details },
       });
@@ -687,7 +687,7 @@ export class CheckoutService {
     if (order.externalOrderId || !order.payment || order.hold) return order;
     const log = this.logger.child({ traceId: order.traceId, orderId: order.id });
     let attempts = order.connectorError?.attempts ?? 0;
-    let lastError: AgentGateError | undefined;
+    let lastError: AgentPOSError | undefined;
     for (let i = 0; i < this.attempts; i += 1) {
       attempts += 1;
       try {
@@ -716,10 +716,10 @@ export class CheckoutService {
         return done;
       } catch (err) {
         lastError =
-          err instanceof AgentGateError
+          err instanceof AgentPOSError
             ? err
-            : new AgentGateError("ORDER_NOT_CREATED", String(err), {
-                hint: "Connector threw a non-AgentGate error.",
+            : new AgentPOSError("ORDER_NOT_CREATED", String(err), {
+                hint: "Connector threw a non-AgentPOS error.",
                 retryable: true,
                 cause: err,
               });
@@ -737,7 +737,7 @@ export class CheckoutService {
       connectorError: {
         code: lastError?.code ?? "ORDER_NOT_CREATED",
         message: lastError?.message ?? "unknown",
-        hint: lastError?.hint ?? "Retry from the dashboard or `agentgate status --retry`.",
+        hint: lastError?.hint ?? "Retry from the dashboard or `agentpos status --retry`.",
         retryable: lastError?.retryable ?? true,
         attempts,
       },
@@ -805,7 +805,7 @@ export class CheckoutService {
   getOrder(id: string): Order {
     const order = this.opts.storage.getOrder(id);
     if (!order)
-      throw new AgentGateError("ORDER_NOT_FOUND", `Unknown order '${id}'`, {
+      throw new AgentPOSError("ORDER_NOT_FOUND", `Unknown order '${id}'`, {
         hint: "Use the orderId returned by checkout.",
       });
     return order;

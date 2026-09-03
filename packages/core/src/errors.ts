@@ -1,5 +1,5 @@
 /**
- * Machine-readable errors. Every error AgentGate emits carries a closed-set code, a human
+ * Machine-readable errors. Every error AgentPOS emits carries a closed-set code, a human
  * message and a hint an agent can act on (CLAUDE.md conventions).
  */
 export const ERROR_CODES = [
@@ -78,7 +78,7 @@ export const ERROR_CODES = [
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
 
-export interface AgentGateErrorShape {
+export interface AgentPOSErrorShape {
   code: ErrorCode;
   message: string;
   hint: string;
@@ -86,7 +86,7 @@ export interface AgentGateErrorShape {
   details?: Record<string, unknown> | undefined;
 }
 
-export class AgentGateError extends Error implements AgentGateErrorShape {
+export class AgentPOSError extends Error implements AgentPOSErrorShape {
   readonly code: ErrorCode;
   readonly hint: string;
   readonly retryable: boolean;
@@ -103,14 +103,14 @@ export class AgentGateError extends Error implements AgentGateErrorShape {
     },
   ) {
     super(message, options.cause === undefined ? undefined : { cause: options.cause });
-    this.name = "AgentGateError";
+    this.name = "AgentPOSError";
     this.code = code;
     this.hint = options.hint;
     this.retryable = options.retryable ?? false;
     this.details = options.details;
   }
 
-  toJSON(): AgentGateErrorShape {
+  toJSON(): AgentPOSErrorShape {
     return {
       code: this.code,
       message: this.message,
@@ -121,6 +121,6 @@ export class AgentGateError extends Error implements AgentGateErrorShape {
   }
 }
 
-export function isAgentGateError(value: unknown): value is AgentGateError {
-  return value instanceof AgentGateError;
+export function isAgentPOSError(value: unknown): value is AgentPOSError {
+  return value instanceof AgentPOSError;
 }

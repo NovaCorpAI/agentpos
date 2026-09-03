@@ -5,8 +5,8 @@ set -eu
 SITE_URL="${SITE_URL:-http://localhost:8080}"
 # Demo-only REST credentials (NOT secrets; allowlisted in .gitleaks.toml).
 # Exactly 43 chars each: WooCommerce stores consumer_secret in a varchar(43) column.
-CK="ck_agentgatedemo000000000000000000000000000"
-CS="cs_agentgatedemo000000000000000000000000000"
+CK="ck_agentposdemo000000000000000000000000000"
+CS="cs_agentposdemo000000000000000000000000000"
 export AG_DEMO_CK="$CK" AG_DEMO_CS="$CS"
 
 echo "[seed] waiting for WordPress files..."
@@ -15,7 +15,7 @@ echo "[seed] waiting for database..."
 until wp db check >/dev/null 2>&1; do sleep 2; done
 
 if ! wp core is-installed >/dev/null 2>&1; then
-  wp core install --url="$SITE_URL" --title="AgentGate Demo Store" \
+  wp core install --url="$SITE_URL" --title="AgentPOS Demo Store" \
     --admin_user=admin --admin_password=admin --admin_email=admin@example.com --skip-email
 fi
 
@@ -49,9 +49,9 @@ seed_product "Sticker Pack" "AG-STICKERS" "3.00" 500 "10 vinyl stickers, waterpr
 # The local store runs on plain HTTP, so REST requests carrying an Authorization header
 # are treated as SSL. Never ship this to a real store: use HTTPS there.
 mkdir -p /var/www/html/wp-content/mu-plugins
-cat > /var/www/html/wp-content/mu-plugins/agentgate-demo.php <<'PHP'
+cat > /var/www/html/wp-content/mu-plugins/agentpos-demo.php <<'PHP'
 <?php
-/* Plugin Name: AgentGate demo store helpers (local only) */
+/* Plugin Name: AgentPOS demo store helpers (local only) */
 if (
     isset($_SERVER['REQUEST_URI']) && strpos($_SERVER['REQUEST_URI'], '/wp-json/') !== false
     && (isset($_SERVER['HTTP_AUTHORIZATION']) || isset($_SERVER['PHP_AUTH_USER']))

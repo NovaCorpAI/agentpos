@@ -5,7 +5,7 @@
 import { Keypair } from "@stellar/stellar-sdk";
 import { createEd25519Signer } from "@x402/stellar";
 import type { ClientStellarSigner } from "@x402/stellar";
-import { AgentGateError } from "./errors.js";
+import { AgentPOSError } from "./errors.js";
 import type { NetworkName } from "./config.js";
 import { CAIP2 } from "./config.js";
 
@@ -25,7 +25,7 @@ export function createLocalKeypairSigner(secretKey: string, network: NetworkName
   try {
     Keypair.fromSecret(secretKey);
   } catch (cause) {
-    throw new AgentGateError("INVALID_SECRET_KEY", "Secret key is not a valid Stellar seed", {
+    throw new AgentPOSError("INVALID_SECRET_KEY", "Secret key is not a valid Stellar seed", {
       hint: "Expected an 'S...' 56-character seed. Generate one with `Keypair.random()` or use a wallet instead.",
       cause,
     });
@@ -45,7 +45,7 @@ export function createSigner(config: SignerConfig): SignerProvider {
     case "local-keypair":
       return createLocalKeypairSigner(config.secretKey, config.network);
     case "wallets-kit":
-      throw new AgentGateError(
+      throw new AgentPOSError(
         "SIGNER_NOT_IMPLEMENTED",
         "WalletsKitSigner lands in Phase 2 (SPEC 07)",
         {
@@ -53,7 +53,7 @@ export function createSigner(config: SignerConfig): SignerProvider {
         },
       );
     case "passkey":
-      throw new AgentGateError("SIGNER_NOT_IMPLEMENTED", "PasskeySigner is a Build-phase slot", {
+      throw new AgentPOSError("SIGNER_NOT_IMPLEMENTED", "PasskeySigner is a Build-phase slot", {
         hint: "See plan/ROADMAP.md backlog.",
       });
   }

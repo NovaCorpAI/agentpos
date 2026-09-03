@@ -3,7 +3,7 @@
  * which address will be paying fees so an operator notices immediately if it is the wrong one.
  */
 import { serve } from "@hono/node-server";
-import { AgentGateError, createLogger } from "@agentgate/core";
+import { AgentPOSError, createLogger } from "@agentpos/core";
 import { createFacilitatorApp } from "./app.js";
 import { configFromEnv } from "./config.js";
 
@@ -32,7 +32,7 @@ try {
 
   serve({ fetch: app.fetch, port: config.port });
 } catch (err) {
-  if (err instanceof AgentGateError) {
+  if (err instanceof AgentPOSError) {
     console.error(`\n${err.code}: ${err.message}`);
     console.error(`hint: ${err.hint}`);
   } else {

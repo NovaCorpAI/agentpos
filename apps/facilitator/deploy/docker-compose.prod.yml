@@ -1,6 +1,6 @@
 # Production deployment: facilitator + Caddy (TLS). On the VPS, from this directory:
 #
-#   docker compose -f docker-compose.prod.yml --env-file /root/.agentgate/facilitator/mainnet.env up -d --build
+#   docker compose -f docker-compose.prod.yml --env-file /root/.agentpos/facilitator/mainnet.env up -d --build
 #
 # The env file is the one `keygen` produced, completed with RPC_URL, ASSETS and KEYS. It is copied
 # to the VPS over SSH (scp), never through a chat or a repo.
@@ -14,7 +14,7 @@ services:
     build:
       context: ../../..
       dockerfile: apps/facilitator/Dockerfile
-    image: agentgate-facilitator:prod
+    image: agentpos-facilitator:prod
     restart: unless-stopped
     expose:
       - "8403"
@@ -22,12 +22,12 @@ services:
       # IPv4 first: the Ankr whitelist holds the VPS's IPv4, and a dual-stack host would
       # otherwise reach rpc.ankr.com over IPv6 and be refused (verified live: -4 ok, -6 403).
       NODE_OPTIONS: --dns-result-order=ipv4first
-      AGENTGATE_FACILITATOR_NETWORK: ${AGENTGATE_FACILITATOR_NETWORK:?}
-      AGENTGATE_FACILITATOR_SIGNER_SECRET: ${AGENTGATE_FACILITATOR_SIGNER_SECRET:?}
-      AGENTGATE_FACILITATOR_KEYS: ${AGENTGATE_FACILITATOR_KEYS:?}
-      AGENTGATE_FACILITATOR_ASSETS: ${AGENTGATE_FACILITATOR_ASSETS:?}
-      AGENTGATE_FACILITATOR_RPC_URL: ${AGENTGATE_FACILITATOR_RPC_URL:?}
-      AGENTGATE_FACILITATOR_MAX_FEE_STROOPS: ${AGENTGATE_FACILITATOR_MAX_FEE_STROOPS:-50000}
+      AGENTPOS_FACILITATOR_NETWORK: ${AGENTPOS_FACILITATOR_NETWORK:?}
+      AGENTPOS_FACILITATOR_SIGNER_SECRET: ${AGENTPOS_FACILITATOR_SIGNER_SECRET:?}
+      AGENTPOS_FACILITATOR_KEYS: ${AGENTPOS_FACILITATOR_KEYS:?}
+      AGENTPOS_FACILITATOR_ASSETS: ${AGENTPOS_FACILITATOR_ASSETS:?}
+      AGENTPOS_FACILITATOR_RPC_URL: ${AGENTPOS_FACILITATOR_RPC_URL:?}
+      AGENTPOS_FACILITATOR_MAX_FEE_STROOPS: ${AGENTPOS_FACILITATOR_MAX_FEE_STROOPS:-50000}
     networks: [internal]
 
   caddy:

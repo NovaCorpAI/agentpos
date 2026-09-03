@@ -1,7 +1,7 @@
 {
-  "name": "@agentgate/approvals",
+  "name": "@agentpos/approvals",
   "version": "0.0.1",
-  "description": "AgentGate human approval queue: orders above the merchant policy threshold pause, notify the merchant and settle only against an immutable snapshot they approved.",
+  "description": "AgentPOS human approval queue: orders above the merchant policy threshold pause, notify the merchant and settle only against an immutable snapshot they approved.",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -26,7 +26,7 @@
     "lint": "eslint src"
   },
   "dependencies": {
-    "@agentgate/core": "workspace:*",
+    "@agentpos/core": "workspace:*",
     "zod": "^4.4.3"
   },
   "devDependencies": {

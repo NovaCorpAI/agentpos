@@ -7,9 +7,9 @@
  *    approval no longer applies and the agent must re-quote. Nobody is charged in between.
  */
 import { randomBytes } from "node:crypto";
-import { AgentGateError } from "@agentgate/core";
-import type { Logger } from "@agentgate/core";
-import { silentLogger } from "@agentgate/core";
+import { AgentPOSError } from "@agentpos/core";
+import type { Logger } from "@agentpos/core";
+import { silentLogger } from "@agentpos/core";
 import { hashSnapshot } from "./snapshot.js";
 import type {
   ApprovalLinks,
@@ -70,7 +70,7 @@ export class ApprovalService {
     if (existing) {
       if (existing.snapshotHash !== hash) {
         // The cart changed under an existing approval: void it rather than honour a stale one.
-        throw new AgentGateError(
+        throw new AgentPOSError(
           "APPROVAL_SNAPSHOT_CHANGED",
           "The order changed after it was sent for approval",
           {
@@ -89,7 +89,7 @@ export class ApprovalService {
         case "pending":
           return { status: "pending", request: existing };
         case "rejected":
-          throw new AgentGateError(
+          throw new AgentPOSError(
             "APPROVAL_REJECTED",
             existing.reason ?? "The merchant rejected this order",
             {
@@ -98,7 +98,7 @@ export class ApprovalService {
             },
           );
         case "expired":
-          throw new AgentGateError(
+          throw new AgentPOSError(
             "APPROVAL_EXPIRED",
             "The approval request expired without a decision",
             {
@@ -166,8 +166,8 @@ export class ApprovalService {
   ): ApprovalRequest {
     const found = this.opts.store.get(id);
     if (!found) {
-      throw new AgentGateError("APPROVAL_NOT_FOUND", `Unknown approval '${id}'`, {
-        hint: "Check the id from the notification or `agentgate approvals list`.",
+      throw new AgentPOSError("APPROVAL_NOT_FOUND", `Unknown approval '${id}'`, {
+        hint: "Check the id from the notification or `agentpos approvals list`.",
       });
     }
     const request = this.expireIfDue(found, now) as ApprovalRequest;
@@ -198,7 +198,7 @@ export class ApprovalService {
   get(id: string): ApprovalRequest {
     const found = this.opts.store.get(id);
     if (!found) {
-      throw new AgentGateError("APPROVAL_NOT_FOUND", `Unknown approval '${id}'`, {
+      throw new AgentPOSError("APPROVAL_NOT_FOUND", `Unknown approval '${id}'`, {
         hint: "The id comes from the checkout response or the merchant notification.",
       });
     }

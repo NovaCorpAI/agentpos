@@ -1,4 +1,4 @@
-# SPEC 01: Site library + CLI (`@agentgate/site`)
+# SPEC 01: Site library + CLI (`@agentpos/site`)
 
 ## Objetivo
 
@@ -9,23 +9,23 @@ blockchain ni de protocolos agénticos.
 ## Dos modos de ejecución (misma librería)
 
 - **Middleware:** el sitio es Node (Express, Hono, Next.js). Se monta en
-  `/agentgate/*` y `/.well-known/ucp`. Comparte proceso.
+  `/agentpos/*` y `/.well-known/ucp`. Comparte proceso.
 - **Sidecar:** el sitio NO es Node (WooCommerce/PHP, Shopify, estático,
-  Django...). `npx agentgate serve` levanta un proceso aparte en el mismo
+  Django...). `npx agentpos serve` levanta un proceso aparte en el mismo
   servidor (o en un contenedor al lado) y el vendedor agrega una regla de
-  reverse proxy para `/agentgate/*` y `/.well-known/ucp`. El CLI imprime
+  reverse proxy para `/agentpos/*` y `/.well-known/ucp`. El CLI imprime
   el snippet exacto para nginx, Caddy, Apache y Cloudflare.
   Ambos modos comparten storage local (SQLite por defecto, Postgres opcional).
 
-## Experiencia CLI (`npx agentgate ...`)
+## Experiencia CLI (`npx agentpos ...`)
 
 1. `init`: URL base del sitio, idioma (en/es), plataforma detectada
    (Shopify / WooCommerce / custom, por fingerprint del HTML y
    confirmación), modo (middleware/sidecar). Credenciales del connector
-   (SPEC 08) se guardan cifradas en `~/.agentgate/<site>/` con passphrase;
+   (SPEC 08) se guardan cifradas en `~/.agentpos/<site>/` con passphrase;
    nunca salen del servidor.
 2. `scan`: corre el scanner (SPEC 05) sobre el propio dominio. Salida:
-   `agentgate.catalog.draft.json` + tabla en terminal "esto entendí".
+   `agentpos.catalog.draft.json` + tabla en terminal "esto entendí".
 3. `confirm`: revisión interactiva campo por campo o edición del draft.
    El precio en USDC lo pone o confirma el humano (sugerencia por tipo de
    cambio del precio fiat, siempre editable). Pasa a `confirmed`.
@@ -34,7 +34,7 @@ blockchain ni de protocolos agénticos.
    generar keypair local cifrado. Trustline USDC: XDR para firmar
    client-side; en testnet friendbot fondea.
 5. `publish`: valida (zod), screening de la address, verificación de
-   dominio (TXT DNS o `/.well-known/agentgate.txt`), genera las superficies
+   dominio (TXT DNS o `/.well-known/agentpos.txt`), genera las superficies
    (SPEC 09) vía core/adapter, marca `published`, registra opcionalmente en
    el hosted y en índices del ecosistema, y verifica end-to-end con una
    compra de prueba en testnet contra la propia tienda.
@@ -44,12 +44,12 @@ blockchain ni de protocolos agénticos.
 
 ## Runtime (lo que expone la librería)
 
-- **Surfaces** (SPEC 09): `/.well-known/ucp`, `/agentgate/feed`,
-  `/agentgate/mcp`, `/agentgate/catalog`, discovery x402.
-- **Checkout** (SPEC 08): `POST /agentgate/cart`, `POST /agentgate/quote`,
-  `POST /agentgate/checkout` (responde 402 con términos x402; con
+- **Surfaces** (SPEC 09): `/.well-known/ucp`, `/agentpos/feed`,
+  `/agentpos/mcp`, `/agentpos/catalog`, discovery x402.
+- **Checkout** (SPEC 08): `POST /agentpos/cart`, `POST /agentpos/quote`,
+  `POST /agentpos/checkout` (responde 402 con términos x402; con
   `PAYMENT-SIGNATURE` válida -> verify -> settle -> orden -> 200 con
-  recibo), `GET /agentgate/orders/:id`.
+  recibo), `GET /agentpos/orders/:id`.
 - **Sync:** re-scan programado (cron configurable) que detecta cambios de
   precio/stock/productos y genera un nuevo draft; nunca publica solo.
   Con connector activo, stock y precio se leen de la plataforma en tiempo
@@ -58,8 +58,8 @@ blockchain ni de protocolos agénticos.
 
 ## API pública (index.ts)
 
-`createAgentGate(config)`, `agentgate.middleware()` (Express/Hono/Next),
-`agentgate.serve(port)`, tipos `SiteConfig`, `CatalogItem`, `Order`,
+`createAgentPOS(config)`, `agentpos.middleware()` (Express/Hono/Next),
+`agentpos.serve(port)`, tipos `SiteConfig`, `CatalogItem`, `Order`,
 `PriceUSDC` (branded int, 7 dec). CLI en `bin/`.
 
 ## Tests

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { AgentGateError, usdc } from "@agentgate/core";
+import { AgentPOSError, usdc } from "@agentpos/core";
 import { WooCommerceConnector, stripHtml } from "./woocommerce.js";
 
 const product = {
@@ -42,7 +42,7 @@ describe("WooCommerceConnector", () => {
           consumerKey: "a",
           consumerSecret: "b",
         }),
-    ).toThrowError(AgentGateError);
+    ).toThrowError(AgentPOSError);
     expect(
       () =>
         new WooCommerceConnector({
@@ -154,14 +154,14 @@ describe("WooCommerceConnector", () => {
     });
     expect(sent).toMatchObject({
       set_paid: true,
-      payment_method: "agentgate",
+      payment_method: "agentpos",
       transaction_id: "abc",
       line_items: [{ product_id: 12, quantity: 2 }],
       shipping: { first_name: "Ada", last_name: "Lovelace", country: "US" },
       billing: { email: "buyer@example.com" },
     });
     const meta = sent!.meta_data as Array<{ key: string; value: string }>;
-    expect(meta.find((m) => m.key === "_agentgate_amount_minor")?.value).toBe("198000000");
+    expect(meta.find((m) => m.key === "_agentpos_amount_minor")?.value).toBe("198000000");
   });
 
   it("maps HTTP failures to typed, retryable-aware errors", async () => {
@@ -198,7 +198,7 @@ describe("WooCommerceConnector", () => {
       });
       expect.unreachable();
     } catch (err) {
-      expect((err as AgentGateError).retryable).toBe(true);
+      expect((err as AgentPOSError).retryable).toBe(true);
     }
   });
 

@@ -12,7 +12,7 @@ export const AGENT_NONCE_HEADER = "x-agent-nonce";
 export const AGENT_SIGNATURE_HEADER = "x-agent-signature";
 export const AGENT_ATTESTATION_HEADER = "x-agent-attestation";
 
-export const REQUEST_VERSION = "AGENTGATE-REQUEST-V1";
+export const REQUEST_VERSION = "AGENTPOS-REQUEST-V1";
 /** How far the agent's clock may be from the merchant's. */
 export const REQUEST_WINDOW_SECONDS = 60;
 

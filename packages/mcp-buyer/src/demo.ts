@@ -4,15 +4,15 @@
  *
  * It exists for three audiences at once, which is why it narrates every step:
  *  - a merchant who wants to check their own store actually works end to end;
- *  - a third party evaluating whether AgentGate stores are really open (nothing here is special
+ *  - a third party evaluating whether AgentPOS stores are really open (nothing here is special
  *    to us: it is HTTP, an OpenAPI document and an x402 challenge);
  *  - the launch video.
  *
  * `--dry-run` stops before paying, so anyone can exercise discovery and quoting with no wallet
  * and no funds. That is the mode most people should run first.
  */
-import { formatUsdc, usdcFromMinor } from "@agentgate/core";
-import type { Address, BuyerContact } from "@agentgate/core";
+import { formatUsdc, usdcFromMinor } from "@agentpos/core";
+import type { Address, BuyerContact } from "@agentpos/core";
 import { SiteClient } from "./siteClient.js";
 import type { SiteCart, SiteItem, SiteOrder } from "./siteClient.js";
 import type { BuyerService } from "./buyer.js";
@@ -63,7 +63,7 @@ export interface DemoResult {
 
 interface OpenApiDoc {
   info?: { title?: string; "x-guidance"?: string };
-  "x-agentgate"?: {
+  "x-agentpos"?: {
     network?: string;
     asset?: string;
     mcp?: string;
@@ -112,7 +112,7 @@ export async function runDemoPurchase(options: DemoOptions): Promise<DemoResult>
   ]);
 
   const info = await client.info();
-  const mcp = Boolean(doc?.["x-agentgate"]?.mcp);
+  const mcp = Boolean(doc?.["x-agentpos"]?.mcp);
   const via: DemoResult["discovery"]["via"] = doc ? "openapi" : ucpManifest ? "ucp" : "catalog";
   emit({
     step: "discover",
@@ -207,7 +207,7 @@ export async function runDemoPurchase(options: DemoOptions): Promise<DemoResult>
   if (!buyer) {
     emit({
       step: "pay",
-      message: "No wallet configured, so the run stops here. Use --dry-run, or `agentgate-buyer init` first.",
+      message: "No wallet configured, so the run stops here. Use --dry-run, or `agentpos-buyer init` first.",
     });
     return result;
   }

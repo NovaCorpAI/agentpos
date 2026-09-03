@@ -1,7 +1,7 @@
 {
-  "name": "@agentgate/policy",
+  "name": "@agentpos/policy",
   "version": "0.0.1",
-  "description": "AgentGate merchant policy engine: verifiable rules a merchant sets over agentic sales, evaluated before quoting and again before settling.",
+  "description": "AgentPOS merchant policy engine: verifiable rules a merchant sets over agentic sales, evaluated before quoting and again before settling.",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -26,7 +26,7 @@
     "lint": "eslint src"
   },
   "dependencies": {
-    "@agentgate/core": "workspace:*",
+    "@agentpos/core": "workspace:*",
     "zod": "^4.4.3"
   },
   "devDependencies": {

@@ -3,7 +3,7 @@
  * the agent is never charged while it waits, and settlement executes exactly the snapshot the
  * merchant approved, never a quote that drifted afterwards.
  */
-import type { Address, BuyerContact } from "@agentgate/core";
+import type { Address, BuyerContact } from "@agentpos/core";
 
 export const APPROVAL_STATUSES = ["pending", "approved", "rejected", "expired"] as const;
 export type ApprovalStatus = (typeof APPROVAL_STATUSES)[number];

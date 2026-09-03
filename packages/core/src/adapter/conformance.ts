@@ -1,7 +1,7 @@
 /**
  * Conformance: validate emitted surfaces against the pinned OFFICIAL schemas vendored under
  * packages/core/schemas (UCP: 116 files from Universal-Commerce-Protocol/ucp; ACP: schema.feed.json).
- * Used by tests, `agentgate publish` and CI. Never trust our own shape; trust the spec.
+ * Used by tests, `agentpos publish` and CI. Never trust our own shape; trust the spec.
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";

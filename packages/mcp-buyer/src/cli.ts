@@ -1,16 +1,16 @@
 /**
- * `agentgate-buyer`: the HUMAN side of the mandate. init | approve | pending | log | sites | serve.
+ * `agentpos-buyer`: the HUMAN side of the mandate. init | approve | pending | log | sites | serve.
  */
 import { Command } from "commander";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
-  AgentGateError,
+  AgentPOSError,
   FRIENDBOT_URL,
   formatUsdc,
   generateAndStoreKeypair,
-} from "@agentgate/core";
+} from "@agentpos/core";
 import { approve, listPending, loadProfile, saveProfile } from "./profile.js";
 import type { Profile } from "./profile.js";
 import { mandateSchema } from "./mandate.js";
@@ -20,7 +20,7 @@ import { runDemoPurchase } from "./demo.js";
 import { SpendingLog } from "./spending.js";
 
 function die(err: unknown): never {
-  if (err instanceof AgentGateError) {
+  if (err instanceof AgentPOSError) {
     console.error(pc.red(`\n${err.code}: ${err.message}`));
     console.error(pc.dim(`hint: ${err.hint}`));
   } else console.error(pc.red(String(err)));
@@ -29,8 +29,8 @@ function die(err: unknown): never {
 
 const program = new Command();
 program
-  .name("agentgate-buyer")
-  .description("Human side of the AgentGate buyer mandate.")
+  .name("agentpos-buyer")
+  .description("Human side of the AgentPOS buyer mandate.")
   .version("0.0.1");
 program.option("-p, --profile <name>", "profile name", "default");
 
@@ -40,10 +40,10 @@ program
   .option("--network <net>", "testnet | mainnet", "testnet")
   .action(async (opts: { network: "testnet" | "mainnet" }) => {
     const name = program.opts<{ profile: string }>().profile;
-    p.intro(pc.bold(`AgentGate buyer profile "${name}"`));
+    p.intro(pc.bold(`AgentPOS buyer profile "${name}"`));
     const passphrase = await p.password({
       message:
-        "Passphrase to encrypt the spending wallet (you will set AGENTGATE_BUYER_PASSPHRASE for the MCP server)",
+        "Passphrase to encrypt the spending wallet (you will set AGENTPOS_BUYER_PASSPHRASE for the MCP server)",
     });
     if (p.isCancel(passphrase)) return p.cancel();
     const maxPerTx = await p.text({ message: "Max per payment (USDC)", initialValue: "10" });
@@ -115,7 +115,7 @@ program
       );
     }
     p.note(
-      `Profile: ${file}\nWallet: ${publicKey}\nKey file (encrypted): ${path}\n\nMCP config for Claude:\n  command: agentgate-buyer\n  args: ["serve", "--profile", "${name}"]\n  env: { AGENTGATE_BUYER_PASSPHRASE: "<your passphrase>" }`,
+      `Profile: ${file}\nWallet: ${publicKey}\nKey file (encrypted): ${path}\n\nMCP config for Claude:\n  command: agentpos-buyer\n  args: ["serve", "--profile", "${name}"]\n  env: { AGENTPOS_BUYER_PASSPHRASE: "<your passphrase>" }`,
       "Done",
     );
     p.outro("The agent can now buy within this mandate. Edit the JSON file to change limits.");
@@ -131,8 +131,8 @@ program
       const profile = loadProfile(program.opts<{ profile: string }>().profile);
       if (action === "list") return console.log(profile.sites.join("\n") || "(none)");
       if (!url)
-        throw new AgentGateError("CONFIG_INVALID", "url required", {
-          hint: "agentgate-buyer sites add https://shop.example",
+        throw new AgentPOSError("CONFIG_INVALID", "url required", {
+          hint: "agentpos-buyer sites add https://shop.example",
         });
       profile.sites =
         action === "add"
@@ -252,7 +252,7 @@ program
           );
         } else if (opts.dryRun) {
           console.log(
-            pc.dim("Nothing was paid. Drop --dry-run (and run `agentgate-buyer init`) to buy for real."),
+            pc.dim("Nothing was paid. Drop --dry-run (and run `agentpos-buyer init`) to buy for real."),
           );
         }
       } catch (err) {
@@ -270,7 +270,7 @@ program
       loadProfile(name);
       const server = buildBuyerServer({ defaultProfile: name });
       await server.connect(new StdioServerTransport());
-      console.error(pc.dim(`[agentgate-buyer] MCP server on stdio, profile ${name}`));
+      console.error(pc.dim(`[agentpos-buyer] MCP server on stdio, profile ${name}`));
     } catch (err) {
       die(err);
     }

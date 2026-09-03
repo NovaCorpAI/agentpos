@@ -1,5 +1,5 @@
 /**
- * `npx agentgate` (SPEC 01): init | scan | confirm | publish | status | serve.
+ * `npx agentpos` (SPEC 01): init | scan | confirm | publish | status | serve.
  */
 import { existsSync, readFileSync, writeFileSync, appendFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -7,19 +7,19 @@ import { Command } from "commander";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 import {
-  AgentGateError,
+  AgentPOSError,
   formatUsdc,
   usdc,
   createLlm,
   createLogger,
   validateAcpProductsResponse,
   validateUcpBusinessProfile,
-} from "@agentgate/core";
-import type { CatalogItemDraft, LlmProvider } from "@agentgate/core";
-import { describeApproval } from "@agentgate/approvals";
-import { exportAuditTrail, formatAuditTrail, verifyChain } from "@agentgate/receipts";
-import { scanSite } from "@agentgate/scanner";
-import { createAgentGate, buildConnector } from "./index.js";
+} from "@agentpos/core";
+import type { CatalogItemDraft, LlmProvider } from "@agentpos/core";
+import { describeApproval } from "@agentpos/approvals";
+import { exportAuditTrail, formatAuditTrail, verifyChain } from "@agentpos/receipts";
+import { scanSite } from "@agentpos/scanner";
+import { createAgentPOS, buildConnector } from "./index.js";
 import { SITE_CONFIG_FILE, coreConfigFromEnv, loadSiteConfig, secretsFromEnv } from "./config.js";
 import type { SiteConfigInput } from "./config.js";
 import { generateAndStoreKeypair } from "./keys.js";
@@ -37,7 +37,7 @@ function loadDotEnv(cwd: string): void {
 }
 
 function die(err: unknown): never {
-  if (err instanceof AgentGateError) {
+  if (err instanceof AgentPOSError) {
     console.error(pc.red(`\n${err.code}: ${err.message}`));
     console.error(pc.dim(`hint: ${err.hint}`));
     if (err.details) console.error(pc.dim(JSON.stringify(err.details, null, 2)));
@@ -56,7 +56,7 @@ function ensureEnvLine(cwd: string, key: string, value = ""): void {
 
 const program = new Command();
 program
-  .name("agentgate")
+  .name("agentpos")
   .description("Turn your site into an agent-buyable store (x402 on Stellar).")
   .version("0.0.1");
 program.option("-C, --cwd <dir>", "working directory", process.cwd());
@@ -64,11 +64,11 @@ program.option("-C, --cwd <dir>", "working directory", process.cwd());
 // ---------------------------------------------------------------------------
 program
   .command("init")
-  .description("Create agentgate.config.json interactively")
+  .description("Create agentpos.config.json interactively")
   .option("--generate-wallet", "generate a local keypair instead of linking an existing wallet")
   .action(async (opts: { generateWallet?: boolean }) => {
     const cwd = program.opts<{ cwd: string }>().cwd;
-    p.intro(pc.bold("AgentGate init"));
+    p.intro(pc.bold("AgentPOS init"));
     if (existsSync(resolve(cwd, SITE_CONFIG_FILE))) {
       const overwrite = await p.confirm({
         message: `${SITE_CONFIG_FILE} exists. Overwrite?`,
@@ -112,7 +112,7 @@ program
         : false;
       woocommerce = { baseUrl, allowInsecureHttp: insecure === true };
       p.note(
-        "Create a Read/Write key in WooCommerce > Settings > Advanced > REST API and put it in .env:\n  AGENTGATE_WOO_CONSUMER_KEY=ck_...\n  AGENTGATE_WOO_CONSUMER_SECRET=cs_...",
+        "Create a Read/Write key in WooCommerce > Settings > Advanced > REST API and put it in .env:\n  AGENTPOS_WOO_CONSUMER_KEY=ck_...\n  AGENTPOS_WOO_CONSUMER_SECRET=cs_...",
         "WooCommerce credentials",
       );
     }
@@ -148,14 +148,14 @@ program
       ...(woocommerce ? { woocommerce } : {}),
     };
     writeFileSync(resolve(cwd, SITE_CONFIG_FILE), `${JSON.stringify(config, null, 2)}\n`);
-    ensureEnvLine(cwd, "AGENTGATE_NETWORK", "testnet");
-    ensureEnvLine(cwd, "AGENTGATE_FACILITATOR_API_KEY");
+    ensureEnvLine(cwd, "AGENTPOS_NETWORK", "testnet");
+    ensureEnvLine(cwd, "AGENTPOS_FACILITATOR_API_KEY");
     if (platform === "woocommerce") {
-      ensureEnvLine(cwd, "AGENTGATE_WOO_CONSUMER_KEY");
-      ensureEnvLine(cwd, "AGENTGATE_WOO_CONSUMER_SECRET");
+      ensureEnvLine(cwd, "AGENTPOS_WOO_CONSUMER_KEY");
+      ensureEnvLine(cwd, "AGENTPOS_WOO_CONSUMER_SECRET");
     }
     p.note(
-      "1. Get a free facilitator API key (testnet): https://channels.openzeppelin.com/testnet/gen\n   and set AGENTGATE_FACILITATOR_API_KEY in .env\n2. npx agentgate scan\n3. npx agentgate confirm\n4. npx agentgate publish\n5. npx agentgate serve",
+      "1. Get a free facilitator API key (testnet): https://channels.openzeppelin.com/testnet/gen\n   and set AGENTPOS_FACILITATOR_API_KEY in .env\n2. npx agentpos scan\n3. npx agentpos confirm\n4. npx agentpos publish\n5. npx agentpos serve",
       "Next steps",
     );
     p.outro(`wrote ${SITE_CONFIG_FILE}`);
@@ -186,7 +186,7 @@ program
         onProgress: (m) => s.message(m),
       });
       s.stop(`found ${result.drafts.length} items`);
-      const storage = new SiteStorage(resolve(cwd, site.dataDir, "agentgate.sqlite"));
+      const storage = new SiteStorage(resolve(cwd, site.dataDir, "agentpos.sqlite"));
       storage.replaceDrafts(result.drafts);
       writeFileSync(
         resolve(cwd, site.dataDir, "catalog.draft.json"),
@@ -206,7 +206,7 @@ program
         );
       }
       console.log(
-        `\n${pc.dim("This is what I understood. Nothing is published yet.")} Next: ${pc.bold("npx agentgate confirm")}`,
+        `\n${pc.dim("This is what I understood. Nothing is published yet.")} Next: ${pc.bold("npx agentpos confirm")}`,
       );
     } catch (err) {
       die(err);
@@ -223,11 +223,11 @@ program
     loadDotEnv(cwd);
     try {
       const site = loadSiteConfig(cwd);
-      const storage = new SiteStorage(resolve(cwd, site.dataDir, "agentgate.sqlite"));
+      const storage = new SiteStorage(resolve(cwd, site.dataDir, "agentpos.sqlite"));
       const catalog = new CatalogService(storage);
       const drafts = storage.listDrafts();
       if (drafts.length === 0) {
-        console.log("no drafts. Run `npx agentgate scan` first.");
+        console.log("no drafts. Run `npx agentpos scan` first.");
         return;
       }
       let confirmed = 0;
@@ -254,7 +254,7 @@ program
         p.outro(`${confirmed} confirmed`);
       }
       storage.close();
-      console.log(`${confirmed} items confirmed. Next: ${pc.bold("npx agentgate publish")}`);
+      console.log(`${confirmed} items confirmed. Next: ${pc.bold("npx agentpos publish")}`);
     } catch (err) {
       die(err);
     }
@@ -309,7 +309,7 @@ program
       loadSiteConfig(cwd);
       const core = coreConfigFromEnv();
       if (core.facilitatorApiKeys.length === 0) {
-        throw new AgentGateError("CONFIG_INVALID", "AGENTGATE_FACILITATOR_API_KEY is not set", {
+        throw new AgentPOSError("CONFIG_INVALID", "AGENTPOS_FACILITATOR_API_KEY is not set", {
           hint: "Generate one at https://channels.openzeppelin.com/testnet/gen and add it to .env",
         });
       }
@@ -317,10 +317,10 @@ program
         headers: { authorization: `Bearer ${core.facilitatorApiKeys[0]}` },
       });
       if (!res.ok)
-        throw new AgentGateError("PAYMENT_REJECTED", `Facilitator answered ${res.status}`, {
+        throw new AgentPOSError("PAYMENT_REJECTED", `Facilitator answered ${res.status}`, {
           hint: "Check the API key matches the network (testnet vs mainnet).",
         });
-      const gate = await createAgentGate({ cwd });
+      const gate = await createAgentPOS({ cwd });
       // Conformance gate: the discovery surfaces must validate against the pinned official schemas.
       const profile = await (
         await gate.fetch(new Request(`${gate.site.siteUrl}/.well-known/ucp`))
@@ -331,11 +331,11 @@ program
       ).json();
       const acpCheck = validateAcpProductsResponse(feed);
       if (!ucpCheck.valid || !acpCheck.valid) {
-        throw new AgentGateError(
+        throw new AgentPOSError(
           "SPEC_MISMATCH",
           "Discovery surfaces do not validate against the pinned schemas",
           {
-            hint: "This is a bug in AgentGate, not in your data. Please report it with the details below.",
+            hint: "This is a bug in AgentPOS, not in your data. Please report it with the details below.",
             details: { ucp: ucpCheck.errors, acp: acpCheck.errors },
           },
         );
@@ -345,7 +345,7 @@ program
       console.log(
         pc.green(`${published.length} items published on ${core.caip2} (${core.checkoutAsset})`),
       );
-      console.log("Surfaces (once `agentgate serve` runs behind your domain):");
+      console.log("Surfaces (once `agentpos serve` runs behind your domain):");
       for (const [k, v] of Object.entries(gate.routes)) console.log(`  ${k.padEnd(9)} ${v}`);
       gate.storage.close();
     } catch (err) {
@@ -362,7 +362,7 @@ program
     const cwd = program.opts<{ cwd: string }>().cwd;
     loadDotEnv(cwd);
     try {
-      const gate = await createAgentGate({ cwd });
+      const gate = await createAgentPOS({ cwd });
       const items = gate.storage.listItems();
       const count = (s: string) => items.filter((i) => i.status === s).length;
       console.log(
@@ -411,14 +411,14 @@ program
     const cwd = program.opts<{ cwd: string }>().cwd;
     loadDotEnv(cwd);
     try {
-      const gate = await createAgentGate({ cwd });
+      const gate = await createAgentPOS({ cwd });
       const approvals = gate.approvals;
       if (!approvals) {
-        throw new AgentGateError(
+        throw new AgentPOSError(
           "CONFIG_INVALID",
           "The approval queue is disabled for this store",
           {
-            hint: 'Set "approvals": { "enabled": true } in agentgate.config.json.',
+            hint: 'Set "approvals": { "enabled": true } in agentpos.config.json.',
           },
         );
       }
@@ -437,13 +437,13 @@ program
         }
         console.log(
           pc.dim(
-            '\nApprove: npx agentgate approvals approve <id>   Reject: npx agentgate approvals reject <id> -r "reason"',
+            '\nApprove: npx agentpos approvals approve <id>   Reject: npx agentpos approvals reject <id> -r "reason"',
           ),
         );
       } else if (action === "approve" || action === "reject") {
         if (!id)
-          throw new AgentGateError("CONFIG_INVALID", "Missing approval id", {
-            hint: "npx agentgate approvals list",
+          throw new AgentPOSError("CONFIG_INVALID", "Missing approval id", {
+            hint: "npx agentpos approvals list",
           });
         const resolved = approvals.resolve(
           id,
@@ -455,7 +455,7 @@ program
         if (resolved.status === "approved")
           console.log(pc.dim("The agent can now pay this cart until the quote expires."));
       } else {
-        throw new AgentGateError("CONFIG_INVALID", `Unknown action '${action}'`, {
+        throw new AgentPOSError("CONFIG_INVALID", `Unknown action '${action}'`, {
           hint: "Use list, approve or reject.",
         });
       }
@@ -482,7 +482,7 @@ program
       const cwd = program.opts<{ cwd: string }>().cwd;
       loadDotEnv(cwd);
       try {
-        const gate = await createAgentGate({ cwd });
+        const gate = await createAgentPOS({ cwd });
         const identity = gate.identity;
         if (action === "list") {
           const records = identity.list(
@@ -505,8 +505,8 @@ program
           console.log(pc.dim(`\nStore mode: ${identity.mode}. Change it in ${SITE_CONFIG_FILE}.`));
         } else if (action === "register") {
           if (!value)
-            throw new AgentGateError("CONFIG_INVALID", "Missing attestation file", {
-              hint: "npx agentgate agents register ./attestation.json",
+            throw new AgentPOSError("CONFIG_INVALID", "Missing attestation file", {
+              hint: "npx agentpos agents register ./attestation.json",
             });
           const signed = JSON.parse(readFileSync(resolve(cwd, value), "utf8")) as never;
           const record = identity.register(signed);
@@ -518,8 +518,8 @@ program
           );
         } else if (action === "revoke") {
           if (!value)
-            throw new AgentGateError("CONFIG_INVALID", "Missing agent key", {
-              hint: 'npx agentgate agents revoke G... -r "reason"',
+            throw new AgentPOSError("CONFIG_INVALID", "Missing agent key", {
+              hint: 'npx agentpos agents revoke G... -r "reason"',
             });
           const record = identity.revoke(value, opts.reason);
           console.log(pc.yellow(`revoked ${record.agentKey}`));
@@ -527,7 +527,7 @@ program
             pc.dim("Takes effect on the agent's next request, including carts already quoted."),
           );
         } else {
-          throw new AgentGateError("CONFIG_INVALID", `Unknown action '${action}'`, {
+          throw new AgentPOSError("CONFIG_INVALID", `Unknown action '${action}'`, {
             hint: "Use list, register or revoke.",
           });
         }
@@ -555,11 +555,11 @@ program
       const cwd = program.opts<{ cwd: string }>().cwd;
       loadDotEnv(cwd);
       try {
-        const gate = await createAgentGate({ cwd });
+        const gate = await createAgentPOS({ cwd });
         const chain = gate.receipts;
         if (!chain) {
-          throw new AgentGateError("CONFIG_INVALID", "This store keeps no receipts", {
-            hint: 'Set "receipts": { "enabled": true } in agentgate.config.json.',
+          throw new AgentPOSError("CONFIG_INVALID", "This store keeps no receipts", {
+            hint: 'Set "receipts": { "enabled": true } in agentpos.config.json.',
           });
         }
         const period = {
@@ -579,7 +579,7 @@ program
             );
             console.log(pc.dim(`      ${r.hash}${r.body.payment ? ` | tx ${r.body.payment.txHash}` : ""}`));
           }
-          console.log(pc.dim("\nVerify the chain: npx agentgate receipts verify"));
+          console.log(pc.dim("\nVerify the chain: npx agentpos receipts verify"));
         } else if (action === "verify") {
           const all = chain.list(period);
           const result = verifyChain(all);
@@ -605,7 +605,7 @@ program
             console.log(text);
           }
         } else {
-          throw new AgentGateError("CONFIG_INVALID", `Unknown action '${action}'`, {
+          throw new AgentPOSError("CONFIG_INVALID", `Unknown action '${action}'`, {
             hint: "Use list, verify or export.",
           });
         }
@@ -626,16 +626,16 @@ program
     loadDotEnv(cwd);
     try {
       const site = loadSiteConfig(cwd);
-      const storage = new SiteStorage(resolve(cwd, site.dataDir, "agentgate.sqlite"));
+      const storage = new SiteStorage(resolve(cwd, site.dataDir, "agentpos.sqlite"));
       const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-      const dest = resolve(cwd, dir, `agentgate-${stamp}.sqlite`);
+      const dest = resolve(cwd, dir, `agentpos-${stamp}.sqlite`);
       storage.backup(dest);
       const c = storage.counts();
       storage.close();
       console.log(pc.green(`backup written: ${dest}`));
       console.log(
         pc.dim(
-          `items=${c.items} orders=${c.orders} payments=${c.payments}. Restore: copy over ${site.dataDir}/agentgate.sqlite with the sidecar stopped.`,
+          `items=${c.items} orders=${c.orders} payments=${c.payments}. Restore: copy over ${site.dataDir}/agentpos.sqlite with the sidecar stopped.`,
         ),
       );
     } catch (err) {
@@ -654,15 +654,15 @@ program
     loadDotEnv(cwd);
     try {
       const format =
-        process.env.AGENTGATE_LOG_FORMAT === "pretty" ||
-        (process.stdout.isTTY && !process.env.AGENTGATE_LOG_FORMAT)
+        process.env.AGENTPOS_LOG_FORMAT === "pretty" ||
+        (process.stdout.isTTY && !process.env.AGENTPOS_LOG_FORMAT)
           ? "pretty"
           : "json";
-      const gate = await createAgentGate({ cwd, logger: createLogger({ format }) });
+      const gate = await createAgentPOS({ cwd, logger: createLogger({ format }) });
       const { port } = await gate.serve(Number(opts.port), opts.host);
       console.log(
         pc.green(
-          `AgentGate sidecar for ${gate.site.displayName} on http://${opts.host}:${port}${gate.site.basePath}`,
+          `AgentPOS sidecar for ${gate.site.displayName} on http://${opts.host}:${port}${gate.site.basePath}`,
         ),
       );
       console.log(

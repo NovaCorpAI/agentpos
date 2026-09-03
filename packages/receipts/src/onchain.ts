@@ -11,7 +11,7 @@
  * What it does not prove: that the buyer intended it, or that the store shipped anything. A
  * receipt is evidence of terms and settlement, not of satisfaction.
  */
-import { HORIZON_URLS, USDC_ISSUER } from "@agentgate/core";
+import { HORIZON_URLS, USDC_ISSUER } from "@agentpos/core";
 import type { Receipt } from "./types.js";
 
 export interface OnChainOptions {

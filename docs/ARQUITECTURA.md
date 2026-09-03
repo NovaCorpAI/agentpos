@@ -13,11 +13,11 @@ propio, catálogo agéntico, adaptador multi-protocolo, checkout x402 sobre
 
 ```
 [Sitio del vendedor: vende en fiat hoy]
-  +- @agentgate/site  (corre en SU servidor: middleware Node o sidecar)
+  +- @agentpos/site  (corre en SU servidor: middleware Node o sidecar)
       |- scanner .......... sitemap + schema.org + paginas / OpenAPI -> catalogo DRAFT
       |                      -> humano confirma -> CONFIRMED -> se publica
-      |- surfaces ......... /.well-known/ucp (UCP) | /agentgate/feed (ACP)
-      |                      | /agentgate/mcp (MCP) | discovery x402
+      |- surfaces ......... /.well-known/ucp (UCP) | /agentpos/feed (ACP)
+      |                      | /agentpos/mcp (MCP) | discovery x402
       |- checkout ......... cart -> quote -> 402 (x402 exact, USDC) -> pago -> orden
       +- connector ........ Shopify | WooCommerce | hook onOrder -> orden real
                                                      en el sistema del vendedor
@@ -25,8 +25,8 @@ propio, catálogo agéntico, adaptador multi-protocolo, checkout x402 sobre
   Stellar (USDC, testnet -> mainnet)
 
 [Agente comprador]
-  +- @agentgate/mcp-buyer  (search / quote / buy dentro de mandato humano)
-      consume: sitios AgentGate + cualquier sitio UCP/ACP/x402 via adapter
+  +- @agentpos/mcp-buyer  (search / quote / buy dentro de mandato humano)
+      consume: sitios AgentPOS + cualquier sitio UCP/ACP/x402 via adapter
   (o cualquier cliente x402/UCP/ACP de terceros: el sitio es estandar)
 
 [Plano de datos hosted, OPCIONAL]
@@ -61,7 +61,7 @@ propio, catálogo agéntico, adaptador multi-protocolo, checkout x402 sobre
   el sistema del vendedor es un pago perdido. Por eso los connectors son
   parte del núcleo v1: Shopify (Admin API GraphQL, orden con
   `financial_status: paid` y gateway custom), WooCommerce (REST API v3,
-  orden `processing` con `payment_method: agentgate`), hook `onOrder` para
+  orden `processing` con `payment_method: agentpos`), hook `onOrder` para
   stacks custom. Reserva de stock con TTL durante la ventana de pago.
 - **Sin contratos Soroban propios en v1.** El flujo exact no los necesita.
   Auth-capture entra en fase Build cuando el ecosistema entregue la

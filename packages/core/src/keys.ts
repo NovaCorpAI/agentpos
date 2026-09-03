@@ -1,13 +1,13 @@
 /**
  * Local keypair fallback (SPEC 07): AES-256-GCM with a scrypt-derived key from a passphrase.
- * Stored under ~/.agentgate/keys/<name>.json. Linking an existing wallet is always preferred.
+ * Stored under ~/.agentpos/keys/<name>.json. Linking an existing wallet is always preferred.
  */
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { Keypair } from "@stellar/stellar-sdk";
-import { AgentGateError } from "./errors.js";
+import { AgentPOSError } from "./errors.js";
 
 export interface EncryptedKeyFile {
   version: 1;
@@ -18,9 +18,9 @@ export interface EncryptedKeyFile {
 }
 
 export function keysDir(): string {
-  return process.env.AGENTGATE_HOME
-    ? join(process.env.AGENTGATE_HOME, "keys")
-    : join(homedir(), ".agentgate", "keys");
+  return process.env.AGENTPOS_HOME
+    ? join(process.env.AGENTPOS_HOME, "keys")
+    : join(homedir(), ".agentpos", "keys");
 }
 
 function derive(passphrase: string, salt: Buffer): Buffer {
@@ -61,8 +61,8 @@ export function decryptSecret(file: EncryptedKeyFile, passphrase: string): strin
       decipher.final(),
     ]).toString("utf8");
   } catch {
-    throw new AgentGateError("INVALID_SECRET_KEY", "Wrong passphrase or corrupted key file", {
-      hint: "Check the passphrase used at `agentgate init`.",
+    throw new AgentPOSError("INVALID_SECRET_KEY", "Wrong passphrase or corrupted key file", {
+      hint: "Check the passphrase used at `agentpos init`.",
     });
   }
 }
@@ -75,7 +75,7 @@ export function generateAndStoreKeypair(
   mkdirSync(dir, { recursive: true });
   const path = join(dir, `${name}.json`);
   if (existsSync(path)) {
-    throw new AgentGateError("CONFIG_INVALID", `Key file already exists: ${path}`, {
+    throw new AgentPOSError("CONFIG_INVALID", `Key file already exists: ${path}`, {
       hint: "Use another name or reuse the existing key.",
     });
   }
@@ -91,8 +91,8 @@ export function generateAndStoreKeypair(
 export function loadKeypair(name: string, passphrase: string): Keypair {
   const path = join(keysDir(), `${name}.json`);
   if (!existsSync(path))
-    throw new AgentGateError("CONFIG_INVALID", `Key file not found: ${path}`, {
-      hint: "Run `agentgate init` with --generate-wallet.",
+    throw new AgentPOSError("CONFIG_INVALID", `Key file not found: ${path}`, {
+      hint: "Run `agentpos init` with --generate-wallet.",
     });
   const file = JSON.parse(readFileSync(path, "utf8")) as EncryptedKeyFile;
   return Keypair.fromSecret(decryptSecret(file, passphrase));

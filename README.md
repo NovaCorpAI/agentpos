@@ -1,4 +1,4 @@
-# AgentGate (nombre de trabajo, renombrable)
+# AgentPOS (nombre de trabajo, renombrable)
 
 Librería open source que convierte cualquier sitio que hoy vende en fiat en
 una tienda comprable por agentes de IA. Corre en el servidor del propio
@@ -9,7 +9,7 @@ custom). Sin marketplace, sin intermediario, sin custodia. Global.
 
 ## Cómo usar este paquete con Claude Code
 
-1. Copia esta carpeta a la raíz de un repo nuevo (`agentgate/`).
+1. Copia esta carpeta a la raíz de un repo nuevo (`agentpos/`).
 2. Abre VSCode, inicia Claude Code en la raíz.
 3. Claude Code lee `CLAUDE.md` automáticamente. Primer comando sugerido:
    `Lee plan/ROADMAP.md y ejecuta la Fase 0 completa.`

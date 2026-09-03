@@ -9,7 +9,7 @@ import {
   usdc,
   usdcFromMinor,
 } from "./money.js";
-import { AgentGateError } from "./errors.js";
+import { AgentPOSError } from "./errors.js";
 
 describe("money", () => {
   it("parses decimal strings into 7-decimal integers", () => {
@@ -22,14 +22,14 @@ describe("money", () => {
 
   it("rejects malformed or over-precise amounts with typed errors", () => {
     for (const bad of ["-1", "1,5", "abc", "1.00000001", ""]) {
-      expect(() => usdc(bad)).toThrowError(AgentGateError);
+      expect(() => usdc(bad)).toThrowError(AgentPOSError);
     }
-    expect(() => usdc(Number.NaN)).toThrowError(AgentGateError);
+    expect(() => usdc(Number.NaN)).toThrowError(AgentPOSError);
     try {
       usdc("1.00000001");
     } catch (err) {
-      expect((err as AgentGateError).code).toBe("INVALID_AMOUNT");
-      expect((err as AgentGateError).hint).toMatch(/decimal/);
+      expect((err as AgentPOSError).code).toBe("INVALID_AMOUNT");
+      expect((err as AgentPOSError).hint).toMatch(/decimal/);
     }
   });
 
@@ -43,13 +43,13 @@ describe("money", () => {
   it("does integer arithmetic", () => {
     expect(addUsdc(usdc("0.1"), usdc("0.2"))).toBe(usdc("0.3"));
     expect(mulUsdc(usdc("1.25"), 3)).toBe(usdc("3.75"));
-    expect(() => mulUsdc(usdc("1"), 1.5)).toThrowError(AgentGateError);
+    expect(() => mulUsdc(usdc("1"), 1.5)).toThrowError(AgentPOSError);
     expect(compareUsdc(usdc("1"), usdc("2"))).toBe(-1);
     expect(compareUsdc(usdc("2"), usdc("2"))).toBe(0);
   });
 
   it("wraps minor units from strings/bigints and rejects negatives", () => {
     expect(usdcFromMinor("15000000")).toBe(usdc("1.5"));
-    expect(() => usdcFromMinor(-1n)).toThrowError(AgentGateError);
+    expect(() => usdcFromMinor(-1n)).toThrowError(AgentPOSError);
   });
 });

@@ -11,7 +11,7 @@ import { StrKey } from "@stellar/stellar-sdk";
 import { generateFacilitatorKey } from "./keygen.js";
 
 function scratch(): { dir: string; done: () => void } {
-  const dir = mkdtempSync(join(tmpdir(), "agentgate-keygen-"));
+  const dir = mkdtempSync(join(tmpdir(), "agentpos-keygen-"));
   return { dir, done: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
@@ -24,8 +24,8 @@ describe("facilitator keygen", () => {
       expect(result).not.toHaveProperty("secret");
 
       const file = readFileSync(result.path, "utf8");
-      expect(file).toContain(`AGENTGATE_FACILITATOR_SIGNER_PUBLIC=${result.publicKey}`);
-      const secret = /AGENTGATE_FACILITATOR_SIGNER_SECRET=(S[A-Z2-7]{55})/.exec(file)?.[1];
+      expect(file).toContain(`AGENTPOS_FACILITATOR_SIGNER_PUBLIC=${result.publicKey}`);
+      const secret = /AGENTPOS_FACILITATOR_SIGNER_SECRET=(S[A-Z2-7]{55})/.exec(file)?.[1];
       expect(secret).toBeDefined();
       expect(StrKey.isValidEd25519SecretSeed(secret as string)).toBe(true);
       expect(file).toContain("XLM only");

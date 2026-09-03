@@ -1,7 +1,7 @@
 /**
- * Buyer profiles (SPEC 07): ~/.agentgate/profiles/<name>.json holds wallet reference, mandate,
+ * Buyer profiles (SPEC 07): ~/.agentpos/profiles/<name>.json holds wallet reference, mandate,
  * network, optional shipping/contact and known sites. Secrets never live here: the keypair is
- * an encrypted file under ~/.agentgate/keys, unlocked with AGENTGATE_BUYER_PASSPHRASE.
+ * an encrypted file under ~/.agentpos/keys, unlocked with AGENTPOS_BUYER_PASSPHRASE.
  */
 import {
   existsSync,
@@ -14,21 +14,21 @@ import {
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
-import { AgentGateError, addressSchema, buyerContactSchema } from "@agentgate/core";
+import { AgentPOSError, addressSchema, buyerContactSchema } from "@agentpos/core";
 import { mandateSchema } from "./mandate.js";
 
-export function agentgateHome(): string {
-  return process.env.AGENTGATE_HOME ?? join(homedir(), ".agentgate");
+export function agentposHome(): string {
+  return process.env.AGENTPOS_HOME ?? join(homedir(), ".agentpos");
 }
 
 export function profilesDir(): string {
-  return join(agentgateHome(), "profiles");
+  return join(agentposHome(), "profiles");
 }
 
 export const profileSchema = z.object({
   name: z.string().regex(/^[a-z0-9-]+$/),
   network: z.enum(["testnet", "mainnet"]).default("testnet"),
-  /** Name of the encrypted key file under ~/.agentgate/keys (without .json). */
+  /** Name of the encrypted key file under ~/.agentpos/keys (without .json). */
   keyFile: z.string().min(1),
   /** Public address, kept for display; the truth is the key file. */
   address: z.string().regex(/^G[A-Z2-7]{55}$/),
@@ -50,14 +50,14 @@ export function profilePath(name: string): string {
 export function loadProfile(name: string): Profile {
   const file = profilePath(name);
   if (!existsSync(file)) {
-    throw new AgentGateError("CONFIG_INVALID", `Profile '${name}' not found`, {
-      hint: "Run `agentgate-buyer init --profile <name>` to create it.",
+    throw new AgentPOSError("CONFIG_INVALID", `Profile '${name}' not found`, {
+      hint: "Run `agentpos-buyer init --profile <name>` to create it.",
       details: { file },
     });
   }
   const parsed = profileSchema.safeParse(JSON.parse(readFileSync(file, "utf8")));
   if (!parsed.success) {
-    throw new AgentGateError("CONFIG_INVALID", `Profile '${name}' is invalid`, {
+    throw new AgentPOSError("CONFIG_INVALID", `Profile '${name}' is invalid`, {
       hint: "Fix the fields listed in details or recreate the profile.",
       details: { issues: parsed.error.issues },
     });
@@ -108,7 +108,7 @@ export function getApproval(profile: string, cartId: string): PendingApproval | 
 export function approve(profile: string, cartId: string): PendingApproval {
   const pending = getApproval(profile, cartId);
   if (!pending) {
-    throw new AgentGateError("CART_NOT_FOUND", `No pending approval for cart '${cartId}'`, {
+    throw new AgentPOSError("CART_NOT_FOUND", `No pending approval for cart '${cartId}'`, {
       hint: "The agent must call buy first; it records the request when confirmation is required.",
     });
   }

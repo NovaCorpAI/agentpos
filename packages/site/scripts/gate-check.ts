@@ -136,7 +136,7 @@ const items: Item[] = [
     title: "Facilitator reachable for the configured network with the configured key",
     kind: "auto",
     run: async () => {
-      const { checkFacilitator, configFromEnv } = await import("@agentgate/core");
+      const { checkFacilitator, configFromEnv } = await import("@agentpos/core");
       const cfg = configFromEnv(process.env);
       const h = await checkFacilitator(cfg);
       return {
@@ -150,7 +150,7 @@ const items: Item[] = [
     title: "Startup refuses configurations carrying private keys (zero custody)",
     kind: "auto",
     run: async () => {
-      const { assertNoSecretsInConfig } = await import("@agentgate/core");
+      const { assertNoSecretsInConfig } = await import("@agentpos/core");
       const { Keypair } = await import("@stellar/stellar-sdk");
       let threw = false;
       try {

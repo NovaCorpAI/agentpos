@@ -1,16 +1,16 @@
 /**
- * Site configuration: `agentgate.config.json` in the site's working directory + env vars for
+ * Site configuration: `agentpos.config.json` in the site's working directory + env vars for
  * secrets (facilitator key, connector credentials). Never persisted anywhere else.
  */
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { z } from "zod";
-import { AgentGateError, assertNoSecretsInConfig, configFromEnv } from "@agentgate/core";
-import { OPEN_POLICY, merchantPolicySchema } from "@agentgate/policy";
-import { IDENTITY_MODES } from "@agentgate/identity";
-import type { CoreConfig } from "@agentgate/core";
+import { AgentPOSError, assertNoSecretsInConfig, configFromEnv } from "@agentpos/core";
+import { OPEN_POLICY, merchantPolicySchema } from "@agentpos/policy";
+import { IDENTITY_MODES } from "@agentpos/identity";
+import type { CoreConfig } from "@agentpos/core";
 
-export const SITE_CONFIG_FILE = "agentgate.config.json";
+export const SITE_CONFIG_FILE = "agentpos.config.json";
 
 const stellarAddress = z
   .string()
@@ -30,14 +30,14 @@ export const siteConfigSchema = z.object({
       allowInsecureHttp: z.boolean().default(false),
     })
     .optional(),
-  /** Path prefix for AgentGate routes on the site. */
+  /** Path prefix for AgentPOS routes on the site. */
   basePath: z
     .string()
     .regex(/^\/[a-z0-9-]+$/)
-    .default("/agentgate"),
+    .default("/agentpos"),
   cartTtlMinutes: z.number().int().min(1).max(120).default(15),
   /** Directory (relative to cwd) for the SQLite database and drafts. */
-  dataDir: z.string().default(".agentgate"),
+  dataDir: z.string().default(".agentpos"),
   policies: z
     .object({
       shipping: z.string().optional(),
@@ -67,9 +67,9 @@ export const siteConfigSchema = z.object({
       enabled: z.boolean().default(true),
       /** Minutes the merchant has to decide. Silence rejects; it never approves. */
       ttlMinutes: z.number().int().min(1).max(1440).default(30),
-      /** Signed POST with the approval details (secret in AGENTGATE_APPROVAL_WEBHOOK_SECRET). */
+      /** Signed POST with the approval details (secret in AGENTPOS_APPROVAL_WEBHOOK_SECRET). */
       webhookUrl: z.url().optional(),
-      /** WhatsApp via Twilio (credentials in AGENTGATE_TWILIO_*). */
+      /** WhatsApp via Twilio (credentials in AGENTPOS_TWILIO_*). */
       whatsapp: z.object({ from: z.string().min(1), to: z.string().min(1) }).optional(),
     })
     .default({ enabled: true, ttlMinutes: 30 }),
@@ -80,7 +80,7 @@ export const siteConfigSchema = z.object({
   receipts: z
     .object({
       enabled: z.boolean().default(true),
-      /** Serve each order's receipt at /agentgate/orders/:id/receipt so the buyer can keep it. */
+      /** Serve each order's receipt at /agentpos/orders/:id/receipt so the buyer can keep it. */
       publicOrderReceipts: z.boolean().default(true),
     })
     .default({ enabled: true, publicOrderReceipts: true }),
@@ -122,13 +122,13 @@ export function parseSiteConfig(input: unknown): SiteConfig {
   assertNoSecretsInConfig(input, SITE_CONFIG_FILE);
   const parsed = siteConfigSchema.safeParse(input);
   if (!parsed.success) {
-    throw new AgentGateError("CONFIG_INVALID", `Invalid ${SITE_CONFIG_FILE}`, {
-      hint: "Run `npx agentgate init` again or fix the fields listed in details.",
+    throw new AgentPOSError("CONFIG_INVALID", `Invalid ${SITE_CONFIG_FILE}`, {
+      hint: "Run `npx agentpos init` again or fix the fields listed in details.",
       details: { issues: parsed.error.issues },
     });
   }
   if (parsed.data.platform === "woocommerce" && !parsed.data.woocommerce) {
-    throw new AgentGateError(
+    throw new AgentPOSError(
       "CONFIG_INVALID",
       "platform is woocommerce but woocommerce.baseUrl is missing",
       {
@@ -142,8 +142,8 @@ export function parseSiteConfig(input: unknown): SiteConfig {
 export function loadSiteConfig(cwd: string = process.cwd()): SiteConfig {
   const file = resolve(cwd, SITE_CONFIG_FILE);
   if (!existsSync(file)) {
-    throw new AgentGateError("CONFIG_INVALID", `${SITE_CONFIG_FILE} not found in ${cwd}`, {
-      hint: "Run `npx agentgate init` in the directory where the sidecar will run.",
+    throw new AgentPOSError("CONFIG_INVALID", `${SITE_CONFIG_FILE} not found in ${cwd}`, {
+      hint: "Run `npx agentpos init` in the directory where the sidecar will run.",
     });
   }
   return parseSiteConfig(JSON.parse(readFileSync(file, "utf8")));
@@ -151,14 +151,14 @@ export function loadSiteConfig(cwd: string = process.cwd()): SiteConfig {
 
 export function secretsFromEnv(env: Record<string, string | undefined> = process.env): SiteSecrets {
   return {
-    wooConsumerKey: env.AGENTGATE_WOO_CONSUMER_KEY,
-    wooConsumerSecret: env.AGENTGATE_WOO_CONSUMER_SECRET,
-    alertWebhookUrl: env.AGENTGATE_ALERT_WEBHOOK,
-    approvalSecret: env.AGENTGATE_APPROVAL_SECRET,
-    approvalWebhookSecret: env.AGENTGATE_APPROVAL_WEBHOOK_SECRET,
-    receiptSecret: env.AGENTGATE_RECEIPT_SECRET,
-    twilioAccountSid: env.AGENTGATE_TWILIO_ACCOUNT_SID,
-    twilioAuthToken: env.AGENTGATE_TWILIO_AUTH_TOKEN,
+    wooConsumerKey: env.AGENTPOS_WOO_CONSUMER_KEY,
+    wooConsumerSecret: env.AGENTPOS_WOO_CONSUMER_SECRET,
+    alertWebhookUrl: env.AGENTPOS_ALERT_WEBHOOK,
+    approvalSecret: env.AGENTPOS_APPROVAL_SECRET,
+    approvalWebhookSecret: env.AGENTPOS_APPROVAL_WEBHOOK_SECRET,
+    receiptSecret: env.AGENTPOS_RECEIPT_SECRET,
+    twilioAccountSid: env.AGENTPOS_TWILIO_ACCOUNT_SID,
+    twilioAuthToken: env.AGENTPOS_TWILIO_AUTH_TOKEN,
   };
 }
 

@@ -22,7 +22,7 @@ on-chain manual en v1 (guía), automático en Build.
 ## Capa C: integridad del catálogo
 
 1. **Verificación de vendedor** al publicar: control de dominio (TXT DNS o
-   `/.well-known/agentgate.txt` con nonce) + control de wallet (firma de
+   `/.well-known/agentpos.txt` con nonce) + control de wallet (firma de
    nonce via SPEC 07). Ambas pruebas => flag `verified` en las superficies
    y en el registry. NO es KYC: no recolectamos documentos de identidad.
 2. **Screening de sanciones:** interfaz `SanctionsScreener` en core;

@@ -6,7 +6,7 @@
  * The export carries the verification result rather than asserting the trail is good. An export
  * that quietly hid a broken link would be worse than no export at all.
  */
-import { formatUsdc, usdcFromMinor } from "@agentgate/core";
+import { formatUsdc, usdcFromMinor } from "@agentpos/core";
 import type { Receipt, ReceiptEvent } from "./types.js";
 import { verifyChain } from "./verify.js";
 import type { VerificationResult } from "./verify.js";
@@ -66,7 +66,7 @@ export function exportAuditTrail(source: AuditSource, options: ExportOptions = {
   const first = receipts[0];
   const last = receipts[receipts.length - 1];
   return {
-    v: "agentgate-audit-1",
+    v: "agentpos-audit-1",
     store: first?.body.store,
     period: { from: options.from, to: options.to },
     generatedAt: new Date().toISOString(),
@@ -96,7 +96,7 @@ export function formatAuditTrail(trail: AuditTrail): string {
     trail.period.from || trail.period.to
       ? `${trail.period.from ?? "start"} to ${trail.period.to ?? "now"}`
       : "all receipts";
-  lines.push(`AgentGate audit trail: ${trail.store?.name ?? "unknown store"} (${period})`);
+  lines.push(`AgentPOS audit trail: ${trail.store?.name ?? "unknown store"} (${period})`);
   if (trail.store) lines.push(`Store signing key: ${trail.store.signer}`);
   lines.push(
     `Receipts: ${trail.summary.receipts}` +

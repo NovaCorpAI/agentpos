@@ -4,7 +4,7 @@
  * approval that expires on its own. Failures are surfaced through `onError`, not thrown.
  */
 import { createHmac } from "node:crypto";
-import { formatUsdc, usdcFromMinor } from "@agentgate/core";
+import { formatUsdc, usdcFromMinor } from "@agentpos/core";
 import type { ApprovalLinks, ApprovalRequest, NotificationChannel } from "./types.js";
 
 type FetchLike = typeof globalThis.fetch;
@@ -32,7 +32,7 @@ export class WebhookChannel implements NotificationChannel {
   async notify(request: ApprovalRequest, links: ApprovalLinks): Promise<void> {
     const fetchImpl = this.options.fetchImpl ?? globalThis.fetch;
     const body = JSON.stringify({
-      type: "agentgate.approval.requested",
+      type: "agentpos.approval.requested",
       approvalId: request.id,
       cartId: request.cartId,
       summary: describeApproval(request),
@@ -43,7 +43,7 @@ export class WebhookChannel implements NotificationChannel {
     });
     const headers: Record<string, string> = { "content-type": "application/json" };
     if (this.options.secret) {
-      headers["x-agentgate-signature"] =
+      headers["x-agentpos-signature"] =
         `sha256=${createHmac("sha256", this.options.secret).update(body).digest("hex")}`;
     }
     await fetchImpl(this.options.url, {
@@ -58,7 +58,7 @@ export class WebhookChannel implements NotificationChannel {
 export interface EmailChannelOptions {
   to: string;
   /**
-   * The merchant supplies the transport. AgentGate does not bundle an SMTP client: sites already
+   * The merchant supplies the transport. AgentPOS does not bundle an SMTP client: sites already
    * have one, and shipping credentials for a mail provider is not our business.
    */
   send: (message: { to: string; subject: string; text: string }) => Promise<void>;
@@ -108,7 +108,7 @@ export class TwilioWhatsAppChannel implements NotificationChannel {
       From: this.options.from,
       To: this.options.to,
       Body: [
-        `AgentGate: an agent wants to buy ${describeApproval(request)}.`,
+        `AgentPOS: an agent wants to buy ${describeApproval(request)}.`,
         `Reason: ${request.snapshot.policy.message}`,
         `Expires ${request.expiresAt}.`,
         links.resolve,

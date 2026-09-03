@@ -6,10 +6,10 @@ step has a time budget, and it ends with a verification that does not depend on 
 
 **What does NOT happen when you install this**, stated first:
 
-- Nothing touches your existing store: AgentGate adds new routes (`/agentgate/*`); it changes
+- Nothing touches your existing store: AgentPOS adds new routes (`/agentpos/*`); it changes
   none of yours. Human customers notice nothing.
 - Nobody holds your money: payments arrive **directly in your Stellar wallet**, in USDC. No
-  intermediate account, no AgentGate commission.
+  intermediate account, no AgentPOS commission.
 - Nothing is published without your confirmation: the scanner proposes, **you set every price**
   and decide what goes live.
 - You can leave whenever you want: stop the sidecar and your store is exactly as it was.
@@ -39,10 +39,10 @@ This is where your money arrives. It is yours; we never see the key.
 
 ## Step 2 (5 min): WooCommerce REST key
 
-This is how AgentGate creates orders in your admin (and nothing else; revoke it any time).
+This is how AgentPOS creates orders in your admin (and nothing else; revoke it any time).
 
 1. WP Admin → **WooCommerce → Settings → Advanced → REST API → Add key**.
-2. Description `agentgate`, your admin user, **Read/Write** → Generate.
+2. Description `agentpos`, your admin user, **Read/Write** → Generate.
 3. Copy the **Consumer key** (`ck_...`) and **Consumer secret** (`cs_...`). Shown only once.
 
 ## Step 3 (5 min): install and configure the sidecar
@@ -50,19 +50,19 @@ This is how AgentGate creates orders in your admin (and nothing else; revoke it 
 On your server:
 
 ```bash
-npx agentgate init
+npx agentpos init
 ```
 
 It asks, in order: your store's public URL, name, **your `G...` address from step 1**, platform
 (`woocommerce`) and the WordPress URL. Then paste into the `.env` it creates:
 
 ```
-AGENTGATE_WOO_CONSUMER_KEY=ck_...
-AGENTGATE_WOO_CONSUMER_SECRET=cs_...
-AGENTGATE_NETWORK=mainnet
-AGENTGATE_ALLOW_MAINNET=true
-AGENTGATE_FACILITATOR_URL=...      # provided during the pilot (see note)
-AGENTGATE_FACILITATOR_API_KEY=...
+AGENTPOS_WOO_CONSUMER_KEY=ck_...
+AGENTPOS_WOO_CONSUMER_SECRET=cs_...
+AGENTPOS_NETWORK=mainnet
+AGENTPOS_ALLOW_MAINNET=true
+AGENTPOS_FACILITATOR_URL=...      # provided during the pilot (see note)
+AGENTPOS_FACILITATOR_API_KEY=...
 ```
 
 > **Pilot note:** the facilitator is the service that submits payments to the Stellar network and
@@ -73,10 +73,10 @@ AGENTGATE_FACILITATOR_API_KEY=...
 ## Step 4 (5 min): scan, price, publish
 
 ```bash
-npx agentgate scan       # reads YOUR store (only yours) and proposes the catalog
-npx agentgate confirm    # you review each item and set its USDC price; nothing ships without you
-npx agentgate publish    # verifies the payment rail and exposes the catalog
-npx agentgate serve      # leaves the sidecar running on :8402
+npx agentpos scan       # reads YOUR store (only yours) and proposes the catalog
+npx agentpos confirm    # you review each item and set its USDC price; nothing ships without you
+npx agentpos publish    # verifies the payment rail and exposes the catalog
+npx agentpos serve      # leaves the sidecar running on :8402
 ```
 
 ## Step 5 (5 min): one rule in your proxy
@@ -85,12 +85,12 @@ Your domain must forward two paths to the sidecar. With nginx:
 
 ```nginx
 location /.well-known/ucp { proxy_pass http://127.0.0.1:8402; }
-location /agentgate/       { proxy_pass http://127.0.0.1:8402; }
+location /agentpos/       { proxy_pass http://127.0.0.1:8402; }
 location = /openapi.json   { proxy_pass http://127.0.0.1:8402; }
 location = /llms.txt       { proxy_pass http://127.0.0.1:8402; }
 ```
 
-(`agentgate serve` prints the exact snippet for nginx, Caddy, Apache and Cloudflare.)
+(`agentpos serve` prints the exact snippet for nginx, Caddy, Apache and Cloudflare.)
 
 ## Step 6 (5 min): verify, trusting nobody
 
@@ -99,7 +99,7 @@ location = /llms.txt       { proxy_pass http://127.0.0.1:8402; }
 curl https://YOUR-STORE/openapi.json | head
 
 # 2. A real agent walks the whole flow WITHOUT paying:
-npx agentgate-buyer demo https://YOUR-STORE --dry-run
+npx agentpos-buyer demo https://YOUR-STORE --dry-run
 ```
 
 If the demo ends in "Dry run: stopping before payment", your store is ready. We make the first
@@ -111,25 +111,25 @@ real purchase together, on a cheap item, and you verify three things:
 
 ## Your dashboard
 
-`https://YOUR-STORE/agentgate/dashboard` shows your agent sales: orders per day, totals, latency,
+`https://YOUR-STORE/agentpos/dashboard` shows your agent sales: orders per day, totals, latency,
 unique buyers. Aggregates only (no email, no address, ever), served from **your** domain, so
 sharing it is your call like any page of yours.
 
 ## Day-to-day
 
 ```bash
-npx agentgate status              # orders, hashes, errors
-npx agentgate approvals           # big orders waiting for your ok (if you set that threshold)
-npx agentgate receipts verify     # your receipt chain is intact
-npx agentgate backup              # local database backup
+npx agentpos status              # orders, hashes, errors
+npx agentpos approvals           # big orders waiting for your ok (if you set that threshold)
+npx agentpos receipts verify     # your receipt chain is intact
+npx agentpos backup              # local database backup
 ```
 
 ## If something breaks
 
-Every AgentGate error carries a code and a suggested action. The three most common at setup:
+Every AgentPOS error carries a code and a suggested action. The three most common at setup:
 
 | Symptom | Usual cause | Fix |
 | --- | --- | --- |
 | `401` while scanning | REST key pasted wrong | check `ck_`/`cs_` in `.env` |
-| `publish` fails on the payment rail | facilitator or network misconfigured | check `AGENTGATE_FACILITATOR_*` |
-| Agents cannot find the store | proxy missing the routes | step 5; try `curl https://YOUR-STORE/agentgate/health` |
+| `publish` fails on the payment rail | facilitator or network misconfigured | check `AGENTPOS_FACILITATOR_*` |
+| Agents cannot find the store | proxy missing the routes | step 5; try `curl https://YOUR-STORE/agentpos/health` |

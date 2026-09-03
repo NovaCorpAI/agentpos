@@ -7,13 +7,13 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
 import {
-  AgentGateError,
+  AgentPOSError,
   addressSchema,
   buyerContactSchema,
   cartLineSchema,
   formatUsdc,
-} from "@agentgate/core";
-import type { CoreConfig } from "@agentgate/core";
+} from "@agentpos/core";
+import type { CoreConfig } from "@agentpos/core";
 import type { CatalogService } from "./catalog.js";
 import type { CheckoutService } from "./checkout.js";
 import { cartView, orderView, priceOf } from "./app.js";
@@ -37,7 +37,7 @@ function ok(payload: unknown) {
 
 function fail(err: unknown) {
   const body =
-    err instanceof AgentGateError
+    err instanceof AgentPOSError
       ? err.toJSON()
       : { code: "INTERNAL", message: String(err), hint: "Unexpected error", retryable: true };
   return {
@@ -47,7 +47,7 @@ function fail(err: unknown) {
 }
 
 export function buildMcpServer(deps: McpDeps): McpServer {
-  const server = new McpServer({ name: `agentgate:${deps.site.displayName}`, version: "0.1.0" });
+  const server = new McpServer({ name: `agentpos:${deps.site.displayName}`, version: "0.1.0" });
 
   server.registerTool(
     "search_items",

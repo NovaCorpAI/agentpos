@@ -1,4 +1,4 @@
-title = "AgentGate gitleaks config"
+title = "AgentPOS gitleaks config"
 
 [extend]
 useDefault = true
@@ -26,11 +26,11 @@ paths = [
   '''apps/demo-store/.*''',
   '''pnpm-lock\.yaml$''',
   # Official protocol schemas, downloaded verbatim from upstream by
-  # `pnpm --filter @agentgate/core vendor:schemas`. Their example payloads contain placeholder
+  # `pnpm --filter @agentpos/core vendor:schemas`. Their example payloads contain placeholder
   # tokens (e.g. "token": "..."), which are upstream's fixtures and can never be ours: nothing in
   # this tree is written by hand. Narrow on purpose: only this path, not all JSON.
   '''packages/core/schemas/.*''',
 ]
 regexes = [
-  '''c[ks]_agentgatedemo0+''',
+  '''c[ks]_agentposdemo0+''',
 ]

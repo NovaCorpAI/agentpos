@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { Keypair } from "@stellar/stellar-sdk";
-import { AgentGateError, createMemoryLogger } from "@agentgate/core";
+import { AgentPOSError, createMemoryLogger } from "@agentpos/core";
 import {
   AGENT_ATTESTATION_HEADER,
   AGENT_ID_HEADER,
@@ -25,11 +25,11 @@ const owner = Keypair.random();
 const agent = Keypair.random();
 const stranger = Keypair.random();
 
-const request = { method: "POST", path: "/agentgate/cart", body: JSON.stringify({ items: [] }) };
+const request = { method: "POST", path: "/agentpos/cart", body: JSON.stringify({ items: [] }) };
 
 function attestation(over: Partial<Parameters<typeof signAttestation>[1]> = {}): SignedAttestation {
   return signAttestation(owner.secret(), {
-    v: "agentgate-attestation-1",
+    v: "agentpos-attestation-1",
     agent: agent.publicKey(),
     owner: owner.publicKey(),
     name: "Ada's shopping agent",
@@ -66,7 +66,7 @@ describe("agent request signatures", () => {
       svc.authenticate(headersOf(headers), request);
       expect.unreachable();
     } catch (err) {
-      expect((err as AgentGateError).code).toBe("AGENT_SIGNATURE_INVALID");
+      expect((err as AgentPOSError).code).toBe("AGENT_SIGNATURE_INVALID");
     }
   });
 
@@ -75,8 +75,8 @@ describe("agent request signatures", () => {
     const headers = signRequest(agent.secret(), request);
     const tampered = { ...request, body: JSON.stringify({ items: [{ itemId: "free-mug" }] }) };
     expect(() => svc.authenticate(headersOf(headers), tampered)).toThrowError(/does not match this request/);
-    expect(() => svc.authenticate(headersOf(headers), { ...request, path: "/agentgate/checkout" })).toThrowError(AgentGateError);
-    expect(() => svc.authenticate(headersOf(headers), { ...request, method: "GET" })).toThrowError(AgentGateError);
+    expect(() => svc.authenticate(headersOf(headers), { ...request, path: "/agentpos/checkout" })).toThrowError(AgentPOSError);
+    expect(() => svc.authenticate(headersOf(headers), { ...request, method: "GET" })).toThrowError(AgentPOSError);
   });
 
   it("rejects timestamps outside the window", () => {
@@ -87,7 +87,7 @@ describe("agent request signatures", () => {
       svc.authenticate(headersOf(headers), request);
       expect.unreachable();
     } catch (err) {
-      expect((err as AgentGateError).code).toBe("AGENT_TIMESTAMP_OUT_OF_WINDOW");
+      expect((err as AgentPOSError).code).toBe("AGENT_TIMESTAMP_OUT_OF_WINDOW");
     }
   });
 
@@ -99,12 +99,12 @@ describe("agent request signatures", () => {
       svc.authenticate(headersOf(headers), request);
       expect.unreachable();
     } catch (err) {
-      expect((err as AgentGateError).code).toBe("AGENT_NONCE_REUSED");
+      expect((err as AgentPOSError).code).toBe("AGENT_NONCE_REUSED");
     }
     // A bad signature must not burn the nonce it claimed.
     const fresh = signRequest(agent.secret(), request);
     const forged = { ...fresh, [AGENT_SIGNATURE_HEADER]: signRequest(stranger.secret(), request)[AGENT_SIGNATURE_HEADER] };
-    expect(() => svc.authenticate(headersOf(forged), request)).toThrowError(AgentGateError);
+    expect(() => svc.authenticate(headersOf(forged), request)).toThrowError(AgentPOSError);
     expect(svc.authenticate(headersOf(fresh), request).authenticated).toBe(true);
   });
 
@@ -143,7 +143,7 @@ describe("owner attestations", () => {
   it("refuses to sign an attestation with a key that is not the owner", () => {
     expect(() =>
       signAttestation(stranger.secret(), {
-        v: "agentgate-attestation-1",
+        v: "agentpos-attestation-1",
         agent: agent.publicKey(),
         owner: owner.publicKey(),
         issuedAt: new Date().toISOString(),
@@ -163,7 +163,7 @@ describe("identity modes", () => {
     const { svc } = service("identified");
     expect(svc.authenticate(headersOf({}), request).authenticated).toBe(false);
     const forged = { ...signRequest(agent.secret(), request), [AGENT_SIGNATURE_HEADER]: "AAAA" };
-    expect(() => svc.authenticate(headersOf(forged), request)).toThrowError(AgentGateError);
+    expect(() => svc.authenticate(headersOf(forged), request)).toThrowError(AgentPOSError);
   });
 
   it("verified-only refuses anonymous wallets with an actionable message", () => {
@@ -172,7 +172,7 @@ describe("identity modes", () => {
       svc.authenticate(headersOf({}), request);
       expect.unreachable();
     } catch (err) {
-      const e = err as AgentGateError;
+      const e = err as AgentPOSError;
       expect(e.code).toBe("AGENT_IDENTITY_REQUIRED");
       expect(e.hint).toContain(AGENT_ATTESTATION_HEADER);
     }
@@ -185,7 +185,7 @@ describe("identity modes", () => {
       svc.authenticate(headersOf(bare), request);
       expect.unreachable();
     } catch (err) {
-      expect((err as AgentGateError).code).toBe("AGENT_ATTESTATION_INVALID");
+      expect((err as AgentPOSError).code).toBe("AGENT_ATTESTATION_INVALID");
     }
     const withAttestation = { ...signRequest(agent.secret(), request), [AGENT_ATTESTATION_HEADER]: encodeAttestation(attestation()) };
     const identity = svc.authenticate(headersOf(withAttestation), request);
@@ -213,7 +213,7 @@ describe("registry and revocation", () => {
       svc.authenticate(headersOf(signRequest(agent.secret(), request)), request);
       expect.unreachable();
     } catch (err) {
-      const e = err as AgentGateError;
+      const e = err as AgentPOSError;
       expect(e.code).toBe("AGENT_REVOKED");
       expect(e.hint).toMatch(/compromised/);
     }

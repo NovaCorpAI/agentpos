@@ -7,8 +7,8 @@
  * function serves the sidecar, tests and any future dashboard preview.
  */
 import { z } from "zod";
-import { addUsdc, compareUsdc, usdc, usdcFromMinor } from "@agentgate/core";
-import type { UsdcMinor } from "@agentgate/core";
+import { addUsdc, compareUsdc, usdc, usdcFromMinor } from "@agentpos/core";
+import type { UsdcMinor } from "@agentpos/core";
 
 const money = z.string().regex(/^\d+(\.\d{1,7})?$/, "decimal amount, up to 7 decimals");
 

@@ -8,8 +8,8 @@ import type {
   LlmProvider,
   OrderConnector,
   UsdcMinor,
-} from "@agentgate/core";
-import { AgentGateError, slugify, usdc } from "@agentgate/core";
+} from "@agentpos/core";
+import { AgentPOSError, slugify, usdc } from "@agentpos/core";
 import { SiteFetcher } from "./fetch.js";
 import type { SiteFetcherOptions } from "./fetch.js";
 import { extractFromHtml } from "./html.js";
@@ -184,7 +184,7 @@ export async function scanSite(options: ScanOptions): Promise<ScanResult> {
         stats.llmRedacted += 1;
       } catch (err) {
         progress(
-          `llm skipped for ${draft.id}: ${err instanceof AgentGateError ? err.code : String(err)}`,
+          `llm skipped for ${draft.id}: ${err instanceof AgentPOSError ? err.code : String(err)}`,
         );
         redacted.push(draft);
       }

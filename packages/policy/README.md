@@ -1,10 +1,10 @@
-# @agentgate/policy
+# @agentpos/policy
 
 Merchant policy engine (M1): the rules a merchant sets over agentic sales, evaluated **before
 quoting** a cart and **again at checkout**, because the merchant's state can change in between.
 
 ```ts
-import { evaluatePolicy, merchantPolicySchema } from "@agentgate/policy";
+import { evaluatePolicy, merchantPolicySchema } from "@agentpos/policy";
 
 const policy = merchantPolicySchema.parse({
   maxOrderUsdc: "200",

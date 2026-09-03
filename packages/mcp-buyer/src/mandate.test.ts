@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { usdc } from "@agentgate/core";
+import { usdc } from "@agentpos/core";
 import { evaluateMandate, mandateSchema, periodStart } from "./mandate.js";
 
 const base = mandateSchema.parse({

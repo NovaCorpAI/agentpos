@@ -1,4 +1,4 @@
-import { AgentGateError } from "@agentgate/core";
+import { AgentPOSError } from "@agentpos/core";
 
 /** Connector errors reuse core codes; `retryable` drives the site library's retry loop. */
 export function connectorHttpError(
@@ -6,9 +6,9 @@ export function connectorHttpError(
   status: number,
   body: unknown,
   hint?: string,
-): AgentGateError {
+): AgentPOSError {
   const retryable = status === 429 || status >= 500 || status === 0;
-  return new AgentGateError(
+  return new AgentPOSError(
     status === 401 || status === 403 ? "CONFIG_INVALID" : "INTERNAL",
     `${platform} API request failed (${status || "network"})`,
     {

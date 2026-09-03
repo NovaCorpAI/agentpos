@@ -13,10 +13,10 @@ import type {
   SupportedResponse,
   VerifyResponse,
 } from "@x402/core/types";
-import { createMemoryLogger, resolveConfig, usdc } from "@agentgate/core";
-import type { CatalogItem, OrderConnector, PaidOrderInput } from "@agentgate/core";
-import type { MerchantPolicyInput } from "@agentgate/policy";
-import { createAgentGateApp } from "./app.js";
+import { createMemoryLogger, resolveConfig, usdc } from "@agentpos/core";
+import type { CatalogItem, OrderConnector, PaidOrderInput } from "@agentpos/core";
+import type { MerchantPolicyInput } from "@agentpos/policy";
+import { createAgentPOSApp } from "./app.js";
 import { parseSiteConfig } from "./config.js";
 import { SiteStorage } from "./storage.js";
 import { payLikeAnAgent } from "./test-utils.js";
@@ -112,7 +112,7 @@ function build(
     },
   };
   const facilitator = stub();
-  const gate = createAgentGateApp({
+  const gate = createAgentPOSApp({
     site: parseSiteConfig({
       siteUrl: "https://shop.test",
       displayName: "Policy Shop",
@@ -133,13 +133,13 @@ function build(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test-only loose JSON access
   const read = (r: Response): Promise<any> => r.json() as Promise<any>;
   const cart = (itemId: string, quantity = 1) =>
-    req("/agentgate/cart", {
+    req("/agentpos/cart", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ items: [{ itemId, quantity }], buyer, shipping }),
     });
   const pay = (cartId: string) =>
-    payLikeAnAgent(gate.fetch, `https://shop.test/agentgate/checkout?cart=${cartId}`, {
+    payLikeAnAgent(gate.fetch, `https://shop.test/agentpos/checkout?cart=${cartId}`, {
       method: "POST",
     });
   return { gate, storage, connector, facilitator, req, read, cart, pay };
@@ -184,7 +184,7 @@ describe("M1 approval threshold", () => {
       code: "POLICY_APPROVAL_REQUIRED",
     });
 
-    const res = await t.req(`/agentgate/checkout?cart=${cart.cartId}`, { method: "POST" });
+    const res = await t.req(`/agentpos/checkout?cart=${cart.cartId}`, { method: "POST" });
     expect(res.status).toBe(202); // accepted, waiting on the merchant
     const body = await t.read(res);
     expect(body.status).toBe("pending_approval");
@@ -199,7 +199,7 @@ describe("M1 approval threshold", () => {
   it("refuses outright when the merchant turned the approval queue off", async () => {
     const t = build({ approvalThresholdUsdc: "5" }, undefined, { enabled: false, ttlMinutes: 30 });
     const cart = await t.read(await t.cart("mug"));
-    const res = await t.req(`/agentgate/checkout?cart=${cart.cartId}`, { method: "POST" });
+    const res = await t.req(`/agentpos/checkout?cart=${cart.cartId}`, { method: "POST" });
     expect(res.status).toBe(403);
     expect((await t.read(res)).error.code).toBe("POLICY_APPROVAL_REQUIRED");
     expect(t.facilitator.settles).toBe(0);
@@ -224,7 +224,7 @@ describe("M1 policy re-evaluated at checkout", () => {
 
     // Same storage, merchant now suspended: the cart exists but must not settle.
     const suspended = build({ status: "suspended" }, storage);
-    const res = await suspended.req(`/agentgate/checkout?cart=${cart.cartId}`, { method: "POST" });
+    const res = await suspended.req(`/agentpos/checkout?cart=${cart.cartId}`, { method: "POST" });
     expect(res.status).toBe(403);
     expect((await suspended.read(res)).error.code).toBe("POLICY_SUSPENDED");
     expect(suspended.facilitator.settles).toBe(0);

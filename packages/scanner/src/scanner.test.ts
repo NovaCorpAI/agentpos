@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ConnectorProduct, OrderConnector } from "@agentgate/core";
+import type { ConnectorProduct, OrderConnector } from "@agentpos/core";
 import { extractFromHtml } from "./html.js";
 import { scanSite, suggestUsdc } from "./scan.js";
 import { SiteFetcher } from "./fetch.js";

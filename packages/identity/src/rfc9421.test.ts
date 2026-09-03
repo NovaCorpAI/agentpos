@@ -15,7 +15,7 @@ import {
 } from "./index.js";
 
 const agent = Keypair.random();
-const URL_CART = "https://shop.test/agentgate/cart?ref=x";
+const URL_CART = "https://shop.test/agentpos/cart?ref=x";
 const BODY = JSON.stringify({ items: [{ itemId: "mug", quantity: 1 }] });
 
 function message(headers: Record<string, string>, overrides: Partial<{ url: string; body: string; method: string }> = {}) {
@@ -57,7 +57,7 @@ describe("signature base", () => {
       [
         '"@method": POST',
         '"@authority": shop.test',
-        '"@path": /agentgate/cart',
+        '"@path": /agentpos/cart',
         '"@query": ?ref=x',
         '"@signature-params": ("@method" "@authority" "@path" "@query");created=1',
       ].join("\n"),
@@ -107,7 +107,7 @@ describe("verifying an RFC 9421 signature", () => {
       body: BODY,
     });
     expect(
-      verifyHttpMessageSignature(message(headers, { url: "https://shop.test/agentgate/checkout" }))
+      verifyHttpMessageSignature(message(headers, { url: "https://shop.test/agentpos/checkout" }))
         .ok,
     ).toBe(false);
     expect(verifyHttpMessageSignature(message(headers, { method: "DELETE" })).ok).toBe(false);
@@ -194,7 +194,7 @@ describe("verifying an RFC 9421 signature", () => {
 describe("the service accepts both profiles", () => {
   const request = () => ({
     method: "POST",
-    path: "/agentgate/cart?ref=x",
+    path: "/agentpos/cart?ref=x",
     url: URL_CART,
     body: BODY,
   });
@@ -253,7 +253,7 @@ describe("the service accepts both profiles", () => {
     expect(() =>
       service.authenticate((n) => headers[n.toLowerCase()], {
         method: "POST",
-        path: "/agentgate/cart",
+        path: "/agentpos/cart",
         body: BODY,
       }),
     ).toThrow(/cannot verify RFC 9421/);

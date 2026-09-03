@@ -67,7 +67,7 @@ async function main(): Promise<void> {
     headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
   });
   console.log(
-    `facilitator /supported -> ${supported.status}${apiKey ? "" : " (no AGENTGATE_FACILITATOR_API_KEY: 401 expected)"}`,
+    `facilitator /supported -> ${supported.status}${apiKey ? "" : " (no AGENTPOS_FACILITATOR_API_KEY: 401 expected)"}`,
   );
   if (supported.ok) {
     const body = (await supported.json()) as { kinds?: Array<{ network: string; scheme: string }> };

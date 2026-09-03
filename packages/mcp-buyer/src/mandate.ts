@@ -3,8 +3,8 @@
  * Amounts are decimal strings in the JSON file and UsdcMinor in memory.
  */
 import { z } from "zod";
-import { AgentGateError, addUsdc, compareUsdc, usdc, usdcFromMinor } from "@agentgate/core";
-import type { UsdcMinor } from "@agentgate/core";
+import { AgentPOSError, addUsdc, compareUsdc, usdc, usdcFromMinor } from "@agentpos/core";
+import type { UsdcMinor } from "@agentpos/core";
 
 const money = z.string().regex(/^\d+(\.\d{1,7})?$/, "decimal amount, up to 7 decimals");
 
@@ -18,7 +18,7 @@ export const mandateSchema = z.object({
   allowedSellers: z
     .union([z.literal("any"), z.literal("verified-only"), z.array(z.string().min(1))])
     .default("any"),
-  /** Above this amount the human must approve out of band (`agentgate-buyer approve <cartId>`). */
+  /** Above this amount the human must approve out of band (`agentpos-buyer approve <cartId>`). */
   requireConfirmAboveUsdc: money.optional(),
   allowPhysicalGoods: z.boolean().default(false),
   /** When true the agent cannot supply a shipping address; the profile's address is used. */
@@ -88,7 +88,7 @@ export function evaluateMandate(mandate: Mandate, input: MandateCheckInput): Man
       ok: false,
       code: "SELLER_UNVERIFIED",
       message: "Mandate only allows verified sellers",
-      hint: "This site is not verified by the AgentGate registry. Ask the human to allowlist its hostname.",
+      hint: "This site is not verified by the AgentPOS registry. Ask the human to allowlist its hostname.",
       details: { siteHost: input.siteHost },
     };
   }
@@ -119,7 +119,7 @@ export function evaluateMandate(mandate: Mandate, input: MandateCheckInput): Man
       ok: false,
       code: "CONFIRMATION_REQUIRED",
       message: "Amount is above the confirmation threshold; a human must approve this cart",
-      hint: "Tell the human to run `agentgate-buyer approve <cartId>` and then call buy again.",
+      hint: "Tell the human to run `agentpos-buyer approve <cartId>` and then call buy again.",
       details: {
         amount: input.amount.toString(),
         threshold: usdc(mandate.requireConfirmAboveUsdc).toString(),
@@ -129,8 +129,8 @@ export function evaluateMandate(mandate: Mandate, input: MandateCheckInput): Man
   return { ok: true };
 }
 
-export function toMandateError(verdict: Exclude<MandateVerdict, { ok: true }>): AgentGateError {
-  return new AgentGateError(verdict.code, verdict.message, {
+export function toMandateError(verdict: Exclude<MandateVerdict, { ok: true }>): AgentPOSError {
+  return new AgentPOSError(verdict.code, verdict.message, {
     hint: verdict.hint,
     details: verdict.details,
   });

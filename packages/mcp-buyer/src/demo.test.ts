@@ -1,14 +1,14 @@
 /**
- * The reference agent (G2) run against a real AgentGate app in-process: it must discover the store
+ * The reference agent (G2) run against a real AgentPOS app in-process: it must discover the store
  * the way a stranger would, quote, pay, and check the receipt rather than trust it. And it must
  * degrade honestly: an empty store, a store that parks the order for a human, and a store with no
  * wallet configured are all answers, not crashes.
  */
 import { describe, expect, it } from "vitest";
 import { Keypair } from "@stellar/stellar-sdk";
-import { resolveConfig, usdc } from "@agentgate/core";
-import type { CatalogItem, OrderConnector, PaidOrderInput } from "@agentgate/core";
-import { createAgentGateApp, parseSiteConfig, SiteStorage } from "@agentgate/site";
+import { resolveConfig, usdc } from "@agentpos/core";
+import type { CatalogItem, OrderConnector, PaidOrderInput } from "@agentpos/core";
+import { createAgentPOSApp, parseSiteConfig, SiteStorage } from "@agentpos/site";
 import { runDemoPurchase } from "./demo.js";
 
 const payTo = Keypair.random().publicKey();
@@ -52,7 +52,7 @@ function store(options: { items?: CatalogItem[]; policy?: Record<string, unknown
   });
   const storage = new SiteStorage(":memory:");
   for (const item of options.items ?? [mug, sticker]) storage.upsertItem(item);
-  const gate = createAgentGateApp({
+  const gate = createAgentPOSApp({
     site,
     core,
     storage,
@@ -160,6 +160,6 @@ describe("the reference buying agent", () => {
       fetchImpl,
     });
     expect(result.paid).toBe(false);
-    expect(result.steps.at(-1)?.message).toContain("agentgate-buyer init");
+    expect(result.steps.at(-1)?.message).toContain("agentpos-buyer init");
   });
 });

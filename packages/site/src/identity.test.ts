@@ -5,8 +5,8 @@
  */
 import { describe, expect, it } from "vitest";
 import { Keypair } from "@stellar/stellar-sdk";
-import { resolveConfig, usdc } from "@agentgate/core";
-import type { CatalogItem, OrderConnector, PaidOrderInput } from "@agentgate/core";
+import { resolveConfig, usdc } from "@agentpos/core";
+import type { CatalogItem, OrderConnector, PaidOrderInput } from "@agentpos/core";
 import {
   AGENT_ATTESTATION_HEADER,
   ATTESTATION_VERSION,
@@ -14,20 +14,20 @@ import {
   signAttestation,
   signHttpMessage,
   signRequest,
-} from "@agentgate/identity";
-import type { SignedAttestation } from "@agentgate/identity";
-import { createAgentGateApp } from "./app.js";
-import type { AgentGateSite } from "./app.js";
+} from "@agentpos/identity";
+import type { SignedAttestation } from "@agentpos/identity";
+import { createAgentPOSApp } from "./app.js";
+import type { AgentPOSSite } from "./app.js";
 import { parseSiteConfig } from "./config.js";
 import type { SiteConfigInput } from "./config.js";
 import { SiteStorage } from "./storage.js";
 import { payLikeAnAgent, stubFacilitator } from "./test-utils.js";
 
 /** Runs the two-step x402 dance against a cart and returns the final response. */
-async function pay(gate: AgentGateSite, cartId: string): Promise<Response> {
+async function pay(gate: AgentPOSSite, cartId: string): Promise<Response> {
   const { first, paid } = await payLikeAnAgent(
     gate.fetch,
-    `https://shop.test/agentgate/checkout?cart=${cartId}`,
+    `https://shop.test/agentpos/checkout?cart=${cartId}`,
     { method: "POST" },
   );
   return paid ?? first;
@@ -64,7 +64,7 @@ function connectorMock(): OrderConnector & { created: PaidOrderInput[] } {
   };
 }
 
-function makeSite(identity?: SiteConfigInput["identity"]): AgentGateSite {
+function makeSite(identity?: SiteConfigInput["identity"]): AgentPOSSite {
   const site = parseSiteConfig({
     siteUrl: "https://shop.test",
     displayName: "Test Shop",
@@ -74,7 +74,7 @@ function makeSite(identity?: SiteConfigInput["identity"]): AgentGateSite {
   });
   const storage = new SiteStorage(":memory:");
   storage.upsertItem(ebook);
-  return createAgentGateApp({
+  return createAgentPOSApp({
     site,
     core,
     storage,
@@ -93,11 +93,11 @@ function signedCartRequest(
   const body = options.body ?? CART_BODY;
   const headers: Record<string, string> = {
     "content-type": "application/json",
-    ...signRequest(agentSecret, { method: "POST", path: "/agentgate/cart", body: CART_BODY }),
+    ...signRequest(agentSecret, { method: "POST", path: "/agentpos/cart", body: CART_BODY }),
   };
   if (options.attestation)
     headers[AGENT_ATTESTATION_HEADER] = encodeAttestation(options.attestation);
-  return new Request("https://shop.test/agentgate/cart", { method: "POST", headers, body });
+  return new Request("https://shop.test/agentpos/cart", { method: "POST", headers, body });
 }
 
 function attestationFor(agent: Keypair, owner: Keypair): SignedAttestation {
@@ -117,7 +117,7 @@ describe("agent identity at the HTTP surface (M3)", () => {
   it("open mode: an anonymous agent still buys, and the order says so", async () => {
     const gate = makeSite();
     const res = await gate.fetch(
-      new Request("https://shop.test/agentgate/cart", {
+      new Request("https://shop.test/agentpos/cart", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: CART_BODY,
@@ -176,7 +176,7 @@ describe("agent identity at the HTTP surface (M3)", () => {
     const gate = makeSite({ mode: "verified-only" });
 
     const anonymous = await gate.fetch(
-      new Request("https://shop.test/agentgate/cart", {
+      new Request("https://shop.test/agentpos/cart", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: CART_BODY,
@@ -239,7 +239,7 @@ describe("RFC 9421 signatures at the HTTP surface", () => {
     agentSecret: string,
     options: { attestation?: SignedAttestation } = {},
   ): Request {
-    const url = "https://shop.test/agentgate/cart";
+    const url = "https://shop.test/agentpos/cart";
     const headers: Record<string, string> = {
       "content-type": "application/json",
       ...signHttpMessage(agentSecret, { method: "POST", url, body: CART_BODY }),

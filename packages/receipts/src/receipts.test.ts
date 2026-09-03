@@ -344,16 +344,16 @@ describe("on-chain confirmation", () => {
 
 describe("format stability", () => {
   it("pins the version string that third-party verifiers key on", () => {
-    expect(RECEIPT_VERSION).toBe("agentgate-receipt-1");
+    expect(RECEIPT_VERSION).toBe("agentpos-receipt-1");
   });
 });
 
 /**
- * The real thing. Opt-in because it needs the network: AGENTGATE_NETWORK_TESTS=1 pnpm test.
+ * The real thing. Opt-in because it needs the network: AGENTPOS_NETWORK_TESTS=1 pnpm test.
  * The hash below is the USDC payment from our testnet e2e (docs/GATE-G1.md), 9.9 USDC to the
  * merchant wallet, and this asserts that a receipt for it confirms against public Horizon.
  */
-describe.runIf(process.env.AGENTGATE_NETWORK_TESTS === "1")("against real testnet", () => {
+describe.runIf(process.env.AGENTPOS_NETWORK_TESTS === "1")("against real testnet", () => {
   it("confirms the e2e payment on public Horizon", async () => {
     const merchant = "GBMKYHRYTJSQO2LPSSJKWKUSUAVEYHO2GOOKBTQF6ZZSVJ5G2XBLBIJM";
     const { chain: c } = chain();

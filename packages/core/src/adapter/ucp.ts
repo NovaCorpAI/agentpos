@@ -3,7 +3,7 @@
  * Shape follows profile.json#/$defs/business_schema (registries keyed by reverse-domain names,
  * YYYY-MM-DD versions). Validated against the pinned official schemas in conformance tests.
  *
- * Honesty rule: we only declare what the site actually implements. The AgentGate service and the
+ * Honesty rule: we only declare what the site actually implements. The AgentPOS service and the
  * x402 Stellar payment handler are real; dev.ucp.shopping capabilities are not declared until the
  * UCP checkout semantics ship (Build phase).
  */
@@ -11,7 +11,7 @@ import { ADAPTER_VERSION, PROTOCOL_VERSIONS } from "./versions.js";
 
 export interface UcpProfileInput {
   siteUrl: string;
-  /** Path prefix of the AgentGate routes, e.g. "/agentgate". */
+  /** Path prefix of the AgentPOS routes, e.g. "/agentpos". */
   basePath: string;
   /** CAIP-2 network the x402 handler settles on. */
   network: `stellar:${string}`;
@@ -53,15 +53,15 @@ export interface UcpBusinessProfile {
     services: Record<string, UcpServiceEntry[]>;
     capabilities: Record<string, never[]>;
     payment_handlers: Record<string, UcpPaymentHandlerEntry[]>;
-    /** AgentGate-specific, ignored by UCP consumers (protocol object is open). */
-    "com.novacorplabs.agentgate"?: Record<string, unknown>;
+    /** AgentPOS-specific, ignored by UCP consumers (protocol object is open). */
+    "com.novacorplabs.agentpos"?: Record<string, unknown>;
   };
 }
 
 export function buildUcpProfile(input: UcpProfileInput): UcpBusinessProfile {
   const base = `${input.siteUrl.replace(/\/+$/, "")}${input.basePath}`;
   const v = PROTOCOL_VERSIONS.ucp.version;
-  const ag = PROTOCOL_VERSIONS.agentgate;
+  const ag = PROTOCOL_VERSIONS.agentpos;
   return {
     ucp: {
       version: v,
@@ -100,7 +100,7 @@ export function buildUcpProfile(input: UcpProfileInput): UcpBusinessProfile {
           },
         ],
       },
-      "com.novacorplabs.agentgate": {
+      "com.novacorplabs.agentpos": {
         adapterVersion: ADAPTER_VERSION,
         catalog: `${base}/catalog`,
         feed: `${base}/feed`,

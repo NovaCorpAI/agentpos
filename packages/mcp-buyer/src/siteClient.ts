@@ -1,8 +1,8 @@
 /**
- * HTTP client for AgentGate sites (and, later, any UCP/ACP/x402 site through the adapter).
+ * HTTP client for AgentPOS sites (and, later, any UCP/ACP/x402 site through the adapter).
  */
-import { AgentGateError, usdcFromMinor } from "@agentgate/core";
-import type { Address, BuyerContact, CartLine, UsdcMinor } from "@agentgate/core";
+import { AgentPOSError, usdcFromMinor } from "@agentpos/core";
+import type { Address, BuyerContact, CartLine, UsdcMinor } from "@agentpos/core";
 
 export interface SiteInfo {
   url: string;
@@ -69,7 +69,7 @@ async function readJson(res: Response, what: string): Promise<Record<string, unk
       "SHIPPING_REQUIRED",
       "ORDER_NOT_FOUND",
     ] as const;
-    throw new AgentGateError(
+    throw new AgentPOSError(
       known.find((k) => k === code) ?? "SITE_UNREACHABLE",
       err?.message ?? `${what} failed (${res.status})`,
       {
@@ -88,7 +88,7 @@ export class SiteClient {
   constructor(
     siteUrl: string,
     private readonly fetchImpl: FetchLike = globalThis.fetch,
-    readonly basePath = "/agentgate",
+    readonly basePath = "/agentpos",
   ) {
     const u = new URL(siteUrl);
     this.base = `${u.origin}${u.pathname.replace(/\/+$/, "")}`;
@@ -107,8 +107,8 @@ export class SiteClient {
         signal: AbortSignal.timeout(15_000),
       });
     } catch (cause) {
-      throw new AgentGateError("SITE_UNREACHABLE", `Cannot reach ${this.base}`, {
-        hint: "Check the site URL and that its AgentGate sidecar is running.",
+      throw new AgentPOSError("SITE_UNREACHABLE", `Cannot reach ${this.base}`, {
+        hint: "Check the site URL and that its AgentPOS sidecar is running.",
         retryable: true,
         cause,
       });

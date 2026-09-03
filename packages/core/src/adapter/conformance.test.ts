@@ -12,7 +12,7 @@ import { buildUcpProfile } from "./ucp.js";
 
 const profile = buildUcpProfile({
   siteUrl: "https://shop.example",
-  basePath: "/agentgate",
+  basePath: "/agentpos",
   network: "stellar:testnet",
   asset: "USDC",
   assetAddress: "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA",
@@ -37,11 +37,11 @@ describe("conformance: UCP business profile", () => {
   });
 
   it("uses reverse-domain registry keys and YYYY-MM-DD versions", () => {
-    expect(Object.keys(profile.ucp.services)).toEqual(["com.novacorplabs.agentgate"]);
+    expect(Object.keys(profile.ucp.services)).toEqual(["com.novacorplabs.agentpos"]);
     expect(Object.keys(profile.ucp.payment_handlers)).toEqual(["org.x402.stellar"]);
     expect(profile.ucp.version).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(profile.ucp.payment_handlers["org.x402.stellar"]?.[0]?.config.checkout).toBe(
-      "https://shop.example/agentgate/checkout",
+      "https://shop.example/agentpos/checkout",
     );
   });
 

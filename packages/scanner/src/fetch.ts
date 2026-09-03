@@ -2,7 +2,7 @@
  * Same-origin fetcher with robots.txt respect and soft rate limiting.
  * Guardrail 8: the scanner only ever reads the site it is installed on.
  */
-import { AgentGateError } from "@agentgate/core";
+import { AgentPOSError } from "@agentpos/core";
 
 export interface SiteFetcherOptions {
   baseUrl: string;
@@ -27,7 +27,7 @@ export class SiteFetcher {
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch;
     this.minInterval = options.minIntervalMs ?? 200;
     this.userAgent =
-      options.userAgent ?? "AgentGate-Scanner/0.1 (+https://github.com/NovaCorpAI/agentgate)";
+      options.userAgent ?? "AgentPOS-Scanner/0.1 (+https://github.com/NovaCorpAI/agentpos)";
     this.timeoutMs = options.timeoutMs ?? 15_000;
   }
 
@@ -54,7 +54,7 @@ export class SiteFetcher {
         const value = rest.join(":").trim();
         const k = key?.trim().toLowerCase();
         if (k === "user-agent")
-          applies = value === "*" || value.toLowerCase().includes("agentgate");
+          applies = value === "*" || value.toLowerCase().includes("agentpos");
         else if (applies && k === "disallow" && value) this.disallow.push(value);
       }
     } catch {
@@ -87,7 +87,7 @@ export class SiteFetcher {
   async text(url: string): Promise<string | undefined> {
     const absolute = new URL(url, this.origin).toString();
     if (!this.isSameOrigin(absolute)) {
-      throw new AgentGateError(
+      throw new AgentPOSError(
         "CONFIG_INVALID",
         "Scanner refuses to fetch outside the site origin",
         {

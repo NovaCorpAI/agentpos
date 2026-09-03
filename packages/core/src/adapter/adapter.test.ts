@@ -4,7 +4,7 @@ import { USDC_TESTNET_ADDRESS } from "@x402/stellar";
 import { resolveConfig } from "../config.js";
 import { usdc } from "../money.js";
 import { createLocalKeypairSigner, createSigner } from "../signer.js";
-import { AgentGateError } from "../errors.js";
+import { AgentPOSError } from "../errors.js";
 import { buildRouteConfig, createBuyerClient, createResourceServer, toReceipt } from "./x402.js";
 import { buildUcpProfile } from "./ucp.js";
 import { buildAcpFeed } from "./acp.js";
@@ -60,18 +60,18 @@ describe("x402 adapter", () => {
     });
     expect(() =>
       toReceipt({ success: false, transaction: "", network: "stellar:testnet", errorReason: "x" }),
-    ).toThrowError(AgentGateError);
+    ).toThrowError(AgentPOSError);
   });
 });
 
 describe("signer factory", () => {
   it("rejects invalid seeds and unimplemented kinds with typed errors", () => {
-    expect(() => createLocalKeypairSigner("nope", "testnet")).toThrowError(AgentGateError);
+    expect(() => createLocalKeypairSigner("nope", "testnet")).toThrowError(AgentPOSError);
     try {
       createSigner({ kind: "wallets-kit", network: "testnet" });
       expect.unreachable();
     } catch (err) {
-      expect((err as AgentGateError).code).toBe("SIGNER_NOT_IMPLEMENTED");
+      expect((err as AgentPOSError).code).toBe("SIGNER_NOT_IMPLEMENTED");
     }
   });
 });
@@ -80,20 +80,20 @@ describe("UCP / ACP surfaces", () => {
   it("builds a UCP business profile with the x402 Stellar payment handler", () => {
     const profile = buildUcpProfile({
       siteUrl: "https://shop.example/",
-      basePath: "/agentgate",
+      basePath: "/agentpos",
       network: "stellar:testnet",
       asset: "USDC",
       assetAddress: USDC_TESTNET_ADDRESS,
       payTo,
     });
     const handler =
-      profile.ucp.payment_handlers[PROTOCOL_VERSIONS.agentgate.paymentHandlerName]?.[0];
+      profile.ucp.payment_handlers[PROTOCOL_VERSIONS.agentpos.paymentHandlerName]?.[0];
     expect(handler?.id).toBe("x402-stellar");
     expect(handler?.config.payTo).toBe(payTo);
-    expect(profile.ucp.services[PROTOCOL_VERSIONS.agentgate.serviceName]?.[0]?.endpoint).toBe(
-      "https://shop.example/agentgate",
+    expect(profile.ucp.services[PROTOCOL_VERSIONS.agentpos.serviceName]?.[0]?.endpoint).toBe(
+      "https://shop.example/agentpos",
     );
-    expect(profile.ucp["com.novacorplabs.agentgate"]?.adapterVersion).toBe(ADAPTER_VERSION);
+    expect(profile.ucp["com.novacorplabs.agentpos"]?.adapterVersion).toBe(ADAPTER_VERSION);
     // Honesty: no UCP shopping capabilities are claimed until implemented.
     expect(profile.ucp.capabilities).toEqual({});
   });

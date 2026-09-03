@@ -84,7 +84,7 @@ signed with.
         "identityMode": "identified",
         "attestationRequired": false,
         "receiptSigner": "GDTD355XEM6S5DAZGZUO46I3X6YYB4EBHP2UPKA6F7NVGTRCQ7SZNG5P",
-        "receiptEndpoint": "https://shop.example/agentgate/orders/{orderId}/receipt",
+        "receiptEndpoint": "https://shop.example/agentpos/orders/{orderId}/receipt",
         "policyDecision": "allowed"
       },
       "schema": {
@@ -146,7 +146,7 @@ charge of them, and are they still willing to say so**".
 ```json
 {
   "attestation": {
-    "v": "agentgate-attestation-1",
+    "v": "agentpos-attestation-1",
     "agent": "GAGENT…",
     "owner": "GOWNER…",
     "name": "Ada's shopping agent",
@@ -161,7 +161,7 @@ charge of them, and are they still willing to say so**".
 The signature is computed over:
 
 ```
-"agentgate-attestation-1" ‖ LF ‖ canonical(attestation)
+"agentpos-attestation-1" ‖ LF ‖ canonical(attestation)
 ```
 
 **Canonical JSON**, used throughout this extension: object keys sorted lexicographically at every
@@ -213,7 +213,7 @@ A signed record of one commercial event, chained to the previous one.
 ```json
 {
   "body": {
-    "v": "agentgate-receipt-1",
+    "v": "agentpos-receipt-1",
     "seq": 42,
     "prev": "9f2c…",
     "event": "order.settled",
@@ -237,7 +237,7 @@ A signed record of one commercial event, chained to the previous one.
     "payment": { "txHash": "6e50…", "network": "stellar:pubnet", "asset": "USDC",
                  "amountMinor": "99000000", "payer": "GBUYER…",
                  "ts": "2026-08-29T12:00:04.010Z" },
-    "adapterVersion": "agentgate-adapter-2026-08",
+    "adapterVersion": "agentpos-adapter-2026-08",
     "traceId": "…"
   },
   "hash": "<lowercase hex sha256 of canonical(body)>",
@@ -249,7 +249,7 @@ A signed record of one commercial event, chained to the previous one.
 was handed rather than from a field the issuer chose. The signature is computed over:
 
 ```
-"agentgate-receipt-1" ‖ LF ‖ hash
+"agentpos-receipt-1" ‖ LF ‖ hash
 ```
 
 All monetary amounts are decimal **strings** of integers in the asset's minor units. Never
@@ -388,19 +388,19 @@ proves is worse than none, because it invites reliance it has not earned.
 
 ## Reference implementation
 
-[AgentGate](https://github.com/NovaCorpAI/agentgate) (Apache-2.0), a library that turns a site
+[AgentPOS](https://github.com/NovaCorpAI/agentpos) (Apache-2.0), a library that turns a site
 already selling in fiat into an endpoint agents can buy from. Running against Stellar with the
 Built on Stellar facilitator.
 
 | Component | Package | Conformance vectors |
 | --- | --- | --- |
-| Owner attestation, modes, revocation | `@agentgate/identity` | `src/identity.test.ts` |
-| Merchant receipts, chain, verification, export | `@agentgate/receipts` | `src/receipts.test.ts` |
-| Merchant policy (`policy.decision`) | `@agentgate/policy` | `src/policy.test.ts` |
-| Human approval (`202`, snapshot hash, expiry) | `@agentgate/approvals` | `src/approvals.test.ts` |
-| HTTP surface | `@agentgate/site` | `src/{identity,receipts,policy,approvals}.test.ts` |
+| Owner attestation, modes, revocation | `@agentpos/identity` | `src/identity.test.ts` |
+| Merchant receipts, chain, verification, export | `@agentpos/receipts` | `src/receipts.test.ts` |
+| Merchant policy (`policy.decision`) | `@agentpos/policy` | `src/policy.test.ts` |
+| Human approval (`202`, snapshot hash, expiry) | `@agentpos/approvals` | `src/approvals.test.ts` |
+| HTTP surface | `@agentpos/site` | `src/{identity,receipts,policy,approvals}.test.ts` |
 
-`@agentgate/receipts` includes a conformance test that verifies a receipt against a real Stellar
+`@agentpos/receipts` includes a conformance test that verifies a receipt against a real Stellar
 testnet payment on public Horizon.
 
 ### Conformance status
@@ -416,7 +416,7 @@ signature base is reproduced byte for byte, and the RFC's own Ed25519 signature 
 it.
 
 The implementation also still accepts a pre-standard header set it shipped before this alignment
-(`AGENTGATE-REQUEST-V1` over method, path, body hash, timestamp and nonce). That profile is
+(`AGENTPOS-REQUEST-V1` over method, path, body hash, timestamp and nonce). That profile is
 documented in `packages/identity/SPEC.md` § 4.1 for clients already using it. It is **not** part
 of this extension and is not proposed for standardization.
 

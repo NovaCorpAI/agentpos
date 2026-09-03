@@ -1,5 +1,5 @@
-import type { CatalogItem, CatalogItemDraft, UsdcMinor } from "@agentgate/core";
-import { AgentGateError, MIN_PRICE_USDC, compareUsdc } from "@agentgate/core";
+import type { CatalogItem, CatalogItemDraft, UsdcMinor } from "@agentpos/core";
+import { AgentPOSError, MIN_PRICE_USDC, compareUsdc } from "@agentpos/core";
 import type { SiteStorage } from "./storage.js";
 
 export class CatalogService {
@@ -12,13 +12,13 @@ export class CatalogService {
   getPublished(id: string): CatalogItem {
     const item = this.storage.getItem(id);
     if (!item) {
-      throw new AgentGateError("ITEM_NOT_FOUND", `Unknown item '${id}'`, {
-        hint: "List items via GET /agentgate/catalog and use their `id`.",
+      throw new AgentPOSError("ITEM_NOT_FOUND", `Unknown item '${id}'`, {
+        hint: "List items via GET /agentpos/catalog and use their `id`.",
         details: { id },
       });
     }
     if (item.status !== "published") {
-      throw new AgentGateError("ITEM_NOT_PUBLISHED", `Item '${id}' is not published`, {
+      throw new AgentPOSError("ITEM_NOT_PUBLISHED", `Item '${id}' is not published`, {
         hint: "The merchant has not confirmed this item yet.",
         details: { id, status: item.status },
       });
@@ -52,7 +52,7 @@ export class CatalogService {
     overrides: Partial<Pick<CatalogItem, "descriptionAgent" | "title" | "payTo">> = {},
   ): CatalogItem {
     if (compareUsdc(priceUsdc, MIN_PRICE_USDC) < 0) {
-      throw new AgentGateError("INVALID_AMOUNT", "Price below the minimum of 0.001 USDC", {
+      throw new AgentPOSError("INVALID_AMOUNT", "Price below the minimum of 0.001 USDC", {
         hint: "Set a price of at least 0.001 USDC.",
         details: { id: draft.id },
       });

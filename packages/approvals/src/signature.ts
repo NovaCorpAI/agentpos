@@ -4,10 +4,10 @@
  * nothing else may speak it. Timestamped and compared in constant time to resist replay.
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { AgentGateError } from "@agentgate/core";
+import { AgentPOSError } from "@agentpos/core";
 
-export const SIGNATURE_HEADER = "x-agentgate-signature";
-export const TIMESTAMP_HEADER = "x-agentgate-timestamp";
+export const SIGNATURE_HEADER = "x-agentpos-signature";
+export const TIMESTAMP_HEADER = "x-agentpos-timestamp";
 /** How far a signed resolution may be from the server clock. */
 export const SIGNATURE_WINDOW_SECONDS = 300;
 
@@ -39,7 +39,7 @@ export interface VerifyInput {
 /** Throws a typed 401-shaped error when the signature is missing, stale or wrong. */
 export function assertValidResolutionSignature(input: VerifyInput): void {
   const fail = (message: string, hint: string): never => {
-    throw new AgentGateError("APPROVAL_UNAUTHORIZED", message, { hint });
+    throw new AgentPOSError("APPROVAL_UNAUTHORIZED", message, { hint });
   };
   if (!input.signature || !input.timestamp) {
     fail(

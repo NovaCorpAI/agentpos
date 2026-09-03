@@ -1,20 +1,20 @@
 /**
- * @agentgate/site public API.
+ * @agentpos/site public API.
  *
- *   import { createAgentGate } from "@agentgate/site";
- *   const gate = await createAgentGate({ cwd: process.cwd() });   // reads agentgate.config.json + env
+ *   import { createAgentPOS } from "@agentpos/site";
+ *   const gate = await createAgentPOS({ cwd: process.cwd() });   // reads agentpos.config.json + env
  *   await gate.serve(8402);                                        // sidecar (+ retry worker)
- *   // or mount: app.all("/agentgate/*", (req) => gate.fetch(req)) with a fetch-compatible framework
+ *   // or mount: app.all("/agentpos/*", (req) => gate.fetch(req)) with a fetch-compatible framework
  */
 import { serve as honoServe } from "@hono/node-server";
-import { GenericConnector, WooCommerceConnector } from "@agentgate/connectors";
-import type { GenericConnectorHooks } from "@agentgate/connectors";
-import type { CoreConfig, FacilitatorClient, Logger, OrderConnector } from "@agentgate/core";
-import { AgentGateError, createLogger } from "@agentgate/core";
-import { ApprovalService, TwilioWhatsAppChannel, WebhookChannel } from "@agentgate/approvals";
-import type { NotificationChannel } from "@agentgate/approvals";
-import { createAgentGateApp } from "./app.js";
-import type { AgentGateSite } from "./app.js";
+import { GenericConnector, WooCommerceConnector } from "@agentpos/connectors";
+import type { GenericConnectorHooks } from "@agentpos/connectors";
+import type { CoreConfig, FacilitatorClient, Logger, OrderConnector } from "@agentpos/core";
+import { AgentPOSError, createLogger } from "@agentpos/core";
+import { ApprovalService, TwilioWhatsAppChannel, WebhookChannel } from "@agentpos/approvals";
+import type { NotificationChannel } from "@agentpos/approvals";
+import { createAgentPOSApp } from "./app.js";
+import type { AgentPOSSite } from "./app.js";
 import type { AlertEvent, AlertSink } from "./checkout.js";
 import { coreConfigFromEnv, loadSiteConfig, parseSiteConfig, secretsFromEnv } from "./config.js";
 import type { SiteConfig, SiteConfigInput, SiteSecrets } from "./config.js";
@@ -32,15 +32,15 @@ export { SiteStorage } from "./storage.js";
 export { CatalogService } from "./catalog.js";
 export { CheckoutService } from "./checkout.js";
 export type { AlertEvent, AlertSink, SettledTerms } from "./checkout.js";
-export { createAgentGateApp, cartView, orderView } from "./app.js";
-export type { AgentGateDeps, AgentGateSite } from "./app.js";
+export { createAgentPOSApp, cartView, orderView } from "./app.js";
+export type { AgentPOSDeps, AgentPOSSite } from "./app.js";
 export { buildMcpServer, createMcpHandler } from "./mcp.js";
 export { TokenBucketLimiter } from "./ratelimit.js";
 export type { GateForPaymentResult } from "./checkout.js";
 export { generateAndStoreKeypair, loadKeypair, keysDir } from "./keys.js";
 
-export interface CreateAgentGateOptions {
-  /** Directory holding agentgate.config.json and the data dir. Ignored when `site` is given. */
+export interface CreateAgentPOSOptions {
+  /** Directory holding agentpos.config.json and the data dir. Ignored when `site` is given. */
   cwd?: string;
   site?: SiteConfigInput;
   core?: CoreConfig;
@@ -68,8 +68,8 @@ export function buildConnector(
   if (site.platform === "woocommerce") {
     const woo = site.woocommerce as NonNullable<SiteConfig["woocommerce"]>;
     if (!secrets.wooConsumerKey || !secrets.wooConsumerSecret) {
-      throw new AgentGateError("CONFIG_INVALID", "WooCommerce credentials missing", {
-        hint: "Set AGENTGATE_WOO_CONSUMER_KEY and AGENTGATE_WOO_CONSUMER_SECRET (WooCommerce > Settings > Advanced > REST API, Read/Write).",
+      throw new AgentPOSError("CONFIG_INVALID", "WooCommerce credentials missing", {
+        hint: "Set AGENTPOS_WOO_CONSUMER_KEY and AGENTPOS_WOO_CONSUMER_SECRET (WooCommerce > Settings > Advanced > REST API, Read/Write).",
       });
     }
     return new WooCommerceConnector({
@@ -81,13 +81,13 @@ export function buildConnector(
   }
   if (site.platform === "generic") {
     if (!hooks) {
-      throw new AgentGateError("CONFIG_INVALID", "platform 'generic' requires hooks", {
-        hint: "Pass hooks: { createOrder(...) } to createAgentGate (see docs/quickstart).",
+      throw new AgentPOSError("CONFIG_INVALID", "platform 'generic' requires hooks", {
+        hint: "Pass hooks: { createOrder(...) } to createAgentPOS (see docs/quickstart).",
       });
     }
     return new GenericConnector(hooks);
   }
-  // platform: none -> orders are recorded locally only; the merchant reads them via `agentgate status`.
+  // platform: none -> orders are recorded locally only; the merchant reads them via `agentpos status`.
   return new GenericConnector({
     createOrder: async (input) => ({ externalOrderId: `local:${input.orderId}` }),
   });
@@ -133,7 +133,7 @@ export function buildAlertSink(
     await fetchImpl(webhookUrl, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ source: "agentgate", ...event }),
+      body: JSON.stringify({ source: "agentpos", ...event }),
       signal: AbortSignal.timeout(10_000),
     }).catch((err: unknown) =>
       logger.warn("alert.webhook_failed", {
@@ -143,30 +143,30 @@ export function buildAlertSink(
   };
 }
 
-export interface AgentGate extends AgentGateSite {
+export interface AgentPOS extends AgentPOSSite {
   site: SiteConfig;
   core: CoreConfig;
   connector: OrderConnector;
   /** Starts the sidecar and the retry worker. Port 0 picks a free port; the resolved port is returned. */
   serve(port?: number, hostname?: string): Promise<{ port: number; close: () => void }>;
-  /** Runs one pass of the persistent retry loop (also used by `agentgate status --retry`). */
+  /** Runs one pass of the persistent retry loop (also used by `agentpos status --retry`). */
   retryPending(): Promise<number>;
 }
 
-export async function createAgentGate(options: CreateAgentGateOptions = {}): Promise<AgentGate> {
+export async function createAgentPOS(options: CreateAgentPOSOptions = {}): Promise<AgentPOS> {
   const site = options.site ? parseSiteConfig(options.site) : loadSiteConfig(options.cwd);
   const core = options.core ?? coreConfigFromEnv();
   const secrets = options.secrets ?? secretsFromEnv();
   const logger =
     options.logger ??
     createLogger({
-      format: process.env.AGENTGATE_LOG_FORMAT === "pretty" ? "pretty" : "json",
+      format: process.env.AGENTPOS_LOG_FORMAT === "pretty" ? "pretty" : "json",
       base: { site: site.displayName },
     });
   const connector = options.connector ?? buildConnector(site, secrets, options.hooks);
   const storage =
     options.storage ??
-    new SiteStorage(`${options.cwd ?? process.cwd()}/${site.dataDir}/agentgate.sqlite`);
+    new SiteStorage(`${options.cwd ?? process.cwd()}/${site.dataDir}/agentpos.sqlite`);
   const alert = options.alert ?? buildAlertSink(logger, secrets.alertWebhookUrl);
   const siteUrl = site.siteUrl.replace(/\/+$/, "");
   const approvals =
@@ -183,7 +183,7 @@ export async function createAgentGate(options: CreateAgentGateOptions = {}): Pro
           logger,
         })
       : undefined);
-  const built = createAgentGateApp({
+  const built = createAgentPOSApp({
     site,
     core,
     connector,

@@ -15,7 +15,7 @@ import type { CoreConfig } from "../config.js";
 import type { UsdcMinor } from "../money.js";
 import { usdcFromMinor } from "../money.js";
 import type { SignerProvider } from "../signer.js";
-import { AgentGateError } from "../errors.js";
+import { AgentPOSError } from "../errors.js";
 import { ADAPTER_VERSION, PROTOCOL_VERSIONS } from "./versions.js";
 
 export type { RouteConfig, SettleResponse, PaymentRequired, FacilitatorClient };
@@ -198,7 +198,7 @@ export function receiptFromResponse(response: Response): SettlementReceipt {
 
 export function toReceipt(settle: SettleResponse): SettlementReceipt {
   if (!settle.success) {
-    throw new AgentGateError(
+    throw new AgentPOSError(
       "SETTLEMENT_FAILED",
       settle.errorMessage ?? "Facilitator rejected settlement",
       {

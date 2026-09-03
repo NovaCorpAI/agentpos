@@ -2,7 +2,7 @@
 
 ## Objetivo
 
-Que un sitio AgentGate sea encontrable y comprable por CUALQUIER agente,
+Que un sitio AgentPOS sea encontrable y comprable por CUALQUIER agente,
 no solo por nuestro MCP, emitiendo los formatos que el ecosistema ya
 definió. No inventamos protocolo. Un módulo por spec, versión fijada,
 `adapterVersion` en toda salida. Guardrail 3: nadie fuera de este paquete
@@ -13,10 +13,10 @@ toca un spec directo.
 | Ruta                  | Protocolo     | Contenido                                                                                                                            | v1                                |
 | --------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------- |
 | `/.well-known/ucp`    | UCP           | manifiesto: version, services (`dev.ucp.shopping`), capabilities (checkout, discovery), payment_handlers (`x402-stellar`), políticas | emitido + validado contra esquema |
-| `/agentgate/feed`     | ACP           | feed de productos versión fijada (última conocida 2026-04-17)                                                                        | emitido + validado                |
-| `/agentgate/catalog`  | propio (JSON) | catálogo publicado, paginado, con `adapterVersion`                                                                                   | completo                          |
-| `/agentgate/mcp`      | MCP           | tools del sitio: `search`, `get_item`, `create_cart`, `quote`, `checkout`, `get_order`                                               | completo                          |
-| `/agentgate/checkout` | x402 V2       | 402 con `PAYMENT-REQUIRED`; acepta `PAYMENT-SIGNATURE`; responde `PAYMENT-RESPONSE`                                                  | completo, e2e                     |
+| `/agentpos/feed`     | ACP           | feed de productos versión fijada (última conocida 2026-04-17)                                                                        | emitido + validado                |
+| `/agentpos/catalog`  | propio (JSON) | catálogo publicado, paginado, con `adapterVersion`                                                                                   | completo                          |
+| `/agentpos/mcp`      | MCP           | tools del sitio: `search`, `get_item`, `create_cart`, `quote`, `checkout`, `get_order`                                               | completo                          |
+| `/agentpos/checkout` | x402 V2       | 402 con `PAYMENT-REQUIRED`; acepta `PAYMENT-SIGNATURE`; responde `PAYMENT-RESPONSE`                                                  | completo, e2e                     |
 | discovery x402        | x402 ext.     | registro del endpoint en la extensión de discovery del facilitador (si la soporta) e índices públicos                                | best-effort                       |
 
 Garantía v1: el camino **MCP del sitio + checkout x402** funciona end-to-end

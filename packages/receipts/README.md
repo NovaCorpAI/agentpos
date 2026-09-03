@@ -1,4 +1,4 @@
-# @agentgate/receipts
+# @agentpos/receipts
 
 The evidence an agentic sale leaves behind.
 
@@ -24,15 +24,15 @@ Successes and refusals alike. A chain that only records what worked is a marketi
 
 ## Merchant side
 
-Receipts are on by default in an AgentGate store; there is nothing to wire.
+Receipts are on by default in an AgentPOS store; there is nothing to wire.
 
 ```bash
-npx agentgate receipts                       # recent receipts, chain height, signing key
-npx agentgate receipts verify                # is the chain intact?
-npx agentgate receipts export --from 2026-08-01 --to 2026-08-31 -o august.json
+npx agentpos receipts                       # recent receipts, chain height, signing key
+npx agentpos receipts verify                # is the chain intact?
+npx agentpos receipts export --from 2026-08-01 --to 2026-08-31 -o august.json
 ```
 
-The store signs with a key kept next to its database (`AGENTGATE_RECEIPT_SECRET` overrides it).
+The store signs with a key kept next to its database (`AGENTPOS_RECEIPT_SECRET` overrides it).
 That key holds no funds and must never receive any: it exists to sign statements. Back it up with
 the database.
 
@@ -41,13 +41,13 @@ the database.
 Each order serves its own receipt, whole:
 
 ```
-GET /agentgate/orders/<orderId>/receipt
+GET /agentpos/orders/<orderId>/receipt
 ```
 
 Keep it. Verification is local:
 
 ```ts
-import { verifyReceipt, verifyChain, verifyPaymentOnChain } from "@agentgate/receipts";
+import { verifyReceipt, verifyChain, verifyPaymentOnChain } from "@agentpos/receipts";
 
 verifyReceipt(receipt);              // schema, hash, signature, internal consistency
 verifyChain(receipts);               // sequence, linkage, one signer throughout

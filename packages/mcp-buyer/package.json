@@ -1,13 +1,13 @@
 {
-  "name": "@agentgate/mcp-buyer",
+  "name": "@agentpos/mcp-buyer",
   "version": "0.0.1",
-  "description": "AgentGate buyer: MCP server that lets any agent discover, quote and buy from agent-buyable stores within a human mandate (x402 on Stellar).",
+  "description": "AgentPOS buyer: MCP server that lets any agent discover, quote and buy from agent-buyable stores within a human mandate (x402 on Stellar).",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "agentgate-buyer": "./bin/agentgate-buyer.js"
+    "agentpos-buyer": "./bin/agentpos-buyer.js"
   },
   "exports": {
     ".": {
@@ -32,7 +32,7 @@
     "e2e:testnet": "tsx scripts/e2e-testnet.ts"
   },
   "dependencies": {
-    "@agentgate/core": "workspace:*",
+    "@agentpos/core": "workspace:*",
     "@clack/prompts": "^1.7.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@stellar/stellar-sdk": "^16.2.0",
@@ -41,9 +41,9 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@agentgate/connectors": "workspace:*",
-    "@agentgate/scanner": "workspace:*",
-    "@agentgate/site": "workspace:*",
+    "@agentpos/connectors": "workspace:*",
+    "@agentpos/scanner": "workspace:*",
+    "@agentpos/site": "workspace:*",
     "@types/node": "^24.13.3",
     "@x402/core": "2.23.0",
     "tsx": "^4.23.12",

@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  qs: '>=6.16.0'
+
 importers:
 
   .:
@@ -37,7 +40,7 @@ importers:
 
   apps/facilitator:
     dependencies:
-      '@agentgate/core':
+      '@agentpos/core':
         specifier: workspace:*
         version: link:../../packages/core
       '@hono/node-server':
@@ -76,7 +79,7 @@ importers:
 
   packages/approvals:
     dependencies:
-      '@agentgate/core':
+      '@agentpos/core':
         specifier: workspace:*
         version: link:../core
       zod:
@@ -95,7 +98,7 @@ importers:
 
   packages/connectors:
     dependencies:
-      '@agentgate/core':
+      '@agentpos/core':
         specifier: workspace:*
         version: link:../core
       zod:
@@ -151,7 +154,7 @@ importers:
 
   packages/identity:
     dependencies:
-      '@agentgate/core':
+      '@agentpos/core':
         specifier: workspace:*
         version: link:../core
       '@stellar/stellar-sdk':
@@ -173,7 +176,7 @@ importers:
 
   packages/mcp-buyer:
     dependencies:
-      '@agentgate/core':
+      '@agentpos/core':
         specifier: workspace:*
         version: link:../core
       '@clack/prompts':
@@ -195,13 +198,13 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
-      '@agentgate/connectors':
+      '@agentpos/connectors':
         specifier: workspace:*
         version: link:../connectors
-      '@agentgate/scanner':
+      '@agentpos/scanner':
         specifier: workspace:*
         version: link:../scanner
-      '@agentgate/site':
+      '@agentpos/site':
         specifier: workspace:*
         version: link:../site
       '@types/node':
@@ -222,7 +225,7 @@ importers:
 
   packages/policy:
     dependencies:
-      '@agentgate/core':
+      '@agentpos/core':
         specifier: workspace:*
         version: link:../core
       zod:
@@ -241,7 +244,7 @@ importers:
 
   packages/receipts:
     dependencies:
-      '@agentgate/core':
+      '@agentpos/core':
         specifier: workspace:*
         version: link:../core
       '@stellar/stellar-sdk':
@@ -263,7 +266,7 @@ importers:
 
   packages/scanner:
     dependencies:
-      '@agentgate/core':
+      '@agentpos/core':
         specifier: workspace:*
         version: link:../core
       cheerio:
@@ -288,25 +291,25 @@ importers:
 
   packages/site:
     dependencies:
-      '@agentgate/approvals':
+      '@agentpos/approvals':
         specifier: workspace:*
         version: link:../approvals
-      '@agentgate/connectors':
+      '@agentpos/connectors':
         specifier: workspace:*
         version: link:../connectors
-      '@agentgate/core':
+      '@agentpos/core':
         specifier: workspace:*
         version: link:../core
-      '@agentgate/identity':
+      '@agentpos/identity':
         specifier: workspace:*
         version: link:../identity
-      '@agentgate/policy':
+      '@agentpos/policy':
         specifier: workspace:*
         version: link:../policy
-      '@agentgate/receipts':
+      '@agentpos/receipts':
         specifier: workspace:*
         version: link:../receipts
-      '@agentgate/scanner':
+      '@agentpos/scanner':
         specifier: workspace:*
         version: link:../scanner
       '@clack/prompts':
@@ -1700,8 +1703,8 @@ packages:
     resolution: {integrity: sha512-vYt7UD1U9Wg6138shLtLOvdAu+8DsC/ilFtEVHcH+wydcSpNE20AfSOduf6MkRFahL5FY7X1oU7nKVZFtfq8Fg==}
     engines: {node: '>=6'}
 
-  qs@6.15.3:
-    resolution: {integrity: sha512-O9gl3zCl5h5blw1KGUzQKhA5oUXSl8rwUIM5o0S3nCXMliSvy5Dzx7/DJcI+SwgICv+IneSZwhBh1oSyEHA71A==}
+  qs@6.16.0:
+    resolution: {integrity: sha512-h6fhOIaRrID2CbEY2fqs+7t+UXZo+MLAnU5gRIq85uFtdiUPCdsApMlHhXogKVM4HM2DVbIjGNTTYH2OcmP1vA==}
     engines: {node: '>=0.6'}
 
   range-parser@1.3.0:
@@ -2589,7 +2592,7 @@ snapshots:
       http-errors: 2.0.1
       iconv-lite: 0.7.3
       on-finished: 2.4.1
-      qs: 6.15.3
+      qs: 6.16.0
       raw-body: 3.0.2
       type-is: 2.1.0
     transitivePeerDependencies:
@@ -2899,7 +2902,7 @@ snapshots:
       once: 1.4.0
       parseurl: 1.3.3
       proxy-addr: 2.0.7
-      qs: 6.15.3
+      qs: 6.16.0
       range-parser: 1.3.0
       router: 2.2.0
       send: 1.2.1
@@ -3308,7 +3311,7 @@ snapshots:
 
   punycode@2.3.1: {}
 
-  qs@6.15.3:
+  qs@6.16.0:
     dependencies:
       es-define-property: 1.0.1
       side-channel: 1.1.1

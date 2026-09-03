@@ -1,5 +1,5 @@
 /**
- * `agentgate-facilitator keygen`: creates the fee-paying account for a facilitator.
+ * `agentpos-facilitator keygen`: creates the fee-paying account for a facilitator.
  *
  * The secret is written to a file with owner-only permissions and NEVER printed. The only thing
  * that reaches the terminal is the public address, which is what the operator needs in order to
@@ -7,7 +7,7 @@
  * chat transcript or a shell history; a secret that only ever exists in a 0600 file does not.
  *
  * What this account is for, stated where the operator will read it: paying transaction fees.
- * It is not the merchant's revenue wallet, not the buyer's wallet, and not an AgentGate account.
+ * It is not the merchant's revenue wallet, not the buyer's wallet, and not an AgentPOS account.
  * Fund it with XLM and nothing else.
  */
 import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
@@ -17,7 +17,7 @@ import { Keypair } from "@stellar/stellar-sdk";
 
 export interface KeygenOptions {
   network: "testnet" | "mainnet";
-  /** Directory for the env file. Defaults to ~/.agentgate/facilitator, outside any repo. */
+  /** Directory for the env file. Defaults to ~/.agentpos/facilitator, outside any repo. */
   dir?: string | undefined;
   /** Overwrite an existing file. Off by default: silently replacing a funded key loses funds. */
   force?: boolean;
@@ -29,9 +29,9 @@ export interface KeygenResult {
 }
 
 export function defaultKeyDir(): string {
-  return process.env.AGENTGATE_HOME
-    ? join(process.env.AGENTGATE_HOME, "facilitator")
-    : join(homedir(), ".agentgate", "facilitator");
+  return process.env.AGENTPOS_HOME
+    ? join(process.env.AGENTPOS_HOME, "facilitator")
+    : join(homedir(), ".agentpos", "facilitator");
 }
 
 /** Generates the keypair and writes an env file the service can be started from. */
@@ -46,13 +46,13 @@ export function generateFacilitatorKey(options: KeygenOptions): KeygenResult {
   mkdirSync(dir, { recursive: true });
   const kp = Keypair.random();
   const contents = [
-    `# AgentGate facilitator fee account (${options.network}). Generated ${new Date().toISOString()}.`,
+    `# AgentPOS facilitator fee account (${options.network}). Generated ${new Date().toISOString()}.`,
     `# This key signs settlements and pays transaction fees. Fund the PUBLIC address with XLM only.`,
     `# It must never hold merchant revenue or buyer funds, and must never be a store's payTo.`,
     `# Back this file up with the same care as a password. Never commit it.`,
-    `AGENTGATE_FACILITATOR_NETWORK=${options.network}`,
-    `AGENTGATE_FACILITATOR_SIGNER_PUBLIC=${kp.publicKey()}`,
-    `AGENTGATE_FACILITATOR_SIGNER_SECRET=${kp.secret()}`,
+    `AGENTPOS_FACILITATOR_NETWORK=${options.network}`,
+    `AGENTPOS_FACILITATOR_SIGNER_PUBLIC=${kp.publicKey()}`,
+    `AGENTPOS_FACILITATOR_SIGNER_SECRET=${kp.secret()}`,
     "",
   ].join("\n");
   writeFileSync(path, contents, { mode: 0o600 });
@@ -87,7 +87,7 @@ if (process.argv[1] && /keygen\.(ts|js)$/.test(process.argv[1])) {
     console.log("");
     console.log("Next:");
     console.log(`  1. Send XLM to ${publicKey}. It pays fees only; 20-30 XLM lasts thousands of settlements.`);
-    console.log(`  2. Start the service with that file:  set -a && . ${path} && set +a && pnpm --filter @agentgate/facilitator start`);
+    console.log(`  2. Start the service with that file:  set -a && . ${path} && set +a && pnpm --filter @agentpos/facilitator start`);
     console.log("  3. Check /health: it must report the same address and funded: true.");
   } catch (err) {
     console.error(err instanceof Error ? err.message : String(err));

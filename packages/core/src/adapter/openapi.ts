@@ -19,7 +19,7 @@ import { ADAPTER_VERSION, PROTOCOL_VERSIONS } from "./versions.js";
 
 export interface StoreOpenApiInput {
   siteUrl: string;
-  /** Path prefix of the AgentGate routes, e.g. "/agentgate". */
+  /** Path prefix of the AgentPOS routes, e.g. "/agentpos". */
   basePath: string;
   displayName: string;
   /** CAIP-2 network the checkout settles on. */
@@ -334,15 +334,15 @@ export function buildStoreOpenApi(input: StoreOpenApiInput): Record<string, unkn
   return {
     openapi: "3.1.0",
     info: {
-      title: `${input.displayName} (AgentGate store)`,
+      title: `${input.displayName} (AgentPOS store)`,
       version: ADAPTER_VERSION,
-      description: `An agent-buyable storefront. Payments over x402 ${PROTOCOL_VERSIONS.x402.protocol} on ${input.network}, settled in ${input.asset}. The merchant is the merchant of record; AgentGate takes no commission and holds no funds.`,
+      description: `An agent-buyable storefront. Payments over x402 ${PROTOCOL_VERSIONS.x402.protocol} on ${input.network}, settled in ${input.asset}. The merchant is the merchant of record; AgentPOS takes no commission and holds no funds.`,
       "x-guidance": guidance,
       ...(input.contactEmail ? { contact: { email: input.contactEmail } } : {}),
       license: { name: "Apache-2.0", identifier: "Apache-2.0" },
     },
     servers: [{ url: siteUrl }],
-    "x-agentgate": {
+    "x-agentpos": {
       adapterVersion: ADAPTER_VERSION,
       network: input.network,
       asset: input.asset,

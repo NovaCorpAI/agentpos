@@ -2,7 +2,7 @@
  * LLM router: direct HTTP to the provider API, no vendor SDK (CLAUDE.md, Stack).
  * Used by the scanner to redact catalog descriptions and extract structured drafts.
  */
-import { AgentGateError } from "./errors.js";
+import { AgentPOSError } from "./errors.js";
 import type { CoreConfig } from "./config.js";
 
 export interface LlmCompletionRequest {
@@ -40,7 +40,7 @@ function extractJson(text: string): unknown {
   try {
     return JSON.parse(candidate);
   } catch (cause) {
-    throw new AgentGateError("LLM_INVALID_JSON", "LLM response is not valid JSON", {
+    throw new AgentPOSError("LLM_INVALID_JSON", "LLM response is not valid JSON", {
       hint: "Retry with a stricter schema or lower effort; inspect details.text.",
       retryable: true,
       details: { text: text.slice(0, 500) },
@@ -52,7 +52,7 @@ function extractJson(text: string): unknown {
 async function readJsonResponse(res: Response, provider: string): Promise<Record<string, unknown>> {
   const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) {
-    throw new AgentGateError("LLM_REQUEST_FAILED", `${provider} request failed (${res.status})`, {
+    throw new AgentPOSError("LLM_REQUEST_FAILED", `${provider} request failed (${res.status})`, {
       hint:
         res.status === 401 ? "Check the API key." : "Inspect details.body; 429/5xx are retryable.",
       retryable: res.status === 429 || res.status >= 500,
@@ -94,7 +94,7 @@ export class AnthropicProvider implements LlmProvider {
     });
     const data = await readJsonResponse(res, this.name);
     if (data.stop_reason === "refusal") {
-      throw new AgentGateError("LLM_REQUEST_FAILED", "Model refused the request", {
+      throw new AgentPOSError("LLM_REQUEST_FAILED", "Model refused the request", {
         hint: "The scanner prompt should only contain the merchant's own public content.",
         details: { stop_details: data.stop_details },
       });
@@ -171,8 +171,8 @@ export function createLlm(
 ): LlmProvider {
   if (config.provider === "anthropic") {
     if (!config.apiKey) {
-      throw new AgentGateError("CONFIG_INVALID", "Anthropic provider requires an API key", {
-        hint: "Set ANTHROPIC_API_KEY (or AGENTGATE_LLM_API_KEY).",
+      throw new AgentPOSError("CONFIG_INVALID", "Anthropic provider requires an API key", {
+        hint: "Set ANTHROPIC_API_KEY (or AGENTPOS_LLM_API_KEY).",
       });
     }
     return new AnthropicProvider(
@@ -183,8 +183,8 @@ export function createLlm(
     );
   }
   if (!config.baseUrl) {
-    throw new AgentGateError("CONFIG_INVALID", "openai-compatible provider requires baseUrl", {
-      hint: "Set AGENTGATE_LLM_BASE_URL, e.g. https://openrouter.ai/api/v1.",
+    throw new AgentPOSError("CONFIG_INVALID", "openai-compatible provider requires baseUrl", {
+      hint: "Set AGENTPOS_LLM_BASE_URL, e.g. https://openrouter.ai/api/v1.",
     });
   }
   return new OpenAICompatibleProvider(config.model, config.apiKey, config.baseUrl, fetchImpl);

@@ -2,7 +2,7 @@
  * Money is ALWAYS an integer in the asset's smallest unit (guardrail 4).
  * Stellar classic assets and Stellar USDC use 7 decimals.
  */
-import { AgentGateError } from "./errors.js";
+import { AgentPOSError } from "./errors.js";
 
 export const USDC_DECIMALS = 7;
 export const XLM_DECIMALS = 7;
@@ -20,13 +20,13 @@ const DECIMAL_RE = /^(\d+)(?:\.(\d+))?$/;
 function parseDecimalToMinor(input: string | number, decimals: number, label: string): bigint {
   const text = typeof input === "number" ? input.toString() : input.trim();
   if (typeof input === "number" && !Number.isFinite(input)) {
-    throw new AgentGateError("INVALID_AMOUNT", `${label} amount is not finite`, {
+    throw new AgentPOSError("INVALID_AMOUNT", `${label} amount is not finite`, {
       hint: "Pass a decimal string like '1.50' or a finite number.",
     });
   }
   const match = DECIMAL_RE.exec(text);
   if (!match) {
-    throw new AgentGateError("INVALID_AMOUNT", `Invalid ${label} amount: '${text}'`, {
+    throw new AgentPOSError("INVALID_AMOUNT", `Invalid ${label} amount: '${text}'`, {
       hint: "Use a non-negative decimal string with '.' as separator, e.g. '12.5'.",
       details: { input: text },
     });
@@ -34,7 +34,7 @@ function parseDecimalToMinor(input: string | number, decimals: number, label: st
   const whole = match[1] ?? "0";
   const frac = match[2] ?? "";
   if (frac.length > decimals) {
-    throw new AgentGateError("INVALID_AMOUNT", `${label} supports at most ${decimals} decimals`, {
+    throw new AgentPOSError("INVALID_AMOUNT", `${label} supports at most ${decimals} decimals`, {
       hint: `Round '${text}' to ${decimals} decimal places before passing it.`,
       details: { input: text, decimals },
     });
@@ -58,7 +58,7 @@ export function usdc(value: string | number): UsdcMinor {
 export function usdcFromMinor(value: bigint | string | number): UsdcMinor {
   const big = typeof value === "bigint" ? value : BigInt(value);
   if (big < 0n) {
-    throw new AgentGateError("INVALID_AMOUNT", "USDC amount cannot be negative", {
+    throw new AgentPOSError("INVALID_AMOUNT", "USDC amount cannot be negative", {
       hint: "Amounts are unsigned; use separate debit/credit semantics.",
     });
   }
@@ -83,7 +83,7 @@ export function addUsdc(a: UsdcMinor, b: UsdcMinor): UsdcMinor {
 
 export function mulUsdc(a: UsdcMinor, quantity: number): UsdcMinor {
   if (!Number.isInteger(quantity) || quantity < 0) {
-    throw new AgentGateError("INVALID_AMOUNT", "Quantity must be a non-negative integer", {
+    throw new AgentPOSError("INVALID_AMOUNT", "Quantity must be a non-negative integer", {
       hint: "Multiply money only by integer quantities; never by floats.",
       details: { quantity },
     });

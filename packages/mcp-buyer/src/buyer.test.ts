@@ -1,5 +1,5 @@
 /**
- * Buyer against an in-process AgentGate site with a stub facilitator. The x402 signing step is
+ * Buyer against an in-process AgentPOS site with a stub facilitator. The x402 signing step is
  * replaced by a fake pay-fetch that behaves like the SDK (402 -> PAYMENT-SIGNATURE retry).
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -16,9 +16,9 @@ import type {
   SupportedResponse,
   VerifyResponse,
 } from "@x402/core/types";
-import { AgentGateError, resolveConfig, usdc } from "@agentgate/core";
-import type { CatalogItem, OrderConnector } from "@agentgate/core";
-import { createAgentGateApp, parseSiteConfig, SiteStorage } from "@agentgate/site";
+import { AgentPOSError, resolveConfig, usdc } from "@agentpos/core";
+import type { CatalogItem, OrderConnector } from "@agentpos/core";
+import { createAgentPOSApp, parseSiteConfig, SiteStorage } from "@agentpos/site";
 import { BuyerService } from "./buyer.js";
 import { mandateSchema } from "./mandate.js";
 import type { Profile } from "./profile.js";
@@ -89,7 +89,7 @@ const items: CatalogItem[] = [
 describe("BuyerService", () => {
   let home: string;
   let created: number;
-  let site: ReturnType<typeof createAgentGateApp>;
+  let site: ReturnType<typeof createAgentPOSApp>;
   let profile: Profile;
   let spending: SpendingLog;
 
@@ -130,8 +130,8 @@ describe("BuyerService", () => {
   };
 
   beforeEach(() => {
-    home = mkdtempSync(join(tmpdir(), "agentgate-buyer-"));
-    process.env.AGENTGATE_HOME = home;
+    home = mkdtempSync(join(tmpdir(), "agentpos-buyer-"));
+    process.env.AGENTPOS_HOME = home;
     created = 0;
     const connector: OrderConnector = {
       platform: "generic",
@@ -140,7 +140,7 @@ describe("BuyerService", () => {
     };
     const storage = new SiteStorage(":memory:");
     for (const i of items) storage.upsertItem(i);
-    site = createAgentGateApp({
+    site = createAgentPOSApp({
       site: parseSiteConfig({
         siteUrl: "https://shop.test",
         displayName: "Test Shop",
@@ -187,7 +187,7 @@ describe("BuyerService", () => {
   });
   afterEach(() => {
     rmSync(home, { recursive: true, force: true });
-    delete process.env.AGENTGATE_HOME;
+    delete process.env.AGENTPOS_HOME;
   });
 
   const buyer = () =>
@@ -329,7 +329,7 @@ describe("BuyerService", () => {
   it("does not leak the wallet when locked", () => {
     const locked = new BuyerService({ profile, fetchImpl, spendingLog: spending, core });
     expect(() => (locked as unknown as { signer: () => unknown }).signer()).toThrowError(
-      AgentGateError,
+      AgentPOSError,
     );
   });
 });

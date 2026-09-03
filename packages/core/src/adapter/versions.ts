@@ -30,7 +30,7 @@ export const PROTOCOL_VERSIONS = {
     },
     checkedAt: "2026-08-29",
     source:
-      "https://github.com/Universal-Commerce-Protocol/ucp (branch release/2026-08-25, source/schemas). Re-vendor with `pnpm --filter @agentgate/core vendor:schemas`.",
+      "https://github.com/Universal-Commerce-Protocol/ucp (branch release/2026-08-25, source/schemas). Re-vendor with `pnpm --filter @agentpos/core vendor:schemas`.",
     notes:
       "Corrected 2026-08-29: the previous pin (2026-01-01) was never a released snapshot and its schema URLs 404ed. Real releases are 2026-01-11, 2026-01-23, 2026-04-08 and 2026-08-25. Our business profile validates unchanged against 2026-08-25. dev.ucp.shopping capabilities are NOT declared until we implement UCP checkout semantics (Build phase).",
   },
@@ -47,13 +47,13 @@ export const PROTOCOL_VERSIONS = {
     notes:
       "Product feed only (fiat prices in ISO 4217 minor units, as the schema requires). Checkout + delegated payment are Build-phase slots.",
   },
-  agentgate: {
+  agentpos: {
     /** Our own namespaced identifiers inside UCP registries. */
-    serviceName: "com.novacorplabs.agentgate",
+    serviceName: "com.novacorplabs.agentpos",
     paymentHandlerName: "org.x402.stellar",
     paymentHandlerId: "x402-stellar",
-    spec: "https://agentgate.novacorplabs.com/spec/agentgate-service",
-    serviceSchema: "https://agentgate.novacorplabs.com/schemas/agentgate-service.openapi.json",
-    handlerSchema: "https://agentgate.novacorplabs.com/schemas/x402-stellar-handler.json",
+    spec: "https://agentpos.novacorplabs.com/spec/agentpos-service",
+    serviceSchema: "https://agentpos.novacorplabs.com/schemas/agentpos-service.openapi.json",
+    handlerSchema: "https://agentpos.novacorplabs.com/schemas/x402-stellar-handler.json",
   },
 } as const;

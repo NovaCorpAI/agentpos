@@ -94,7 +94,7 @@ export interface CartPolicyState {
 }
 
 /**
- * Who asked (M3). Structural mirror of `AgentIdentity` in @agentgate/identity, kept here so the
+ * Who asked (M3). Structural mirror of `AgentIdentity` in @agentpos/identity, kept here so the
  * domain types do not depend on the identity package. `authenticated: false` is a legitimate
  * value: an anonymous wallet is a valid buyer unless the merchant says otherwise.
  */

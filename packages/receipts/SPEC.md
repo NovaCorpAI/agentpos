@@ -1,6 +1,6 @@
 # Verifiable Commerce Receipts
 
-**Version:** `agentgate-receipt-1` · **Status:** draft · **Date:** 2026-08-29
+**Version:** `agentpos-receipt-1` · **Status:** draft · **Date:** 2026-08-29
 
 This document specifies a signed, hash-chained receipt that a merchant issues for each agentic
 sale, and the rules for verifying it. It is written so a third party can verify a receipt with
@@ -8,7 +8,7 @@ nothing but the JSON, SHA-256 and Ed25519: no database access, no API, no vendor
 
 It is the settlement half of the ecosystem extension draft
 [`agent-commerce-receipts`](../../specs/extensions/agent-commerce-receipts.md); the identity half
-lives in `@agentgate/identity`. The extension draft additionally positions this format against the
+lives in `@agentpos/identity`. The extension draft additionally positions this format against the
 existing x402 `offer-receipt` extension, which covers per-payment signed receipts but not chaining,
 commercial context, or the events where no payment happened.
 
@@ -58,7 +58,7 @@ was handed, rather than from a field the issuer chose.
 
 | Field | Required | Meaning |
 | --- | --- | --- |
-| `v` | yes | `"agentgate-receipt-1"` |
+| `v` | yes | `"agentpos-receipt-1"` |
 | `seq` | yes | 1-based position in this store's chain |
 | `prev` | yes | `hash` of the previous receipt, or `"genesis"` for the first |
 | `event` | yes | see 3.2 |
@@ -100,7 +100,7 @@ Canonical JSON: object keys sorted lexicographically at every depth, members who
 
 ```
 hash      = sha256( canonical(body) )                    lowercase hex
-signature = Ed25519( "agentgate-receipt-1" ‖ LF ‖ hash )  base64
+signature = Ed25519( "agentpos-receipt-1" ‖ LF ‖ hash )  base64
 ```
 
 The version prefix domain-separates this signature, so a receipt signature can never be replayed
@@ -228,6 +228,6 @@ an export that hid a broken link would defeat its purpose.
 
 ## Reference implementation
 
-`@agentgate/receipts` (Apache-2.0), running in production sidecars.
+`@agentpos/receipts` (Apache-2.0), running in production sidecars.
 Conformance vectors: `src/receipts.test.ts`, including verification of a real Stellar testnet
 payment against public Horizon.

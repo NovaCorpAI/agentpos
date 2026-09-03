@@ -22,8 +22,8 @@ import { ExactStellarScheme } from "@x402/stellar/exact/facilitator";
 import { createEd25519Signer } from "@x402/stellar";
 import type { PaymentPayload, PaymentRequirements } from "@x402/core/types";
 import { Keypair } from "@stellar/stellar-sdk";
-import { newTraceId, silentLogger } from "@agentgate/core";
-import type { Logger } from "@agentgate/core";
+import { newTraceId, silentLogger } from "@agentpos/core";
+import type { Logger } from "@agentpos/core";
 import type { FacilitatorConfig } from "./config.js";
 
 export interface FacilitatorAppDeps {

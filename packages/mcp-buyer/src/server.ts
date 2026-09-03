@@ -4,13 +4,13 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
-  AgentGateError,
+  AgentPOSError,
   addressSchema,
   buyerContactSchema,
   cartLineSchema,
   formatUsdc,
   usdc,
-} from "@agentgate/core";
+} from "@agentpos/core";
 import { BuyerService } from "./buyer.js";
 import type { BuyerDeps } from "./buyer.js";
 import { listProfiles, loadProfile } from "./profile.js";
@@ -24,7 +24,7 @@ function ok(payload: unknown) {
 
 function fail(err: unknown) {
   const body =
-    err instanceof AgentGateError
+    err instanceof AgentPOSError
       ? err.toJSON()
       : { code: "INTERNAL", message: String(err), hint: "Unexpected error", retryable: true };
   return {
@@ -55,7 +55,7 @@ export function buildBuyerServer(options: BuyerServerOptions): McpServer {
     return b;
   };
 
-  const server = new McpServer({ name: "agentgate-buyer", version: "0.1.0" });
+  const server = new McpServer({ name: "agentpos-buyer", version: "0.1.0" });
   const profileArg = {
     profile: z.string().optional().describe("Buyer profile name; defaults to the server's profile"),
   };
@@ -158,7 +158,7 @@ export function buildBuyerServer(options: BuyerServerOptions): McpServer {
     {
       title: "Buy",
       description:
-        "Pay a cart with x402 on Stellar within the human mandate. Returns the receipt (tx hash) and the order in the merchant platform. Never pays outside the mandate; CONFIRMATION_REQUIRED means a human must run `agentgate-buyer approve <cartId>` first.",
+        "Pay a cart with x402 on Stellar within the human mandate. Returns the receipt (tx hash) and the order in the merchant platform. Never pays outside the mandate; CONFIRMATION_REQUIRED means a human must run `agentpos-buyer approve <cartId>` first.",
       inputSchema: { site: z.url(), cartId: z.string(), ...profileArg },
     },
     async ({ site, cartId, profile }) => {

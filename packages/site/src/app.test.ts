@@ -5,9 +5,9 @@ import {
   usdc,
   validateAcpProductsResponse,
   validateUcpBusinessProfile,
-} from "@agentgate/core";
-import type { CatalogItem, OrderConnector, PaidOrderInput } from "@agentgate/core";
-import { createAgentGateApp } from "./app.js";
+} from "@agentpos/core";
+import type { CatalogItem, OrderConnector, PaidOrderInput } from "@agentpos/core";
+import { createAgentPOSApp } from "./app.js";
 import { parseSiteConfig } from "./config.js";
 import { SiteStorage } from "./storage.js";
 import { payLikeAnAgent, stubFacilitator } from "./test-utils.js";
@@ -77,7 +77,7 @@ const buyer = { email: "ada@example.com" };
 
 describe("site app", () => {
   let connector: ReturnType<typeof connectorMock>;
-  let gate: ReturnType<typeof createAgentGateApp>;
+  let gate: ReturnType<typeof createAgentPOSApp>;
   let facilitator: ReturnType<typeof stubFacilitator>;
 
   beforeEach(() => {
@@ -85,7 +85,7 @@ describe("site app", () => {
     for (const item of [mug, ebook, draftItem]) storage.upsertItem(item);
     connector = connectorMock();
     facilitator = stubFacilitator({ txHash: "abc123" });
-    gate = createAgentGateApp({ site, core, connector, storage, facilitator });
+    gate = createAgentPOSApp({ site, core, connector, storage, facilitator });
   });
 
   const req = (path: string, init?: RequestInit) =>
@@ -104,25 +104,25 @@ describe("site app", () => {
     expect(manifest.ucp.payment_handlers["org.x402.stellar"][0].id).toBe("x402-stellar");
     expect(manifest.ucp.payment_handlers["org.x402.stellar"][0].config.payTo).toBe(payTo);
     expect(validateUcpBusinessProfile(manifest).errors).toEqual([]);
-    const catalog = await read(await req("/agentgate/catalog"));
+    const catalog = await read(await req("/agentpos/catalog"));
     expect(catalog.items.map((i: { id: string }) => i.id).sort()).toEqual(["ebook", "mug"]);
     expect(catalog.items[0].price.minor).toMatch(/^\d+$/);
-    const feed = await read(await req("/agentgate/feed"));
+    const feed = await read(await req("/agentpos/feed"));
     expect(feed.products).toHaveLength(2);
     expect(validateAcpProductsResponse(feed).errors).toEqual([]);
-    const search = await read(await req("/agentgate/catalog?q=ceramic"));
+    const search = await read(await req("/agentpos/catalog?q=ceramic"));
     expect(search.items).toHaveLength(1);
-    expect((await req("/agentgate/items/draft-only")).status).toBe(409);
-    expect((await req("/agentgate/items/nope")).status).toBe(404);
+    expect((await req("/agentpos/items/draft-only")).status).toBe(409);
+    expect((await req("/agentpos/items/nope")).status).toBe(404);
   });
 
   it("quotes carts with integer totals and enforces shipping for physical goods", async () => {
-    const missing = await req("/agentgate/cart", json({ items: [{ itemId: "mug", quantity: 2 }] }));
+    const missing = await req("/agentpos/cart", json({ items: [{ itemId: "mug", quantity: 2 }] }));
     expect(missing.status).toBe(422);
     expect((await read(missing)).error.code).toBe("SHIPPING_REQUIRED");
 
     const res = await req(
-      "/agentgate/cart",
+      "/agentpos/cart",
       json({
         items: [
           { itemId: "mug", quantity: 2 },
@@ -137,10 +137,10 @@ describe("site app", () => {
     expect(cart.quote.total).toBe("21.8");
     expect(cart.quote.totalMinor).toBe("218000000");
     expect(cart.quote.payTo).toBe(payTo);
-    expect(cart.checkout).toBe(`https://shop.test/agentgate/checkout?cart=${cart.cartId}`);
+    expect(cart.checkout).toBe(`https://shop.test/agentpos/checkout?cart=${cart.cartId}`);
 
     const digitalOnly = await req(
-      "/agentgate/cart",
+      "/agentpos/cart",
       json({ items: [{ itemId: "ebook", quantity: 1 }] }),
     );
     expect(digitalOnly.status).toBe(201);
@@ -148,12 +148,12 @@ describe("site app", () => {
 
   it("rejects out of stock and unknown items", async () => {
     const oos = await req(
-      "/agentgate/cart",
+      "/agentpos/cart",
       json({ items: [{ itemId: "mug", quantity: 6 }], buyer, shipping }),
     );
     expect(oos.status).toBe(409);
     const unknown = await req(
-      "/agentgate/cart",
+      "/agentpos/cart",
       json({ items: [{ itemId: "ghost", quantity: 1 }] }),
     );
     expect(unknown.status).toBe(404);
@@ -162,11 +162,11 @@ describe("site app", () => {
   it("answers 402 with x402 terms from the cart, then creates the order only after settle", async () => {
     const cart = await read(
       await req(
-        "/agentgate/cart",
+        "/agentpos/cart",
         json({ items: [{ itemId: "mug", quantity: 1 }], buyer, shipping }),
       ),
     );
-    const url = `https://shop.test/agentgate/checkout?cart=${cart.cartId}`;
+    const url = `https://shop.test/agentpos/checkout?cart=${cart.cartId}`;
     // Guardrail 6: at the moment the facilitator settles, no platform order may exist yet.
     let createdAtSettle = -1;
     let pendingAtSettle: string | undefined;
@@ -192,7 +192,7 @@ describe("site app", () => {
     expect(facilitator.verifyCalls).toBe(1);
     expect(facilitator.settleCalls).toBe(1);
 
-    const order = await read(await req(`/agentgate/orders/${body.orderId}`));
+    const order = await read(await req(`/agentpos/orders/${body.orderId}`));
     expect(order.status).toBe("paid");
     expect(order.payment.txHash).toBe("abc123");
     expect(order.externalOrderId).toBe("woo-1");
@@ -203,9 +203,9 @@ describe("site app", () => {
 
   it("is idempotent per tx hash and never creates a platform order twice", async () => {
     const cart = await read(
-      await req("/agentgate/cart", json({ items: [{ itemId: "ebook", quantity: 1 }] })),
+      await req("/agentpos/cart", json({ items: [{ itemId: "ebook", quantity: 1 }] })),
     );
-    const url = `https://shop.test/agentgate/checkout?cart=${cart.cartId}`;
+    const url = `https://shop.test/agentpos/checkout?cart=${cart.cartId}`;
     await payLikeAnAgent(gate.fetch, url, { method: "POST" });
     await payLikeAnAgent(gate.fetch, url, { method: "POST" });
     expect(connector.created).toHaveLength(1);
@@ -217,15 +217,15 @@ describe("site app", () => {
       throw Object.assign(new Error("boom"), { retryable: true });
     });
     const cart = await read(
-      await req("/agentgate/cart", json({ items: [{ itemId: "ebook", quantity: 1 }] })),
+      await req("/agentpos/cart", json({ items: [{ itemId: "ebook", quantity: 1 }] })),
     );
     const { paid } = await payLikeAnAgent(
       gate.fetch,
-      `https://shop.test/agentgate/checkout?cart=${cart.cartId}`,
+      `https://shop.test/agentpos/checkout?cart=${cart.cartId}`,
       { method: "POST" },
     );
     const body = await read(paid!);
-    const order = await read(await req(`/agentgate/orders/${body.orderId}`));
+    const order = await read(await req(`/agentpos/orders/${body.orderId}`));
     expect(order.status).toBe("paid");
     expect(order.externalOrderId).toBeUndefined();
     expect(order.connectorError.code).toBe("ORDER_NOT_CREATED");
@@ -238,13 +238,13 @@ describe("site app", () => {
 
   it("does not settle-create anything when the facilitator rejects settlement", async () => {
     facilitator = stubFacilitator({ failSettle: true });
-    gate = createAgentGateApp({ site, core, connector, storage: gate.storage, facilitator });
+    gate = createAgentPOSApp({ site, core, connector, storage: gate.storage, facilitator });
     const cart = await read(
-      await req("/agentgate/cart", json({ items: [{ itemId: "ebook", quantity: 1 }] })),
+      await req("/agentpos/cart", json({ items: [{ itemId: "ebook", quantity: 1 }] })),
     );
     const { paid } = await payLikeAnAgent(
       gate.fetch,
-      `https://shop.test/agentgate/checkout?cart=${cart.cartId}`,
+      `https://shop.test/agentpos/checkout?cart=${cart.cartId}`,
       { method: "POST" },
     );
     expect(paid!.status).toBe(402);
@@ -254,21 +254,21 @@ describe("site app", () => {
   });
 
   it("returns precise errors for missing or expired carts before any 402", async () => {
-    expect((await req("/agentgate/checkout", { method: "POST" })).status).toBe(400);
-    expect((await req("/agentgate/checkout?cart=nope", { method: "POST" })).status).toBe(404);
+    expect((await req("/agentpos/checkout", { method: "POST" })).status).toBe(400);
+    expect((await req("/agentpos/checkout?cart=nope", { method: "POST" })).status).toBe(404);
     const cart = await read(
-      await req("/agentgate/cart", json({ items: [{ itemId: "ebook", quantity: 1 }] })),
+      await req("/agentpos/cart", json({ items: [{ itemId: "ebook", quantity: 1 }] })),
     );
     const stored = gate.storage.getCart(cart.cartId)!;
     gate.storage.saveCart({ ...stored, expiresAt: new Date(Date.now() - 1000).toISOString() });
-    expect((await req(`/agentgate/checkout?cart=${cart.cartId}`, { method: "POST" })).status).toBe(
+    expect((await req(`/agentpos/checkout?cart=${cart.cartId}`, { method: "POST" })).status).toBe(
       410,
     );
   });
 
   it("exposes MCP tools for discovery and carts", async () => {
     const call = (method: string, params: unknown, id = 1) =>
-      req("/agentgate/mcp", {
+      req("/agentpos/mcp", {
         method: "POST",
         headers: {
           "content-type": "application/json",

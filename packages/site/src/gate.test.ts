@@ -12,14 +12,14 @@ import type {
   VerifyResponse,
 } from "@x402/core/types";
 import {
-  AgentGateError,
+  AgentPOSError,
   assetAddress,
   createMemoryLogger,
   resolveConfig,
   usdc,
-} from "@agentgate/core";
-import type { CatalogItem, OrderConnector, PaidOrderInput } from "@agentgate/core";
-import { createAgentGateApp } from "./app.js";
+} from "@agentpos/core";
+import type { CatalogItem, OrderConnector, PaidOrderInput } from "@agentpos/core";
+import { createAgentPOSApp } from "./app.js";
 import type { AlertEvent } from "./checkout.js";
 import { parseSiteConfig } from "./config.js";
 import { SiteStorage } from "./storage.js";
@@ -90,7 +90,7 @@ function connectorMock(opts: { failTimes?: number; available?: () => boolean } =
     createOrder: async (input) => {
       if (failures > 0) {
         failures -= 1;
-        throw new AgentGateError("INTERNAL", "platform down", { hint: "retry", retryable: true });
+        throw new AgentPOSError("INTERNAL", "platform down", { hint: "retry", retryable: true });
       }
       created.push(input);
       return { externalOrderId: `ext-${created.length}` };
@@ -129,7 +129,7 @@ function build(
     ...(overrides.rateLimit ? { rateLimit: overrides.rateLimit } : {}),
   });
   const connector = overrides.connector ?? connectorMock();
-  const gate = createAgentGateApp({
+  const gate = createAgentPOSApp({
     site,
     core,
     connector,
@@ -150,10 +150,10 @@ function build(
   const read = (r: Response): Promise<any> => r.json() as Promise<any>;
   const newCart = async (qty = 1, headers?: Record<string, string>) =>
     read(
-      await req("/agentgate/cart", json({ items: [{ itemId: "mug", quantity: qty }] }, headers)),
+      await req("/agentpos/cart", json({ items: [{ itemId: "mug", quantity: qty }] }, headers)),
     );
   const pay = (cartId: string) =>
-    payLikeAnAgent(gate.fetch, `https://shop.test/agentgate/checkout?cart=${cartId}`, {
+    payLikeAnAgent(gate.fetch, `https://shop.test/agentpos/checkout?cart=${cartId}`, {
       method: "POST",
     });
   return {
@@ -230,12 +230,12 @@ describe("G1 payment correctness", () => {
     const t = build();
     const cart = await t.newCart();
     t.storage.upsertItem({ ...mug, priceUsdc: usdc("12") });
-    const res = await t.req(`/agentgate/checkout?cart=${cart.cartId}`, { method: "POST" });
+    const res = await t.req(`/agentpos/checkout?cart=${cart.cartId}`, { method: "POST" });
     expect(res.status).toBe(409);
     const body = await t.read(res);
     expect(body.error.code).toBe("REQUOTE_REQUIRED");
     expect(body.error.details.drift[0]).toMatchObject({ itemId: "mug", reason: "price_changed" });
-    expect((await t.req(`/agentgate/cart/${cart.cartId}`)).status).toBe(410);
+    expect((await t.req(`/agentpos/cart/${cart.cartId}`)).status).toBe(410);
     expect(t.connector.created).toHaveLength(0);
   });
 
@@ -244,7 +244,7 @@ describe("G1 payment correctness", () => {
     const t = build({ connector: connectorMock({ available: () => available }) });
     const cart = await t.newCart();
     available = false;
-    const res = await t.req(`/agentgate/checkout?cart=${cart.cartId}`, { method: "POST" });
+    const res = await t.req(`/agentpos/checkout?cart=${cart.cartId}`, { method: "POST" });
     expect(res.status).toBe(409);
     expect((await t.read(res)).error.details.drift[0].reason).toBe("out_of_stock");
   });
@@ -339,15 +339,15 @@ describe("G1 security", () => {
     });
     const h = { "x-forwarded-for": "203.0.113.5" };
     expect(
-      (await t.req("/agentgate/cart", t.json({ items: [{ itemId: "mug", quantity: 1 }] }, h)))
+      (await t.req("/agentpos/cart", t.json({ items: [{ itemId: "mug", quantity: 1 }] }, h)))
         .status,
     ).toBe(201);
     expect(
-      (await t.req("/agentgate/cart", t.json({ items: [{ itemId: "mug", quantity: 1 }] }, h)))
+      (await t.req("/agentpos/cart", t.json({ items: [{ itemId: "mug", quantity: 1 }] }, h)))
         .status,
     ).toBe(201);
     const third = await t.req(
-      "/agentgate/cart",
+      "/agentpos/cart",
       t.json({ items: [{ itemId: "mug", quantity: 1 }] }, h),
     );
     expect(third.status).toBe(429);
@@ -357,7 +357,7 @@ describe("G1 security", () => {
     expect(
       (
         await t.req(
-          "/agentgate/cart",
+          "/agentpos/cart",
           t.json({ items: [{ itemId: "mug", quantity: 1 }] }, { "x-forwarded-for": "203.0.113.6" }),
         )
       ).status,
@@ -375,30 +375,30 @@ describe("G1 security", () => {
     });
     const cart = await t.newCart();
     expect(
-      (await t.req(`/agentgate/checkout?cart=${cart.cartId}`, { method: "POST" })).status,
+      (await t.req(`/agentpos/checkout?cart=${cart.cartId}`, { method: "POST" })).status,
     ).toBe(402);
     expect(
-      (await t.req(`/agentgate/checkout?cart=${cart.cartId}`, { method: "POST" })).status,
+      (await t.req(`/agentpos/checkout?cart=${cart.cartId}`, { method: "POST" })).status,
     ).toBe(402);
-    const third = await t.req(`/agentgate/checkout?cart=${cart.cartId}`, { method: "POST" });
+    const third = await t.req(`/agentpos/checkout?cart=${cart.cartId}`, { method: "POST" });
     expect(third.status).toBe(429);
     expect(third.headers.get("retry-after")).toBeTruthy();
   });
 
   it("rejects oversized bodies, oversized carts and overlong queries", async () => {
     const t = build();
-    const big = await t.req("/agentgate/cart", {
+    const big = await t.req("/agentpos/cart", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: "x".repeat(70_000),
     });
     expect(big.status).toBe(413);
     const many = await t.req(
-      "/agentgate/cart",
+      "/agentpos/cart",
       t.json({ items: Array.from({ length: 51 }, () => ({ itemId: "mug", quantity: 1 })) }),
     );
     expect(many.status).toBe(400);
-    const q = await t.req(`/agentgate/catalog?q=${"a".repeat(5000)}`);
+    const q = await t.req(`/agentpos/catalog?q=${"a".repeat(5000)}`);
     expect(q.status).toBe(200);
   });
 
@@ -422,7 +422,7 @@ describe("G1 security", () => {
       });
       expect.unreachable();
     } catch (err) {
-      expect((err as AgentGateError).code).toBe("SECRET_IN_CONFIG");
+      expect((err as AgentPOSError).code).toBe("SECRET_IN_CONFIG");
     }
   });
 });
@@ -430,12 +430,12 @@ describe("G1 security", () => {
 describe("G1 operations", () => {
   it("health reports the facilitator and stuck orders", async () => {
     const t = build({ connector: connectorMock({ failTimes: 10 }) });
-    let res = await t.req("/agentgate/health");
+    let res = await t.req("/agentpos/health");
     expect(res.status).toBe(200);
     expect((await t.read(res)).facilitator.ok).toBe(true);
     const cart = await t.newCart();
     await t.pay(cart.cartId);
-    res = await t.req("/agentgate/health");
+    res = await t.req("/agentpos/health");
     expect(res.status).toBe(503);
     expect((await t.read(res)).orders.stuck).toBe(1);
   });
@@ -444,7 +444,7 @@ describe("G1 operations", () => {
     const { mkdtempSync, existsSync, rmSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");
     const { join } = await import("node:path");
-    const dir = mkdtempSync(join(tmpdir(), "agentgate-backup-"));
+    const dir = mkdtempSync(join(tmpdir(), "agentpos-backup-"));
     const storage = new SiteStorage(join(dir, "live.sqlite"));
     const t = build({ storage });
     await t.newCart();
@@ -492,8 +492,8 @@ describe("G1 mainnet lock", () => {
       );
       expect.unreachable();
     } catch (err) {
-      expect((err as AgentGateError).code).toBe("MAINNET_NOT_CONFIRMED");
-      expect((err as AgentGateError).message).toMatch(/gate G1/);
+      expect((err as AgentPOSError).code).toBe("MAINNET_NOT_CONFIRMED");
+      expect((err as AgentPOSError).message).toMatch(/gate G1/);
     }
     // Gate closed (release constant): still needs the explicit flag and an RPC URL.
     expect(() => resolveConfig({ network: "mainnet", rpcUrl: "https://rpc.example" })).toThrowError(

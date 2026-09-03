@@ -1,4 +1,4 @@
-# @agentgate/approvals
+# @agentpos/approvals
 
 Human approval queue (M2). Orders the merchant policy flags (M1) pause here instead of settling:
 the merchant is notified, the agent is told to wait, and **nobody is charged** until a decision.
@@ -12,7 +12,7 @@ Two rules give this package its shape:
    drifts afterwards, the approval is void and the agent must re-quote.
 
 ```ts
-import { ApprovalService, MemoryApprovalStore, WebhookChannel } from "@agentgate/approvals";
+import { ApprovalService, MemoryApprovalStore, WebhookChannel } from "@agentpos/approvals";
 
 const approvals = new ApprovalService({
   store: new MemoryApprovalStore(), // the site library uses a SQLite-backed store
@@ -46,7 +46,7 @@ expires on its own.
 
 - `WebhookChannel` — signed JSON POST; the signature covers the exact body bytes.
 - `TwilioWhatsAppChannel` — thin HTTP client, no vendor SDK.
-- `EmailChannel` — takes the merchant's own `send` function. AgentGate does not bundle an SMTP
+- `EmailChannel` — takes the merchant's own `send` function. AgentPOS does not bundle an SMTP
   client: sites already have one, and shipping mail credentials is not our business.
 
 ## Error codes an agent can act on

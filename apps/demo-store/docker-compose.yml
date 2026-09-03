@@ -1,4 +1,4 @@
-# AgentGate demo store: WooCommerce with seed products, used by e2e tests and the demo.
+# AgentPOS demo store: WooCommerce with seed products, used by e2e tests and the demo.
 # Usage: pnpm demo:up  ->  http://localhost:8080  (admin: admin / admin)
 # REST:  http://localhost:8080/wp-json/wc/v3/products  (keys in seed/seed.sh)
 services:

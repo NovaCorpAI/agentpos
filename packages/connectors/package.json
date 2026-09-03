@@ -1,7 +1,7 @@
 {
-  "name": "@agentgate/connectors",
+  "name": "@agentpos/connectors",
   "version": "0.0.1",
-  "description": "AgentGate order connectors: WooCommerce (REST v3), generic hook. Shopify lands in Phase 2.",
+  "description": "AgentPOS order connectors: WooCommerce (REST v3), generic hook. Shopify lands in Phase 2.",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -23,7 +23,7 @@
     "lint": "eslint src"
   },
   "dependencies": {
-    "@agentgate/core": "workspace:*",
+    "@agentpos/core": "workspace:*",
     "zod": "^4.4.3"
   },
   "devDependencies": {

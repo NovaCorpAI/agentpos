@@ -31,13 +31,13 @@ badges that depend on a settlement probe are out of reach until these indexes ad
 Two consequences worth acting on:
 
 1. Discoverability that we control matters more than directory listings for now: the OpenAPI
-   document, `llms.txt`, the UCP manifest and the MCP endpoint that every AgentGate store serves.
+   document, `llms.txt`, the UCP manifest and the MCP endpoint that every AgentPOS store serves.
    Those work regardless of which directory has caught up.
 2. Asking the directories to add Stellar is itself a task, and a reasonable one to raise alongside
    the extension draft. Built on Stellar is a live facilitator with real settlement; the gap is
    indexer coverage, not protocol support.
 
-## What every AgentGate store publishes
+## What every AgentPOS store publishes
 
 Served by the sidecar, no configuration required:
 
@@ -121,17 +121,17 @@ Two conventions the crawlers care about, and that are easy to get wrong:
 ## Submission checklist (when a public store is live)
 
 1. `curl https://<store>/openapi.json` returns 200 and validates as OpenAPI 3.1.
-2. `curl -X POST https://<store>/agentgate/checkout?cart=<id>` returns **402**, not 400 — request
+2. `curl -X POST https://<store>/agentpos/checkout?cart=<id>` returns **402**, not 400 — request
    validation must not run before the payment challenge.
-3. `pnpm --filter @agentgate/site gate:check` green, and `/agentgate/health` reports `ok: true`.
+3. `pnpm --filter @agentpos/site gate:check` green, and `/agentpos/health` reports `ok: true`.
 4. Submit to x402-list.com with `category: "Other"` (there is no Commerce category), the store's
-   own domain as `url`, and `endpoints: ["/agentgate/catalog", "/agentgate/checkout"]`.
+   own domain as `url`, and `endpoints: ["/agentpos/catalog", "/agentpos/checkout"]`.
 5. Register on x402scan with the merchant's wallet (SIWX).
 6. Record the outcome, including rejections and their reasons, back into this file.
 
-## An index of AgentGate stores is opt-in, and is not a marketplace
+## An index of AgentPOS stores is opt-in, and is not a marketplace
 
-The "For agents" page on `agentgate.novacorplabs.com` lists stores that have **explicitly asked**
+The "For agents" page on `agentpos.novacorplabs.com` lists stores that have **explicitly asked**
 to appear. That is a discovery index, not a central listing: no commission, no funds routed
 through us, no store listed without its own request. A merchant appearing there is still the
 merchant of record and still sells from its own domain (guardrail 7). A store that never opts in
@@ -142,7 +142,7 @@ manifest — the index is a convenience, never a gate.
 
 The ecosystem moves fast enough that this file has a shelf life.
 
-- Vendored protocol schemas: `pnpm --filter @agentgate/core vendor:schemas` reports drift and
+- Vendored protocol schemas: `pnpm --filter @agentpos/core vendor:schemas` reports drift and
   exits non-zero; `-- --write` updates them. Then update `packages/core/src/adapter/versions.ts`
   and `docs/adapter-versions.md`.
 - Directory facts above: re-read each `llms.txt` and OpenAPI document; they are the parts most

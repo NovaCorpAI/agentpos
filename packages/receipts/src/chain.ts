@@ -7,9 +7,9 @@
  */
 import { createHash } from "node:crypto";
 import { Keypair } from "@stellar/stellar-sdk";
-import { AgentGateError } from "@agentgate/core";
-import type { Logger } from "@agentgate/core";
-import { silentLogger } from "@agentgate/core";
+import { AgentPOSError } from "@agentpos/core";
+import type { Logger } from "@agentpos/core";
+import { silentLogger } from "@agentpos/core";
 import { GENESIS_PREV, RECEIPT_VERSION, receiptBodySchema } from "./types.js";
 import type { Receipt, ReceiptBody, ReceiptBodyInput, ReceiptStore } from "./types.js";
 
@@ -38,7 +38,7 @@ export function receiptPayload(hash: string): Buffer {
 export function signReceipt(signerSecret: string, body: ReceiptBody): Receipt {
   const keypair = Keypair.fromSecret(signerSecret);
   if (keypair.publicKey() !== body.store.signer) {
-    throw new AgentGateError("RECEIPT_SIGNATURE_INVALID", "The signing key is not the store signer", {
+    throw new AgentPOSError("RECEIPT_SIGNATURE_INVALID", "The signing key is not the store signer", {
       hint: "body.store.signer must be the public key of the secret used to sign.",
     });
   }

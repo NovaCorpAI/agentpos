@@ -1,16 +1,16 @@
-# SPEC 02: Servidor MCP comprador (`@agentgate/mcp-buyer`)
+# SPEC 02: Servidor MCP comprador (`@agentpos/mcp-buyer`)
 
 ## Objetivo
 
 Que cualquier agente (Claude u otro runtime MCP) descubra, evalúe y compre
 en tiendas agénticas, siempre dentro de un mandato humano. Es el cliente de
-referencia; los sitios AgentGate son estándar y cualquier otro cliente
+referencia; los sitios AgentPOS son estándar y cualquier otro cliente
 x402/UCP/ACP puede comprarles.
 
 ## Herramientas MCP
 
 1. `search_offers({ query, maxPriceUsdc?, sellers?, network? })`
-   Busca en: (a) el registry opt-in de sitios AgentGate, (b) índices x402
+   Busca en: (a) el registry opt-in de sitios AgentPOS, (b) índices x402
    del ecosistema vía adapter, (c) URLs de tiendas dadas explícitamente
    por el humano (lee su `/.well-known/ucp` o feed). Devuelve lista
    estructurada: item, description, attributes, price, seller (flag
@@ -42,7 +42,7 @@ modificar el mandato ni la dirección de envío bloqueada.
 
 Spending wallet local del comprador (keypair cifrado, passphrase), fondeada
 por el humano como tarjeta prepago y acotada por el mandato. Perfiles
-múltiples en `~/.agentgate/profiles/<name>.json`. `signerMode:
+múltiples en `~/.agentpos/profiles/<name>.json`. `signerMode:
 'local' | 'remote-approval'` reservado (remote = fase Build).
 Testnet default; mainnet requiere flag explícito + gate G2.
 

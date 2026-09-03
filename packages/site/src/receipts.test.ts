@@ -5,13 +5,13 @@
  */
 import { describe, expect, it } from "vitest";
 import { Keypair } from "@stellar/stellar-sdk";
-import { resolveConfig, usdc } from "@agentgate/core";
-import type { CatalogItem, OrderConnector, PaidOrderInput } from "@agentgate/core";
-import { exportAuditTrail, formatAuditTrail, verifyChain, verifyReceipt } from "@agentgate/receipts";
-import type { Receipt } from "@agentgate/receipts";
-import { signRequest } from "@agentgate/identity";
-import { createAgentGateApp } from "./app.js";
-import type { AgentGateSite } from "./app.js";
+import { resolveConfig, usdc } from "@agentpos/core";
+import type { CatalogItem, OrderConnector, PaidOrderInput } from "@agentpos/core";
+import { exportAuditTrail, formatAuditTrail, verifyChain, verifyReceipt } from "@agentpos/receipts";
+import type { Receipt } from "@agentpos/receipts";
+import { signRequest } from "@agentpos/identity";
+import { createAgentPOSApp } from "./app.js";
+import type { AgentPOSSite } from "./app.js";
 import { parseSiteConfig } from "./config.js";
 import type { SiteConfigInput } from "./config.js";
 import { SiteStorage } from "./storage.js";
@@ -49,7 +49,7 @@ function connectorMock(): OrderConnector & { created: PaidOrderInput[] } {
   };
 }
 
-function makeSite(overrides: Partial<SiteConfigInput> = {}): AgentGateSite {
+function makeSite(overrides: Partial<SiteConfigInput> = {}): AgentPOSSite {
   const site = parseSiteConfig({
     siteUrl: "https://shop.test",
     displayName: "Test Shop",
@@ -59,7 +59,7 @@ function makeSite(overrides: Partial<SiteConfigInput> = {}): AgentGateSite {
   });
   const storage = new SiteStorage(":memory:");
   storage.upsertItem(ebook);
-  return createAgentGateApp({
+  return createAgentPOSApp({
     site,
     core,
     storage,
@@ -70,9 +70,9 @@ function makeSite(overrides: Partial<SiteConfigInput> = {}): AgentGateSite {
   });
 }
 
-async function cart(gate: AgentGateSite, quantity = 1): Promise<string> {
+async function cart(gate: AgentPOSSite, quantity = 1): Promise<string> {
   const res = await gate.fetch(
-    new Request("https://shop.test/agentgate/cart", {
+    new Request("https://shop.test/agentpos/cart", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ items: [{ itemId: "ebook", quantity }] }),
@@ -83,10 +83,10 @@ async function cart(gate: AgentGateSite, quantity = 1): Promise<string> {
   return body.cartId;
 }
 
-async function pay(gate: AgentGateSite, cartId: string): Promise<Response> {
+async function pay(gate: AgentPOSSite, cartId: string): Promise<Response> {
   const { first, paid } = await payLikeAnAgent(
     gate.fetch,
-    `https://shop.test/agentgate/checkout?cart=${cartId}`,
+    `https://shop.test/agentpos/checkout?cart=${cartId}`,
     { method: "POST" },
   );
   return paid ?? first;
@@ -122,7 +122,7 @@ describe("receipts for settled orders (M4)", () => {
     const orderId = gate.storage.getOrderByCart(cartId)?.id as string;
 
     const res = await gate.fetch(
-      new Request(`https://shop.test/agentgate/orders/${orderId}/receipt`),
+      new Request(`https://shop.test/agentpos/orders/${orderId}/receipt`),
     );
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
@@ -136,11 +136,11 @@ describe("receipts for settled orders (M4)", () => {
     expect(verifyReceipt(body.receipts[0]).valid).toBe(true);
 
     const hash = (body.receipts[0] as Receipt).hash;
-    const byHash = await gate.fetch(new Request(`https://shop.test/agentgate/receipts/${hash}`));
+    const byHash = await gate.fetch(new Request(`https://shop.test/agentpos/receipts/${hash}`));
     expect(byHash.status).toBe(200);
 
     const missing = await gate.fetch(
-      new Request(`https://shop.test/agentgate/receipts/${"0".repeat(64)}`),
+      new Request(`https://shop.test/agentpos/receipts/${"0".repeat(64)}`),
     );
     expect(missing.status).toBe(404);
     expect(((await missing.json()) as { error: { code: string } }).error.code).toBe(
@@ -160,7 +160,7 @@ describe("receipts for settled orders (M4)", () => {
     expect(all[2]?.body.prev).toBe(all[1]?.hash);
     expect(verifyChain(all).valid).toBe(true);
 
-    const health = await gate.fetch(new Request("https://shop.test/agentgate/health"));
+    const health = await gate.fetch(new Request("https://shop.test/agentpos/health"));
     const body = (await health.json()) as { receipts?: { signer: string; chainHeight: number } };
     expect(body.receipts?.signer).toBe(storeKey.publicKey());
     expect(body.receipts?.chainHeight).toBe(3);
@@ -171,11 +171,11 @@ describe("receipts for settled orders (M4)", () => {
     const agent = Keypair.random();
     const body = JSON.stringify({ items: [{ itemId: "ebook", quantity: 1 }] });
     const res = await gate.fetch(
-      new Request("https://shop.test/agentgate/cart", {
+      new Request("https://shop.test/agentpos/cart", {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          ...signRequest(agent.secret(), { method: "POST", path: "/agentgate/cart", body }),
+          ...signRequest(agent.secret(), { method: "POST", path: "/agentpos/cart", body }),
         },
         body,
       }),
@@ -206,7 +206,7 @@ describe("receipts for what did not happen", () => {
     const gate = makeSite({ policy: { approvalThresholdUsdc: "1" } });
     const cartId = await cart(gate);
     const parked = await gate.fetch(
-      new Request(`https://shop.test/agentgate/checkout?cart=${cartId}`, { method: "POST" }),
+      new Request(`https://shop.test/agentpos/checkout?cart=${cartId}`, { method: "POST" }),
     );
     expect(parked.status).toBe(202);
     const { approvalId } = (await parked.json()) as { approvalId: string };
@@ -253,7 +253,7 @@ describe("a store that keeps no receipts", () => {
 
     const orderId = gate.storage.getOrderByCart(cartId)?.id as string;
     const res = await gate.fetch(
-      new Request(`https://shop.test/agentgate/orders/${orderId}/receipt`),
+      new Request(`https://shop.test/agentpos/orders/${orderId}/receipt`),
     );
     expect(res.status).toBe(404);
   });

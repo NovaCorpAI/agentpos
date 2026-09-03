@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FACILITATOR_URLS, configFromEnv, resolveConfig } from "./config.js";
-import { AgentGateError } from "./errors.js";
+import { AgentPOSError } from "./errors.js";
 
 describe("config", () => {
   it("defaults to testnet with the Built on Stellar facilitator", () => {
@@ -12,11 +12,11 @@ describe("config", () => {
   });
 
   it("locks mainnet behind explicit confirmation (guardrail 2)", () => {
-    expect(() => resolveConfig({ network: "mainnet" })).toThrowError(AgentGateError);
+    expect(() => resolveConfig({ network: "mainnet" })).toThrowError(AgentPOSError);
     try {
       resolveConfig({ network: "mainnet" });
     } catch (err) {
-      expect((err as AgentGateError).code).toBe("MAINNET_NOT_CONFIRMED");
+      expect((err as AgentPOSError).code).toBe("MAINNET_NOT_CONFIRMED");
     }
   });
 
@@ -25,7 +25,7 @@ describe("config", () => {
       resolveConfig({ network: "mainnet", allowMainnet: true }, { mainnetReady: true });
       expect.unreachable();
     } catch (err) {
-      expect((err as AgentGateError).code).toBe("RPC_URL_REQUIRED");
+      expect((err as AgentPOSError).code).toBe("RPC_URL_REQUIRED");
     }
     const cfg = resolveConfig(
       { network: "mainnet", allowMainnet: true, rpcUrl: "https://rpc.example.com" },
@@ -35,14 +35,14 @@ describe("config", () => {
     expect(cfg.facilitatorUrl).toBe(FACILITATOR_URLS.mainnet);
   });
 
-  it("reads AGENTGATE_* env vars", () => {
+  it("reads AGENTPOS_* env vars", () => {
     const cfg = configFromEnv({
-      AGENTGATE_NETWORK: "testnet",
-      AGENTGATE_FACILITATOR_API_KEY: "k1, k2",
-      AGENTGATE_LLM_PROVIDER: "openai-compatible",
-      AGENTGATE_LLM_MODEL: "some/model",
-      AGENTGATE_LLM_BASE_URL: "https://openrouter.ai/api/v1",
-      AGENTGATE_LLM_API_KEY: "x",
+      AGENTPOS_NETWORK: "testnet",
+      AGENTPOS_FACILITATOR_API_KEY: "k1, k2",
+      AGENTPOS_LLM_PROVIDER: "openai-compatible",
+      AGENTPOS_LLM_MODEL: "some/model",
+      AGENTPOS_LLM_BASE_URL: "https://openrouter.ai/api/v1",
+      AGENTPOS_LLM_API_KEY: "x",
     });
     expect(cfg.facilitatorApiKeys).toEqual(["k1", "k2"]);
     expect(cfg.llm.provider).toBe("openai-compatible");
@@ -51,14 +51,14 @@ describe("config", () => {
 
   it("picks the facilitator key for the configured network, falling back to the generic one", () => {
     const env = {
-      AGENTGATE_FACILITATOR_API_KEY: "generic",
-      AGENTGATE_FACILITATOR_API_KEY_TESTNET: "tkey",
-      AGENTGATE_FACILITATOR_API_KEY_MAINNET: "mkey",
+      AGENTPOS_FACILITATOR_API_KEY: "generic",
+      AGENTPOS_FACILITATOR_API_KEY_TESTNET: "tkey",
+      AGENTPOS_FACILITATOR_API_KEY_MAINNET: "mkey",
     };
-    expect(configFromEnv({ ...env, AGENTGATE_NETWORK: "testnet" }).facilitatorApiKeys).toEqual([
+    expect(configFromEnv({ ...env, AGENTPOS_NETWORK: "testnet" }).facilitatorApiKeys).toEqual([
       "tkey",
     ]);
-    expect(configFromEnv({ AGENTGATE_FACILITATOR_API_KEY: "generic" }).facilitatorApiKeys).toEqual([
+    expect(configFromEnv({ AGENTPOS_FACILITATOR_API_KEY: "generic" }).facilitatorApiKeys).toEqual([
       "generic",
     ]);
   });
@@ -68,7 +68,7 @@ describe("config", () => {
       resolveConfig({ facilitatorUrl: "not a url" });
       expect.unreachable();
     } catch (err) {
-      expect((err as AgentGateError).code).toBe("CONFIG_INVALID");
+      expect((err as AgentPOSError).code).toBe("CONFIG_INVALID");
     }
   });
 });

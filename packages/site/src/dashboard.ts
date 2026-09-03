@@ -7,7 +7,7 @@
  *    "my store sells to agents, look", on their URL, not a page of ours aggregating them.
  *  - Zero external resources: no CDN, no fonts, no analytics. It must work on a sidecar behind
  *    any CSP and leak nothing about who views it.
- *  - It renders only what /agentgate/metrics exposes, which is aggregates by construction. The
+ *  - It renders only what /agentpos/metrics exposes, which is aggregates by construction. The
  *    page cannot show buyer data because the endpoint does not have any.
  */
 

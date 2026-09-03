@@ -1,4 +1,4 @@
-# @agentgate/facilitator
+# @agentpos/facilitator
 
 A minimal, self-hostable **x402 facilitator for Stellar**: `/verify`, `/settle`, `/supported`.
 
@@ -15,7 +15,7 @@ analysis in [`docs/EVAL-facilitador-propio.md`](../../docs/EVAL-facilitador-prop
 
 ## What it is not
 
-**It is not a business.** AgentGate does not want to operate facilitators for other people. This
+**It is not a business.** AgentPOS does not want to operate facilitators for other people. This
 exists so that we can run our own CI deterministically, unblock our own mainnet, and give anyone
 who wants one a starting point that is not 800 lines of someone else's framework.
 
@@ -33,7 +33,7 @@ protocol-level way to charge the buyer.
 That leads to one rule and two consequences:
 
 - **A merchant who wants to bear their own costs runs their own facilitator.** It is a container
-  and two env vars on the store side. AgentGate's instance is for our own CI and demo store; we
+  and two env vars on the store side. AgentPOS's instance is for our own CI and demo store; we
   do not operate one for merchants, and the fee account is not a cost centre we want.
 - **The fee account is its own account.** Not the merchant's `payTo` (their revenue), not a
   buyer's wallet, not anything else you hold. It holds XLM for fees and nothing more, so the worst
@@ -46,10 +46,10 @@ if that account ever holds anything other than XLM.
 ### Create the fee account
 
 ```bash
-pnpm --filter @agentgate/facilitator keygen --network mainnet
+pnpm --filter @agentpos/facilitator keygen --network mainnet
 ```
 
-It writes `~/.agentgate/facilitator/mainnet.env` (owner-only) and prints **only the public
+It writes `~/.agentpos/facilitator/mainnet.env` (owner-only) and prints **only the public
 address**. The secret never reaches the terminal, and therefore never reaches a scrollback, a
 screenshot or a chat transcript. Send XLM to that address; 20 to 30 XLM lasts thousands of
 settlements. It refuses to overwrite an existing file unless `--force`, because silently replacing
@@ -58,11 +58,11 @@ a funded key strands its balance.
 ## Run it
 
 ```bash
-export AGENTGATE_FACILITATOR_NETWORK=testnet
-export AGENTGATE_FACILITATOR_SIGNER_SECRET=S...        # pays fees; holds nothing else
-export AGENTGATE_FACILITATOR_ASSETS=CBIELTK6...        # contract ids you will settle
-export AGENTGATE_FACILITATOR_KEYS=key-one,key-two      # Bearer tokens you hand to your stores
-pnpm --filter @agentgate/facilitator dev
+export AGENTPOS_FACILITATOR_NETWORK=testnet
+export AGENTPOS_FACILITATOR_SIGNER_SECRET=S...        # pays fees; holds nothing else
+export AGENTPOS_FACILITATOR_ASSETS=CBIELTK6...        # contract ids you will settle
+export AGENTPOS_FACILITATOR_KEYS=key-one,key-two      # Bearer tokens you hand to your stores
+pnpm --filter @agentpos/facilitator dev
 ```
 
 It prints the fee-paying address on startup. **Fund that account with XLM and nothing else.**
@@ -70,8 +70,8 @@ It prints the fee-paying address on startup. **Fund that account with XLM and no
 Point a store at it:
 
 ```bash
-AGENTGATE_FACILITATOR_URL=https://facilitator.example
-AGENTGATE_FACILITATOR_API_KEY=key-one
+AGENTPOS_FACILITATOR_URL=https://facilitator.example
+AGENTPOS_FACILITATOR_API_KEY=key-one
 ```
 
 No code change is needed on the store side; the URL has always been configurable.
@@ -80,13 +80,13 @@ No code change is needed on the store side; the URL has always been configurable
 
 | Variable | Required | Meaning |
 | --- | --- | --- |
-| `AGENTGATE_FACILITATOR_SIGNER_SECRET` | yes | Stellar secret (`S...`) that signs and pays fees. Environment only, never a file. |
-| `AGENTGATE_FACILITATOR_KEYS` | yes | Comma-separated Bearer tokens, 16+ chars each. |
-| `AGENTGATE_FACILITATOR_ASSETS` | yes | Comma-separated contract ids (`C...`) this facilitator will settle. |
-| `AGENTGATE_FACILITATOR_NETWORK` | no | `testnet` (default) or `mainnet`. |
-| `AGENTGATE_FACILITATOR_RPC_URL` | on mainnet | Soroban RPC. Mainnet refuses to guess. |
-| `AGENTGATE_FACILITATOR_MAX_FEE_STROOPS` | no | Per-transaction fee ceiling; verify refuses above it. Default 50,000. |
-| `AGENTGATE_FACILITATOR_MIN_BALANCE_STROOPS` | no | `/health` goes 503 below this. Default 50,000,000 (5 XLM). |
+| `AGENTPOS_FACILITATOR_SIGNER_SECRET` | yes | Stellar secret (`S...`) that signs and pays fees. Environment only, never a file. |
+| `AGENTPOS_FACILITATOR_KEYS` | yes | Comma-separated Bearer tokens, 16+ chars each. |
+| `AGENTPOS_FACILITATOR_ASSETS` | yes | Comma-separated contract ids (`C...`) this facilitator will settle. |
+| `AGENTPOS_FACILITATOR_NETWORK` | no | `testnet` (default) or `mainnet`. |
+| `AGENTPOS_FACILITATOR_RPC_URL` | on mainnet | Soroban RPC. Mainnet refuses to guess. |
+| `AGENTPOS_FACILITATOR_MAX_FEE_STROOPS` | no | Per-transaction fee ceiling; verify refuses above it. Default 50,000. |
+| `AGENTPOS_FACILITATOR_MIN_BALANCE_STROOPS` | no | `/health` goes 503 below this. Default 50,000,000 (5 XLM). |
 | `PORT` | no | Default 8403. |
 
 Three of those are refusals to start, not warnings, and each is deliberate:
@@ -143,6 +143,6 @@ Refusals that are about the request itself do use status codes, with machine-rea
 
 - The signing key is hot by necessity. Give it XLM for fees and nothing else, so the worst case
   of a compromise is a drained fee balance rather than a drained treasury.
-- Rotate `AGENTGATE_FACILITATOR_KEYS` by adding the new key, moving stores over, then removing
+- Rotate `AGENTPOS_FACILITATOR_KEYS` by adding the new key, moving stores over, then removing
   the old one. Key comparison is constant-time.
 - Put it behind TLS and a rate limiter. This service does not rate limit itself.

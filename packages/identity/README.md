@@ -1,6 +1,6 @@
-# @agentgate/identity
+# @agentpos/identity
 
-Know Your Agent for AgentGate stores: **who is buying, and who answers for them.**
+Know Your Agent for AgentPOS stores: **who is buying, and who answers for them.**
 
 A stablecoin transfer proves that funds moved. It does not say which agent asked, under whose
 authority, or whether that authority was withdrawn yesterday. This package adds that, with two
@@ -18,7 +18,7 @@ Apache-2.0. Cryptography is `@stellar/stellar-sdk` only; there is nothing home-m
 
 ## Store modes
 
-Set in `agentgate.config.json`:
+Set in `agentpos.config.json`:
 
 ```json
 { "identity": { "mode": "identified", "autoRegister": true } }
@@ -39,9 +39,9 @@ Identity is established when the cart is quoted, recorded on the cart and carrie
 At payment time the store re-reads its registry, so a key revoked in between cannot pay.
 
 ```bash
-npx agentgate agents list
-npx agentgate agents register ./attestation.json
-npx agentgate agents revoke GAGENT... -r "owner reported the key as lost"
+npx agentpos agents list
+npx agentpos agents register ./attestation.json
+npx agentpos agents revoke GAGENT... -r "owner reported the key as lost"
 ```
 
 The registry lives in the merchant's own SQLite database: no directory to sign up with, and
@@ -50,9 +50,9 @@ revocation takes effect on the agent's next request rather than on a cache expir
 ## Agent side
 
 ```ts
-import { signHttpMessage, signAttestation, encodeAttestation } from "@agentgate/identity";
+import { signHttpMessage, signAttestation, encodeAttestation } from "@agentpos/identity";
 
-const url = "https://shop.example/agentgate/cart";
+const url = "https://shop.example/agentpos/cart";
 const body = JSON.stringify({ items: [{ itemId: "mug", quantity: 1 }] });
 const res = await fetch(url, {
   method: "POST",
@@ -66,7 +66,7 @@ const res = await fetch(url, {
 });
 ```
 
-Any RFC 9421 client works; there is nothing AgentGate-specific to implement. The profile the
+Any RFC 9421 client works; there is nothing AgentPOS-specific to implement. The profile the
 store accepts: `alg` ed25519, `keyid` as a Stellar public key (`G...`), `@method` and `@path`
 covered, `content-digest` covered when there is a body, `created` within 60 seconds, and a
 `nonce`. `signRequest` still exists for clients on the pre-standard header set.
@@ -75,7 +75,7 @@ The owner signs the attestation once, offline, with a key that never has to touc
 
 ```ts
 const attestation = signAttestation(ownerSecret, {
-  v: "agentgate-attestation-1",
+  v: "agentpos-attestation-1",
   agent: agentPublicKey,
   owner: ownerPublicKey,
   name: "Ada's shopping agent",

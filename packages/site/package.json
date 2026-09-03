@@ -1,13 +1,13 @@
 {
-  "name": "@agentgate/site",
+  "name": "@agentpos/site",
   "version": "0.0.1",
-  "description": "AgentGate site library: turns a fiat e-commerce site into an agent-buyable store. Middleware or sidecar, x402 on Stellar, UCP/ACP/MCP surfaces, orders into the merchant's platform.",
+  "description": "AgentPOS site library: turns a fiat e-commerce site into an agent-buyable store. Middleware or sidecar, x402 on Stellar, UCP/ACP/MCP surfaces, orders into the merchant's platform.",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "agentgate": "./bin/agentgate.js"
+    "agentpos": "./bin/agentpos.js"
   },
   "exports": {
     ".": {
@@ -29,13 +29,13 @@
     "gate:check": "tsx scripts/gate-check.ts"
   },
   "dependencies": {
-    "@agentgate/connectors": "workspace:*",
-    "@agentgate/approvals": "workspace:*",
-    "@agentgate/core": "workspace:*",
-    "@agentgate/identity": "workspace:*",
-    "@agentgate/policy": "workspace:*",
-    "@agentgate/receipts": "workspace:*",
-    "@agentgate/scanner": "workspace:*",
+    "@agentpos/connectors": "workspace:*",
+    "@agentpos/approvals": "workspace:*",
+    "@agentpos/core": "workspace:*",
+    "@agentpos/identity": "workspace:*",
+    "@agentpos/policy": "workspace:*",
+    "@agentpos/receipts": "workspace:*",
+    "@agentpos/scanner": "workspace:*",
     "@clack/prompts": "^1.7.0",
     "@hono/node-server": "^2.1.1",
     "@modelcontextprotocol/sdk": "^1.30.0",

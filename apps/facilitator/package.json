@@ -1,5 +1,5 @@
 {
-  "name": "@agentgate/facilitator",
+  "name": "@agentpos/facilitator",
   "version": "0.0.1",
   "description": "A minimal, self-hostable x402 facilitator for Stellar: verify, settle and supported, built on the official @x402 SDKs. Exists so a store's ability to sell does not depend on one hosted service run by someone else.",
   "license": "Apache-2.0",
@@ -26,7 +26,7 @@
     "keygen": "tsx src/keygen.ts"
   },
   "dependencies": {
-    "@agentgate/core": "workspace:*",
+    "@agentpos/core": "workspace:*",
     "@hono/node-server": "^2.1.1",
     "@stellar/stellar-sdk": "^16.2.0",
     "@x402/core": "2.23.0",

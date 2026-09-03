@@ -12,7 +12,7 @@
  */
 import { z } from "zod";
 
-export const RECEIPT_VERSION = "agentgate-receipt-1";
+export const RECEIPT_VERSION = "agentpos-receipt-1";
 
 /** First link of a chain points here, so "no previous receipt" is stated rather than implied. */
 export const GENESIS_PREV = "genesis";

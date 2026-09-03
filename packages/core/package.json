@@ -1,7 +1,7 @@
 {
-  "name": "@agentgate/core",
+  "name": "@agentpos/core",
   "version": "0.0.1",
-  "description": "AgentGate core: config, money types, protocol adapters (x402, UCP, ACP), signer factory, LLM router, fiscal interface.",
+  "description": "AgentPOS core: config, money types, protocol adapters (x402, UCP, ACP), signer factory, LLM router, fiscal interface.",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/index.js",

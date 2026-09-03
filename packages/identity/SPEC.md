@@ -1,14 +1,14 @@
 # Agent Identity and Owner Attestation
 
-**Version:** `agentgate-attestation-1` · **Status:** draft · **Date:** 2026-08-29
+**Version:** `agentpos-attestation-1` · **Status:** draft · **Date:** 2026-08-29
 
 This document specifies how a buying agent identifies itself to a merchant, and how a human or
 organization vouches for that agent. It is written so a third party can verify both without
-AgentGate installed: everything below is Ed25519, SHA-256 and JSON.
+AgentPOS installed: everything below is Ed25519, SHA-256 and JSON.
 
 It is the identity half of the ecosystem extension draft
 [`agent-commerce-receipts`](../../specs/extensions/agent-commerce-receipts.md); the settlement
-half lives in `@agentgate/receipts`. Where this document and the extension draft differ, the
+half lives in `@agentpos/receipts`. Where this document and the extension draft differ, the
 extension draft is the one submitted to the working group: it delegates request authentication to
 RFC 9421 (the x402 `http-message-signatures` extension) and keeps only the owner attestation,
 merchant modes and revocation as new normative content. Section 4 below describes the
@@ -95,7 +95,7 @@ The nonce (or, absent one, the signature itself) is spent once, after the signat
 Kept for clients already signing this way. New implementations SHOULD use 4.0.
 
 ```
-AGENTGATE-REQUEST-V1\n
+AGENTPOS-REQUEST-V1\n
 <HTTP method, uppercase>\n
 <path with query string, exactly as sent>\n
 <lowercase hex SHA-256 of the raw request body; SHA-256 of the empty string when there is none>\n
@@ -145,7 +145,7 @@ A statement by an owner that an agent key acts on their behalf.
 
 ```json
 {
-  "v": "agentgate-attestation-1",
+  "v": "agentpos-attestation-1",
   "agent": "GAGENT…",
   "owner": "GOWNER…",
   "name": "Ada's shopping agent",
@@ -168,7 +168,7 @@ spending is the buyer's own mandate and the merchant's policy.
 The signature is over:
 
 ```
-agentgate-attestation-1\n<canonical JSON of the attestation object>
+agentpos-attestation-1\n<canonical JSON of the attestation object>
 ```
 
 Canonical JSON: object keys sorted lexicographically at every depth, `undefined` members omitted,
@@ -246,6 +246,6 @@ Machine-readable, so an agent can act rather than guess:
 
 ## Reference implementation
 
-`@agentgate/identity` (Apache-2.0), running in production sidecars.
+`@agentpos/identity` (Apache-2.0), running in production sidecars.
 Conformance vectors: `src/identity.test.ts` and `src/rfc9421.test.ts`, the latter including
 RFC 9421 Appendix B.2.6 verbatim (signature base and the RFC's own Ed25519 signature).

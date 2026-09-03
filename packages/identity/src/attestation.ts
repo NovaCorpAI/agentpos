@@ -3,13 +3,13 @@
  *
  * Keys are Ed25519 in Stellar StrKey form (`G...`) because that is the format this ecosystem
  * already reads, and because a third party can verify an attestation with any Stellar SDK and
- * the format spec, without AgentGate installed. See SPEC.md.
+ * the format spec, without AgentPOS installed. See SPEC.md.
  */
 import { Keypair } from "@stellar/stellar-sdk";
 import { z } from "zod";
-import { AgentGateError } from "@agentgate/core";
+import { AgentPOSError } from "@agentpos/core";
 
-export const ATTESTATION_VERSION = "agentgate-attestation-1";
+export const ATTESTATION_VERSION = "agentpos-attestation-1";
 
 const stellarKey = z.string().regex(/^G[A-Z2-7]{55}$/, "Ed25519 public key in Stellar StrKey form");
 
@@ -65,7 +65,7 @@ export function signAttestation(ownerSecret: string, input: AttestationInput): S
   const attestation = attestationSchema.parse(input);
   const owner = Keypair.fromSecret(ownerSecret);
   if (owner.publicKey() !== attestation.owner) {
-    throw new AgentGateError("AGENT_ATTESTATION_INVALID", "The signing key is not the attested owner", {
+    throw new AgentPOSError("AGENT_ATTESTATION_INVALID", "The signing key is not the attested owner", {
       hint: "Sign with the secret of the key named in `owner`.",
     });
   }

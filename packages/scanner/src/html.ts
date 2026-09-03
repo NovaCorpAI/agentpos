@@ -3,8 +3,8 @@
  * then Open Graph product tags. Every field carries evidence (locator) so nothing is invented.
  */
 import * as cheerio from "cheerio";
-import type { CatalogItemDraft, Evidence } from "@agentgate/core";
-import { slugify } from "@agentgate/core";
+import type { CatalogItemDraft, Evidence } from "@agentpos/core";
+import { slugify } from "@agentpos/core";
 
 interface JsonLdOffer {
   price?: string | number;

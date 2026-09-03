@@ -3,14 +3,14 @@
  * The agent never sees the key and never edits the mandate.
  */
 import {
-  AgentGateError,
+  AgentPOSError,
   createBuyerFetch,
   createLocalKeypairSigner,
   formatUsdc,
   loadKeypair,
   receiptFromResponse,
   resolveConfig,
-} from "@agentgate/core";
+} from "@agentpos/core";
 import type {
   Address,
   BuyerContact,
@@ -19,7 +19,7 @@ import type {
   CoreConfig,
   SettlementReceipt,
   SignerProvider,
-} from "@agentgate/core";
+} from "@agentpos/core";
 import { evaluateMandate, periodStart, toMandateError } from "./mandate.js";
 import { clearApproval, getApproval, requestApproval } from "./profile.js";
 import type { Profile } from "./profile.js";
@@ -84,10 +84,10 @@ export class BuyerService {
 
   private signer(): SignerProvider {
     if (this.signerCache) return this.signerCache;
-    const passphrase = this.deps.passphrase ?? process.env.AGENTGATE_BUYER_PASSPHRASE;
+    const passphrase = this.deps.passphrase ?? process.env.AGENTPOS_BUYER_PASSPHRASE;
     if (!passphrase) {
-      throw new AgentGateError("CONFIG_INVALID", "Wallet is locked", {
-        hint: "Set AGENTGATE_BUYER_PASSPHRASE for the MCP server process (the human who owns the wallet does this, never the agent).",
+      throw new AgentPOSError("CONFIG_INVALID", "Wallet is locked", {
+        hint: "Set AGENTPOS_BUYER_PASSPHRASE for the MCP server process (the human who owns the wallet does this, never the agent).",
       });
     }
     const kp = loadKeypair(this.profile.keyFile, passphrase);
@@ -102,8 +102,8 @@ export class BuyerService {
   async searchOffers(query: string, sites?: string[], maxPriceMinor?: bigint): Promise<Offer[]> {
     const targets = [...new Set([...(sites ?? []), ...this.profile.sites])];
     if (targets.length === 0) {
-      throw new AgentGateError("CONFIG_INVALID", "No sites to search", {
-        hint: "Pass `sites: [url]` or add store URLs to the profile (`agentgate-buyer sites add <url>`).",
+      throw new AgentPOSError("CONFIG_INVALID", "No sites to search", {
+        hint: "Pass `sites: [url]` or add store URLs to the profile (`agentpos-buyer sites add <url>`).",
       });
     }
     const results = await Promise.all(
@@ -139,7 +139,7 @@ export class BuyerService {
         this.profile.shipping &&
         JSON.stringify(shipping) !== JSON.stringify(this.profile.shipping)
       ) {
-        throw new AgentGateError("MANDATE_EXCEEDED", "Shipping address is locked by the mandate", {
+        throw new AgentPOSError("MANDATE_EXCEEDED", "Shipping address is locked by the mandate", {
           hint: "Omit `shipping`; the profile address is used automatically.",
         });
       }
@@ -156,7 +156,7 @@ export class BuyerService {
     const client = this.site(siteUrl);
     const info = await client.info();
     if (info.network !== this.core.caip2) {
-      throw new AgentGateError(
+      throw new AgentPOSError(
         "SPEC_MISMATCH",
         `Site settles on ${info.network}, profile is ${this.core.caip2}`,
         {
@@ -165,11 +165,11 @@ export class BuyerService {
       );
     }
     const cartRes = await this.fetchImpl(
-      `${client.url}/agentgate/cart/${encodeURIComponent(cartId)}`,
+      `${client.url}/agentpos/cart/${encodeURIComponent(cartId)}`,
       { headers: { accept: "application/json" } },
     );
     if (!cartRes.ok) {
-      throw new AgentGateError(
+      throw new AgentPOSError(
         cartRes.status === 410 ? "CART_EXPIRED" : "CART_NOT_FOUND",
         `Cart ${cartId} is not available (${cartRes.status})`,
         {
@@ -215,7 +215,7 @@ export class BuyerService {
       error?: { code?: string; message?: string; hint?: string };
     };
     if (response.status !== 200 || !body.orderId) {
-      throw new AgentGateError(
+      throw new AgentPOSError(
         "PAYMENT_REJECTED",
         body.error?.message ?? `Checkout answered ${response.status}`,
         {

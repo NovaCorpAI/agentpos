@@ -1,4 +1,4 @@
-# SPEC 08: Órdenes, checkout y connectors (`@agentgate/connectors`)
+# SPEC 08: Órdenes, checkout y connectors (`@agentpos/connectors`)
 
 ## Objetivo
 
@@ -50,7 +50,7 @@ Todo error `{ code, message, hint }` con `retryable: boolean`.
 - WooCommerce REST API v3 con consumer key/secret (guardados cifrados en el
   servidor del vendedor).
 - `createOrder`: `POST /wp-json/wc/v3/orders` con `set_paid: true`,
-  `payment_method: "agentgate"`, `payment_method_title: "Stablecoin (USDC on
+  `payment_method: "agentpos"`, `payment_method_title: "Stablecoin (USDC on
 Stellar)"`, `transaction_id: tx_hash`, `meta_data` con amount_usdc,
   network, ledger, memo, agente. Línea de items por product_id/variation_id.
   Billing/shipping desde `buyerContact`/`shipping`.
@@ -64,9 +64,9 @@ Stellar)"`, `transaction_id: tx_hash`, `meta_data` con amount_usdc,
 - Admin API GraphQL, versión trimestral fijada en adapter. Custom app con
   scopes `read_products, write_orders, read_inventory`.
 - `createOrder`: `orderCreate` con `financialStatus: PAID`,
-  `transactions[{ kind: SALE, status: SUCCESS, gateway: "agentgate_usdc_stellar",
+  `transactions[{ kind: SALE, status: SUCCESS, gateway: "agentpos_usdc_stellar",
 amount }]`, `customAttributes` con tx_hash/network/memo, `sourceName:
-"agentgate"`. Verificar en la versión vigente el soporte de gateway
+"agentpos"`. Verificar en la versión vigente el soporte de gateway
   custom en `orderCreate`; fallback: `draftOrderCreate` + `draftOrderComplete`
   con `paymentPending: false`.
 - `reserve`: `inventoryAdjustQuantities` o reserva vía draft order.
@@ -75,7 +75,7 @@ amount }]`, `customAttributes` con tx_hash/network/memo, `sourceName:
 ## Connector genérico (hook)
 
 ```
-createAgentGate({ connector: {
+createAgentPOS({ connector: {
   platform: 'generic',
   listProducts: async () => [...],          // opcional (si no, solo scan)
   getAvailability: async (items) => [...],
