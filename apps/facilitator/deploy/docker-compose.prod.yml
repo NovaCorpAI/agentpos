@@ -40,11 +40,15 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
-    networks: [internal]
+    # `edge` is the shared network other stacks (demo store) join so this single Caddy can
+    # front every public hostname on the box.
+    networks: [internal, edge]
     depends_on: [facilitator]
 
 networks:
   internal: {}
+  edge:
+    external: true
 
 volumes:
   caddy-data: {}

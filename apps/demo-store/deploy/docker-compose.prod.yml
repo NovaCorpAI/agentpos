@@ -1,0 +1,98 @@
+# The OFFICIAL AgentPOS demo store, publicly buyable on mainnet, honestly labeled as ours.
+# It doubles as the turnkey template for lighthouse-store deployments.
+#
+# From the monorepo root on the server:
+#   docker network create edge 2>/dev/null; \
+#   docker compose -f apps/demo-store/deploy/docker-compose.prod.yml --env-file /root/.agentpos/demo-store.env up -d --build
+#
+# The env file carries the secrets (DB password, WP admin, Woo REST keys, facilitator key).
+# Caddy (from the facilitator deploy) fronts everything on the `edge` network; WordPress and the
+# sidecar are never exposed to the internet directly.
+services:
+  demo-db:
+    image: mariadb:11
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: wordpress
+      MARIADB_USER: wordpress
+      MARIADB_PASSWORD: ${DEMO_DB_PASSWORD:?}
+      MARIADB_ROOT_PASSWORD: ${DEMO_DB_ROOT_PASSWORD:?}
+    volumes:
+      - demo-db:/var/lib/mysql
+    networks: [demo]
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  demo-wordpress:
+    image: wordpress:6-php8.3-apache
+    restart: unless-stopped
+    depends_on:
+      demo-db:
+        condition: service_healthy
+    environment:
+      WORDPRESS_DB_HOST: demo-db
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: ${DEMO_DB_PASSWORD:?}
+      WORDPRESS_DB_NAME: wordpress
+      # Behind Caddy: trust the forwarded proto so WP generates https URLs and avoids loops.
+      WORDPRESS_CONFIG_EXTRA: |
+        if (isset($$_SERVER['HTTP_X_FORWARDED_PROTO']) && $$_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') { $$_SERVER['HTTPS'] = 'on'; }
+    volumes:
+      - demo-wp:/var/www/html
+    networks: [demo, edge]
+
+  demo-seed:
+    image: wordpress:cli-php8.3
+    depends_on:
+      - demo-wordpress
+    user: "33:33"
+    environment:
+      WORDPRESS_DB_HOST: demo-db
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: ${DEMO_DB_PASSWORD:?}
+      WORDPRESS_DB_NAME: wordpress
+      SITE_URL: ${DEMO_SITE_URL:?}
+      ADMIN_PASSWORD: ${DEMO_ADMIN_PASSWORD:?}
+      SEED_CK: ${DEMO_WOO_CONSUMER_KEY:?}
+      SEED_CS: ${DEMO_WOO_CONSUMER_SECRET:?}
+    volumes:
+      - demo-wp:/var/www/html
+      - ../seed:/seed:ro
+    entrypoint: ["sh", "/seed/seed.sh"]
+    networks: [demo]
+
+  demo-sidecar:
+    build:
+      context: ../../..
+      dockerfile: apps/demo-store/deploy/Dockerfile.sidecar
+    image: agentpos-sidecar:prod
+    restart: unless-stopped
+    depends_on:
+      - demo-wordpress
+    environment:
+      AGENTPOS_NETWORK: mainnet
+      AGENTPOS_ALLOW_MAINNET: "true"
+      AGENTPOS_CHECKOUT_ASSET: USDC
+      AGENTPOS_RPC_URL: ${AGENTPOS_RPC_URL:?}
+      AGENTPOS_FACILITATOR_URL: ${AGENTPOS_FACILITATOR_URL:?}
+      AGENTPOS_FACILITATOR_API_KEY: ${AGENTPOS_FACILITATOR_API_KEY:?}
+      AGENTPOS_WOO_CONSUMER_KEY: ${DEMO_WOO_CONSUMER_KEY:?}
+      AGENTPOS_WOO_CONSUMER_SECRET: ${DEMO_WOO_CONSUMER_SECRET:?}
+    volumes:
+      # agentpos.config.json + .agentpos (SQLite, receipt signer) live here, on the host.
+      - /root/.agentpos/demo-store:/data
+    expose:
+      - "8402"
+    networks: [demo, edge]
+
+volumes:
+  demo-db:
+  demo-wp:
+
+networks:
+  demo: {}
+  edge:
+    external: true

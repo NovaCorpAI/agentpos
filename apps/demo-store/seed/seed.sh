@@ -3,10 +3,12 @@
 set -eu
 
 SITE_URL="${SITE_URL:-http://localhost:8080}"
-# Demo-only REST credentials (NOT secrets; allowlisted in .gitleaks.toml).
+ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin}"
+# REST credentials. CI/local default to public demo values (NOT secrets; allowlisted in
+# .gitleaks.toml). Production passes SEED_CK/SEED_CS with real secrets via env.
 # Exactly 43 chars each: WooCommerce stores consumer_secret in a varchar(43) column.
-CK="ck_agentposdemo000000000000000000000000000"
-CS="cs_agentposdemo000000000000000000000000000"
+CK="${SEED_CK:-ck_agentposdemo000000000000000000000000000}"
+CS="${SEED_CS:-cs_agentposdemo000000000000000000000000000}"
 export AG_DEMO_CK="$CK" AG_DEMO_CS="$CS"
 
 echo "[seed] waiting for WordPress files..."
@@ -16,7 +18,7 @@ until wp db check >/dev/null 2>&1; do sleep 2; done
 
 if ! wp core is-installed >/dev/null 2>&1; then
   wp core install --url="$SITE_URL" --title="AgentPOS Demo Store" \
-    --admin_user=admin --admin_password=admin --admin_email=admin@example.com --skip-email
+    --admin_user=admin --admin_password="$ADMIN_PASSWORD" --admin_email=admin@example.com --skip-email
 fi
 
 wp rewrite structure '/%postname%/' --hard >/dev/null
@@ -45,10 +47,21 @@ seed_product "Notebook A5 Dotted" "AG-NOTE-A5" "6.00" 100 "A5 notebook, 160 page
 seed_product "USB-C Cable 1m" "AG-CABLE-1M" "4.25" 200 "USB-C to USB-C, 1 m, 60 W, USB 2.0 data."
 seed_product "Sticker Pack" "AG-STICKERS" "3.00" 500 "10 vinyl stickers, waterproof, assorted designs."
 
-# Demo-only mu-plugin: WooCommerce accepts Basic Auth on the REST API only over SSL.
-# The local store runs on plain HTTP, so REST requests carrying an Authorization header
-# are treated as SSL. Never ship this to a real store: use HTTPS there.
+# Behind a TLS proxy, respect X-Forwarded-Proto so WP builds https URLs.
 mkdir -p /var/www/html/wp-content/mu-plugins
+case "$SITE_URL" in https*) cat > /var/www/html/wp-content/mu-plugins/agentpos-proxy.php <<'PHP'
+<?php
+/* Plugin Name: AgentPOS behind TLS proxy */
+if (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') {
+    $_SERVER['HTTPS'] = 'on';
+}
+PHP
+esac
+
+# Demo-only mu-plugin for LOCAL http runs: WooCommerce accepts Basic Auth on the REST API only
+# over SSL, so plain-http REST requests carrying an Authorization header are treated as SSL.
+# Only written when the site runs on http; a real store uses HTTPS.
+case "$SITE_URL" in http:*)
 cat > /var/www/html/wp-content/mu-plugins/agentpos-demo.php <<'PHP'
 <?php
 /* Plugin Name: AgentPOS demo store helpers (local only) */
@@ -59,9 +72,10 @@ if (
     $_SERVER['HTTPS'] = 'on';
 }
 PHP
+esac
 
 # REST API key: see seed/apikey.php (wc_api_hash for the key, clear secret, 43 chars).
 wp eval-file /seed/apikey.php
 
 echo "[seed] done. Store: $SITE_URL  REST: $SITE_URL/wp-json/wc/v3/products"
-echo "[seed] consumer_key=$CK consumer_secret=$CS"
+case "$CK" in *agentposdemo*) echo "[seed] consumer_key=$CK consumer_secret=$CS";; *) echo "[seed] REST key installed (values not printed)";; esac

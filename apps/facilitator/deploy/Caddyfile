@@ -10,3 +10,16 @@ facilitator.novacorplabs.com {
 	reverse_proxy facilitator:8403
 	encode gzip
 }
+
+# The official AgentPOS demo store. AgentPOS routes go to the sidecar; everything else is the
+# WooCommerce storefront. Same split any lighthouse store uses on its own server.
+demo.agentposhq.com {
+	@agentpos path /agentpos/* /.well-known/ucp /openapi.json /llms.txt
+	handle @agentpos {
+		reverse_proxy demo-sidecar:8402
+	}
+	handle {
+		reverse_proxy demo-wordpress:80
+	}
+	encode gzip
+}
