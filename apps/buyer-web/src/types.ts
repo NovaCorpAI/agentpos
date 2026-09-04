@@ -1,0 +1,117 @@
+/**
+ * Buyer-web domain types: the buyer's web profile (mandate + linked wallet PUBLIC address),
+ * purchase proposals awaiting a human decision, and the append-only activity log.
+ *
+ * Custody rule (hard, see CLAUDE.md #1): nothing in this module can represent a secret key.
+ * The profile links a wallet by public address only; signatures always happen on the buyer's
+ * own machine (agentpos-buyer CLI or a future signing bridge).
+ */
+import { z } from "zod";
+import { mandateSchema } from "@agentpos/mcp-buyer";
+
+/** Stellar PUBLIC key: starts with G. A secret starts with S and must never reach storage. */
+export const STELLAR_PUBLIC_KEY_RE = /^G[A-Z2-7]{55}$/;
+
+export const buyerWebProfileSchema = z.object({
+  id: z.string().min(1).default("default"),
+  /** Linked wallet, public address only. Never a secret; see STELLAR_PUBLIC_KEY_RE. */
+  walletAddress: z.string().regex(STELLAR_PUBLIC_KEY_RE).optional(),
+  /** Contact email the agent passes to stores as the buyer contact. */
+  email: z.email().optional(),
+  /** Store URLs the agent may search and buy from. Doubles as the mandate seller allowlist. */
+  stores: z.array(z.url()).default([]),
+  network: z.enum(["testnet", "mainnet"]).default("testnet"),
+  /** Reused verbatim from @agentpos/mcp-buyer: the agent can never change it. */
+  mandate: mandateSchema,
+  updatedAt: z.string(),
+});
+
+export type BuyerWebProfileInput = z.input<typeof buyerWebProfileSchema>;
+export type BuyerWebProfile = z.output<typeof buyerWebProfileSchema>;
+
+export type ProposalStatus = "pending" | "approved" | "rejected" | "expired";
+
+/**
+ * A purchase the agent wants to make, frozen as a quote, waiting for the human.
+ * `approved` means exactly that and no more: the money has NOT moved. Payment happens later,
+ * on the machine that holds the key.
+ */
+export interface Proposal {
+  id: string;
+  status: ProposalStatus;
+  storeUrl: string;
+  storeName: string;
+  itemId: string;
+  /** Human-readable cart summary, e.g. "2 x Ceramic Mug". */
+  title: string;
+  quantity: number;
+  /** Decimal USDC string as quoted by the store, e.g. "9.9". */
+  amount: string;
+  /** Same amount in minor units (7 decimals), for arithmetic. */
+  amountMinor: string;
+  asset: string;
+  network: string;
+  cartId: string;
+  checkoutUrl: string;
+  physical: boolean;
+  cartExpiresAt: string;
+  createdAt: string;
+  /** Set when the human approves or rejects. */
+  decidedAt?: string;
+}
+
+/**
+ * What an approval yields: everything needed to pay, and nothing that can pay by itself.
+ * The signature this refers to only exists on the buyer's own machine.
+ */
+export interface PaymentInstructions {
+  proposalId: string;
+  storeUrl: string;
+  cartId: string;
+  checkoutUrl: string;
+  amount: string;
+  asset: string;
+  network: string;
+  /** Always "local": this server has no key and cannot sign. */
+  signer: "local";
+  /** Exact command to run where the wallet key lives. */
+  cli: string;
+  note: string;
+}
+
+export interface ApprovalResult {
+  proposal: Proposal;
+  instructions: PaymentInstructions;
+}
+
+/** One row of the append-only activity log. */
+export interface ActivityEntry {
+  seq: number;
+  at: string;
+  kind:
+    | "profile.saved"
+    | "search"
+    | "proposal.created"
+    | "proposal.approved"
+    | "proposal.rejected"
+    | "proposal.expired";
+  data: Record<string, unknown>;
+}
+
+/** Channel-agnostic snapshot: what a web page or a future WhatsApp adapter reports. */
+export interface ServiceStatus {
+  profileConfigured: boolean;
+  walletLinked: boolean;
+  network: string;
+  stores: string[];
+  mandate?: {
+    maxPerTx: string;
+    maxTotal: string;
+    period: string;
+    allowPhysicalGoods: boolean;
+  };
+  pendingProposals: number;
+  approvedAwaitingSignature: number;
+  /** Sum of approved proposals in the current mandate period, decimal USDC. */
+  approvedInPeriod: string;
+}

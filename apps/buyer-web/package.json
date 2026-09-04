@@ -1,0 +1,42 @@
+{
+  "name": "@agentpos/buyer-web",
+  "version": "0.0.1",
+  "description": "Buyer-side web platform: a human configures their buying agent's mandate, watches what it does, and approves or rejects purchase proposals. Stores only a public wallet address; every signature happens on the buyer's own machine.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "engines": {
+    "node": ">=22.5"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.typecheck.json",
+    "test": "vitest run",
+    "lint": "eslint src",
+    "dev": "tsx src/server.ts",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "@agentpos/core": "workspace:*",
+    "@agentpos/mcp-buyer": "workspace:*",
+    "@hono/node-server": "^2.1.1",
+    "hono": "^4.13.4",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@agentpos/site": "workspace:*",
+    "@stellar/stellar-sdk": "^16.2.0",
+    "@types/node": "^24.13.3",
+    "tsx": "^4.23.12",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11"
+  }
+}
