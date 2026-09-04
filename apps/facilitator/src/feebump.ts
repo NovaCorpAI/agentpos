@@ -18,13 +18,8 @@
  * default), paid by the fee account like every other fee. Report upstream: the scheme should
  * expose an inclusion-fee strategy.
  */
-import {
-  FeeBumpTransaction,
-  Keypair,
-  Transaction,
-  TransactionBuilder,
-  rpc,
-} from "@stellar/stellar-sdk";
+import { FeeBumpTransaction, Keypair, TransactionBuilder, rpc } from "@stellar/stellar-sdk";
+import type { Transaction } from "@stellar/stellar-sdk";
 import type { Logger } from "@agentpos/core";
 
 /** Per-operation inclusion bid, in stroops. 10x the surge level that caused the incident. */
