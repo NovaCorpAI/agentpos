@@ -24,6 +24,7 @@ import {
   newTraceId,
   silentLogger,
   toReceipt,
+  usdc,
   usdcFromMinor,
 } from "@agentpos/core";
 import type {
@@ -583,6 +584,49 @@ export function createAgentPOSApp(deps: AgentPOSDeps): AgentPOSSite {
     asset: core.checkoutAsset,
   });
   app.get(`${base}/dashboard`, (c) => c.html(dashboardHtml));
+
+  // The rules the store enforces on agents, for the Rules tab of the dashboard. Read-only view
+  // derived from SiteConfig. Exposing it adds no attack surface: every rule here is already
+  // discoverable by probing the store (policy denials carry code + details, the 402 carries the
+  // payment terms, the UCP manifest carries payTo), so this only saves the merchant the probing.
+  // Secrets never appear: channels are reduced to configured/not booleans on purpose.
+  app.get(`${base}/dashboard/rules`, (c) => {
+    const p = site.policy;
+    // Optional USDC amounts normalized through the money types; null means "no limit".
+    const money = (v: string | undefined): string | null =>
+      v === undefined ? null : formatUsdc(usdc(v));
+    return c.json({
+      store: { name: site.displayName, url: siteUrl },
+      network: core.caip2,
+      asset: core.checkoutAsset,
+      payTo: site.payTo,
+      cartTtlMinutes: site.cartTtlMinutes,
+      policy: {
+        status: p.status,
+        maxOrderUsdc: money(p.maxOrderUsdc),
+        period: p.period,
+        maxPeriodUsdc: money(p.maxPeriodUsdc),
+        maxQuantityPerItem: p.maxQuantityPerItem ?? null,
+        maxQuantityPerOrder: p.maxQuantityPerOrder ?? null,
+        excludedItemsCount: p.excludedItems.length,
+        allowedShippingCountries: p.allowedShippingCountries,
+        approvalThresholdUsdc: money(p.approvalThresholdUsdc),
+      },
+      approvals: {
+        enabled: site.approvals.enabled,
+        ttlMinutes: site.approvals.ttlMinutes,
+        channels: {
+          webhook: site.approvals.webhookUrl !== undefined,
+          whatsapp: site.approvals.whatsapp !== undefined,
+        },
+      },
+      identity: { mode: site.identity.mode, autoRegister: site.identity.autoRegister },
+      receipts: {
+        enabled: site.receipts.enabled,
+        publicOrderReceipts: site.receipts.publicOrderReceipts,
+      },
+    });
+  });
 
   app.get(`${base}/health`, async (c) => {
     const facilitator = await facilitatorStatus();
