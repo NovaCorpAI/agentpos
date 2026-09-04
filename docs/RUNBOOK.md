@@ -67,6 +67,13 @@ log (`facilitator.verify_failed` con el mensaje), y si el RPC primario no respon
 `AGENTPOS_FACILITATOR_RPC_URL` al secundario documentado en `docs/RPC-MAINNET.md` y reiniciar.
 Nada se cobra mientras tanto: sin `verify` no hay `settle`.
 
+**`verify` pasa pero `settle` queda PENDING y nunca se incluye (o falla al tiro).** Vivido el
+2026-09-04: el cliente x402 arma la tx con 100 stroops de fee de inclusion, fijos y firmados por
+el comprador; cuando el minimo de la red sube de 100 (ese dia: 200), nada se incluye y parece
+caida del RPC. El facilitador ya envuelve cada envio en un fee-bump (ver
+`apps/facilitator/src/feebump.ts`); si reaparece, comparar `getFeeStats` contra la puja
+(`facilitator.fee_bump` en el log) y subirla.
+
 **`settle` responde `success: false`.** Leer `errorReason`. Si es un error de secuencia, dos
 instancias están firmando con la misma cuenta; debe correr una sola por cuenta de fees.
 

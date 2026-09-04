@@ -21,10 +21,11 @@ import { x402Facilitator } from "@x402/core/facilitator";
 import { ExactStellarScheme } from "@x402/stellar/exact/facilitator";
 import { createEd25519Signer } from "@x402/stellar";
 import type { PaymentPayload, PaymentRequirements } from "@x402/core/types";
-import { Keypair } from "@stellar/stellar-sdk";
+import { Keypair, Networks } from "@stellar/stellar-sdk";
 import { newTraceId, silentLogger } from "@agentpos/core";
 import type { Logger } from "@agentpos/core";
 import type { FacilitatorConfig } from "./config.js";
+import { enableFeeBumpSubmission } from "./feebump.js";
 
 export interface FacilitatorAppDeps {
   config: FacilitatorConfig;
@@ -72,6 +73,14 @@ export function createFacilitatorApp(deps: FacilitatorAppDeps): FacilitatorApp {
   const fetchImpl = deps.fetchImpl ?? globalThis.fetch;
 
   const keypair = Keypair.fromSecret(config.signerSecret);
+  // Fee-bump every submission: the client's inner tx carries a hardcoded 100-stroop inclusion
+  // fee that nobody downstream may change (the buyer signed it); when the network minimum rises
+  // above that, settlements silently never land. See feebump.ts for the full story.
+  enableFeeBumpSubmission({
+    signerSecret: config.signerSecret,
+    networkPassphrase: config.network === "mainnet" ? Networks.PUBLIC : Networks.TESTNET,
+    logger,
+  });
   const signer = createEd25519Signer(config.signerSecret, config.caip2);
   const scheme = new ExactStellarScheme([signer], {
     ...(config.rpcUrl ? { rpcConfig: { url: config.rpcUrl } } : {}),
