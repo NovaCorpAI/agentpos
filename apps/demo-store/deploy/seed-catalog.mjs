@@ -6,7 +6,7 @@
  * traffic sees exactly what this published:
  *
  *   docker compose -f docker-compose.prod.yml run --rm --no-deps \
- *     --entrypoint node demo-sidecar /app/apps-demo-seed/seed-catalog.mjs
+ *     --entrypoint node demo-sidecar /app/packages/site/seed-catalog.mjs
  *
  * Prices: the scanner suggests USDC from the store's fiat prices; PRICE_OVERRIDES_USDC (JSON,
  * e.g. '{"AG-STICKERS":"1.5"}') pins specific SKUs. The human confirmation the guardrail

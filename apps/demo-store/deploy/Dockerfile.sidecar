@@ -17,7 +17,7 @@ ENV NODE_ENV=production
 # The sidecar signs nothing and holds no funds, but it does hold the Woo REST key: never root.
 USER node
 COPY --from=build --chown=node:node /app /app
-COPY --chown=node:node apps/demo-store/deploy/seed-catalog.mjs /app/apps-demo-seed/seed-catalog.mjs
+COPY --chown=node:node apps/demo-store/deploy/seed-catalog.mjs /app/packages/site/seed-catalog.mjs
 # /data holds agentpos.config.json and the .agentpos dir (SQLite + receipt signer). Mount it.
 WORKDIR /data
 EXPOSE 8402

@@ -27,7 +27,7 @@ services:
       retries: 30
 
   demo-wordpress:
-    image: wordpress:6-php8.3-apache
+    image: wordpress:php8.3-apache
     restart: unless-stopped
     depends_on:
       demo-db:
