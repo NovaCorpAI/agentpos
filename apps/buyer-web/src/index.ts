@@ -9,7 +9,23 @@ export { BuyerWebStorage } from "./storage.js";
 export { createBuyerWebApp } from "./app.js";
 export type { BuyerWebApp, BuyerWebAppDeps } from "./app.js";
 export { configFromEnv } from "./config.js";
-export type { BuyerWebConfig } from "./config.js";
+export type {
+  BuyerWebConfig,
+  MetaWhatsAppConfig,
+  TwilioWhatsAppConfig,
+  WhatsAppConfig,
+} from "./config.js";
+export { ConversationHandler } from "./whatsapp/conversation.js";
+export type { ConversationDeps } from "./whatsapp/conversation.js";
+export { MetaTransport, createMetaWebhook, parseMetaWebhook, verifyMetaSignature } from "./whatsapp/meta.js";
+export { TwilioTransport, createTwilioWebhook, verifyTwilioSignature } from "./whatsapp/twilio.js";
+export { normalizeWhatsAppNumber, senderHash } from "./whatsapp/types.js";
+export type {
+  InboundMessage,
+  OutboundMessage,
+  WhatsAppLogger,
+  WhatsAppTransport,
+} from "./whatsapp/types.js";
 export { buyerWebProfileSchema, STELLAR_PUBLIC_KEY_RE } from "./types.js";
 export type {
   ActivityEntry,

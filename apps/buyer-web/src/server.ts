@@ -11,12 +11,22 @@ import { BuyerWebStorage } from "./storage.js";
 try {
   const config = configFromEnv();
   const storage = new BuyerWebStorage(config.dbFile);
-  const { app } = createBuyerWebApp({ storage, network: config.network });
+  const { app } = createBuyerWebApp({
+    storage,
+    network: config.network,
+    ...(config.whatsapp ? { whatsapp: config.whatsapp } : {}),
+  });
 
+  const channels = config.whatsapp
+    ? [config.whatsapp.meta ? "meta" : "", config.whatsapp.twilio ? "twilio" : ""]
+        .filter(Boolean)
+        .join("+")
+    : "disabled";
   console.log(`AgentPOS buyer web on :${config.port}`);
   console.log(`  network  ${config.network}`);
   console.log(`  storage  ${config.dbFile}`);
   console.log(`  mandate  http://localhost:${config.port}/`);
+  console.log(`  whatsapp ${channels}`);
   console.log(`  custody  this process stores PUBLIC wallet addresses only and cannot sign`);
 
   serve({ fetch: app.fetch, port: config.port });
