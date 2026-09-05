@@ -146,6 +146,53 @@ describe("site app", () => {
     expect(digitalOnly.status).toBe(201);
   });
 
+  it("keeps personalization notes per line and merges only identical ones", async () => {
+    const res = await req(
+      "/agentpos/cart",
+      json({
+        items: [
+          { itemId: "mug", quantity: 1, note: "Engrave: Ada" },
+          { itemId: "mug", quantity: 1, note: "Engrave: Grace" },
+          { itemId: "mug", quantity: 1, note: "Engrave: Ada" },
+          { itemId: "mug", quantity: 1 },
+        ],
+        buyer,
+        shipping,
+      }),
+    );
+    expect(res.status).toBe(201);
+    const cart = await read(res);
+    // Same note merges (Ada x2), different notes and the note-less line stay separate.
+    expect(cart.quote.lines).toHaveLength(3);
+    const byNote = new Map(
+      cart.quote.lines.map((l: { note?: string; quantity: number }) => [l.note, l.quantity]),
+    );
+    expect(byNote.get("Engrave: Ada")).toBe(2);
+    expect(byNote.get("Engrave: Grace")).toBe(1);
+    expect(byNote.get(undefined)).toBe(1);
+    expect(cart.quote.totalMinor).toBe("396000000"); // 4 x 9.9 USDC
+
+    // Availability is checked against the summed quantity: 6 mugs across notes exceeds stock (5).
+    const oos = await req(
+      "/agentpos/cart",
+      json({
+        items: [
+          { itemId: "mug", quantity: 3, note: "a" },
+          { itemId: "mug", quantity: 3, note: "b" },
+        ],
+        buyer,
+        shipping,
+      }),
+    );
+    expect(oos.status).toBe(409);
+
+    const tooLong = await req(
+      "/agentpos/cart",
+      json({ items: [{ itemId: "ebook", quantity: 1, note: "x".repeat(501) }] }),
+    );
+    expect(tooLong.status).toBe(400);
+  });
+
   it("rejects out of stock and unknown items", async () => {
     const oos = await req(
       "/agentpos/cart",

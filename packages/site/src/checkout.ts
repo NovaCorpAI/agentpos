@@ -276,20 +276,39 @@ export class CheckoutService {
         hint: "Send items: [{ itemId, quantity }].",
       });
     }
-    const merged = new Map<string, number>();
-    for (const l of lines) merged.set(l.itemId, (merged.get(l.itemId) ?? 0) + l.quantity);
+    const merged = new Map<string, CartLine>();
+    // Merge duplicates, but a personalization note is part of the identity of a line: two
+    // frames with different dedications must stay two lines.
+    for (const l of lines) {
+      const key = JSON.stringify([l.itemId, l.note ?? null]);
+      const prev = merged.get(key);
+      merged.set(key, {
+        itemId: l.itemId,
+        quantity: (prev?.quantity ?? 0) + l.quantity,
+        ...(l.note !== undefined ? { note: l.note } : {}),
+      });
+    }
 
-    const items = [...merged.entries()].map(([itemId, quantity]) => ({
+    const items = [...merged.values()].map(({ itemId, quantity, note }) => ({
       item: this.opts.catalog.getPublished(itemId),
       quantity,
+      note,
     }));
+    // Availability is checked against the SUM per item: two lines of the same frame with
+    // different dedications still draw from the same stock.
+    const availabilityTotals = new Map<string, number>();
+    for (const { item, quantity } of items) {
+      availabilityTotals.set(item.id, (availabilityTotals.get(item.id) ?? 0) + quantity);
+    }
     await this.assertAvailable(
-      items.map(({ item, quantity }) => ({
-        itemId: item.id,
-        externalId: item.externalId,
-        stockMode: item.stockMode,
-        quantity,
-      })),
+      items
+        .filter(({ item }, i, arr) => arr.findIndex((e) => e.item.id === item.id) === i)
+        .map(({ item }) => ({
+          itemId: item.id,
+          externalId: item.externalId,
+          stockMode: item.stockMode,
+          quantity: availabilityTotals.get(item.id) ?? 0,
+        })),
     );
 
     const payTos = new Set(items.map(({ item }) => item.payTo ?? this.opts.defaultPayTo));
@@ -304,13 +323,14 @@ export class CheckoutService {
     }
     const [payTo] = payTos;
 
-    const quoteLines: QuoteLine[] = items.map(({ item, quantity }) => {
+    const quoteLines: QuoteLine[] = items.map(({ item, quantity, note }) => {
       const unit = item.priceUsdc as UsdcMinor;
       return {
         itemId: item.id,
         ...(item.externalId ? { externalId: item.externalId } : {}),
         title: item.title,
         quantity,
+        ...(note !== undefined ? { note } : {}),
         unitPriceUsdc: unit,
         lineTotalUsdc: mulUsdc(unit, quantity),
         physical: item.physical,
@@ -346,7 +366,7 @@ export class CheckoutService {
     const now = new Date();
     const cart: Cart = {
       id: newId("cart"),
-      lines: [...merged.entries()].map(([itemId, quantity]) => ({ itemId, quantity })),
+      lines: [...merged.values()],
       quote,
       ...(buyer ? { buyer } : {}),
       ...(shipping ? { shipping } : {}),

@@ -435,6 +435,12 @@ export class WooCommerceConnector implements OrderConnector {
           product_id: target.product_id,
           ...(target.variation_id !== undefined ? { variation_id: target.variation_id } : {}),
           quantity: l.quantity,
+          // Buyer's free-text personalization, verbatim. The key has no underscore prefix on
+          // purpose: Woo hides underscored meta from the admin order screen, and the merchant
+          // must SEE the dedication to fulfill it.
+          ...(l.note !== undefined
+            ? { meta_data: [{ key: "Personalization", value: l.note }] }
+            : {}),
         };
       }),
       meta_data: [

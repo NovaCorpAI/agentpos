@@ -1036,6 +1036,7 @@ export function orderView(order: ReturnType<CheckoutService["getOrder"]>) {
         itemId: l.itemId,
         title: l.title,
         quantity: l.quantity,
+        ...(l.note !== undefined ? { note: l.note } : {}),
         lineTotal: formatUsdc(l.lineTotalUsdc),
       })),
       payment: order.payment,

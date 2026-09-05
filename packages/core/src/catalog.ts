@@ -64,6 +64,12 @@ export type BuyerContact = z.output<typeof buyerContactSchema>;
 export interface CartLine {
   itemId: string;
   quantity: number;
+  /**
+   * Free-text personalization for this line (an engraving, a dedication, a chosen color).
+   * Passed verbatim to the merchant's order; AgentPOS never interprets it and it never
+   * changes the price. Lines with different notes are never merged.
+   */
+  note?: string | undefined;
 }
 
 export interface QuoteLine extends CartLine {
@@ -247,6 +253,8 @@ export const buyerContactSchema = z.object({ email: z.email(), name: z.string().
 export const cartLineSchema = z.object({
   itemId: z.string().min(1),
   quantity: z.number().int().positive().max(1000),
+  // 500 chars keeps engravings and dedications while bounding order payload size.
+  note: z.string().trim().min(1).max(500).optional(),
 });
 
 export const catalogItemJsonSchema = z.object({

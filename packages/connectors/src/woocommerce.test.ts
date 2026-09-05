@@ -379,7 +379,10 @@ describe("WooCommerceConnector", () => {
     });
     const res = await c.createOrder({
       orderId: "ord_2",
-      lines: [line("cuadro", "301", 1), line("mug", "12", 2)],
+      lines: [
+        { ...line("cuadro", "301", 1), note: "Dedication: for Ada" },
+        line("mug", "12", 2),
+      ],
       totalUsdc: usdc("2"),
       payment: {
         txHash: "def",
@@ -392,7 +395,13 @@ describe("WooCommerceConnector", () => {
     });
     expect(res.externalOrderId).toBe("88");
     expect(sent?.line_items).toEqual([
-      { product_id: 30, variation_id: 301, quantity: 1 },
+      {
+        product_id: 30,
+        variation_id: 301,
+        quantity: 1,
+        // Visible (non-underscored) meta so the merchant sees the personalization on the order.
+        meta_data: [{ key: "Personalization", value: "Dedication: for Ada" }],
+      },
       { product_id: 12, quantity: 2 },
     ]);
   });

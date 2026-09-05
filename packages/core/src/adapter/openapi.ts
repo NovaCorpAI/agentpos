@@ -152,6 +152,13 @@ export function buildStoreOpenApi(input: StoreOpenApiInput): Record<string, unkn
                       properties: {
                         itemId: { type: "string", minLength: 1 },
                         quantity: { type: "integer", minimum: 1 },
+                        note: {
+                          type: "string",
+                          minLength: 1,
+                          maxLength: 500,
+                          description:
+                            "Free-text personalization for this line (engraving, dedication, chosen color). Passed verbatim to the merchant; never changes the price.",
+                        },
                       },
                       required: ["itemId", "quantity"],
                     },
