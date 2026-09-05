@@ -14,12 +14,23 @@ import type { BuyerWebStorage } from "./storage.js";
 import { activityPage, errorPage, mandatePage, proposalsPage } from "./pages.js";
 import type { MandateFormValues } from "./pages.js";
 import type { BuyerWebProfile } from "./types.js";
+import type { WhatsAppConfig } from "./config.js";
+import { ConversationHandler } from "./whatsapp/conversation.js";
+import { MetaTransport, createMetaWebhook } from "./whatsapp/meta.js";
+import { TwilioTransport, createTwilioWebhook } from "./whatsapp/twilio.js";
+import type { WhatsAppLogger, WhatsAppTransport } from "./whatsapp/types.js";
 
 export interface BuyerWebAppDeps {
   storage: BuyerWebStorage;
   network?: "testnet" | "mainnet";
   /** Tests inject the in-process store; production uses global fetch. */
   fetchImpl?: typeof globalThis.fetch;
+  /** WhatsApp channel; routes are mounted only when this is present. */
+  whatsapp?: WhatsAppConfig;
+  /** Tests inject fake transports; production builds Meta/Twilio transports from config. */
+  whatsappTransports?: { meta?: WhatsAppTransport; twilio?: WhatsAppTransport };
+  /** Structured event log for the WhatsApp channel. Event codes and sender hashes only. */
+  log?: WhatsAppLogger;
 }
 
 export interface BuyerWebApp {
@@ -214,6 +225,39 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
   app.post("/api/proposals/:id/reject", (c) =>
     c.json({ proposal: service.reject(c.req.param("id")) }),
   );
+
+  // --- WhatsApp channel (mounted only when configured) ----------------------
+
+  if (deps.whatsapp) {
+    const log: WhatsAppLogger =
+      deps.log ??
+      ((event, data) =>
+        console.log(JSON.stringify({ at: new Date().toISOString(), event, ...data })));
+    const conversation = new ConversationHandler({
+      service,
+      allowedNumbers: deps.whatsapp.allowedNumbers,
+      log,
+    });
+    if (deps.whatsapp.meta) {
+      const hooks = createMetaWebhook({
+        config: deps.whatsapp.meta,
+        conversation,
+        transport: deps.whatsappTransports?.meta ?? new MetaTransport(deps.whatsapp.meta),
+        log,
+      });
+      app.get("/whatsapp/meta", hooks.get);
+      app.post("/whatsapp/meta", hooks.post);
+    }
+    if (deps.whatsapp.twilio) {
+      const hooks = createTwilioWebhook({
+        config: deps.whatsapp.twilio,
+        conversation,
+        transport: deps.whatsappTransports?.twilio ?? new TwilioTransport(deps.whatsapp.twilio),
+        log,
+      });
+      app.post("/whatsapp/twilio", hooks.post);
+    }
+  }
 
   // --- errors ----------------------------------------------------------------
 
