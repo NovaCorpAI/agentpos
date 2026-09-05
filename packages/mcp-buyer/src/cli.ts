@@ -198,12 +198,13 @@ program
   .argument("<store-url>", "store origin, e.g. https://shop.example")
   .option("--item <id>", "item to buy (default: the cheapest published item)")
   .option("-q, --quantity <n>", "how many", "1")
+  .option("--note <text>", "free-text personalization for the line (engraving, dedication)")
   .option("--dry-run", "stop before paying: no wallet and no funds needed")
   .option("--json", "print the run as JSON instead of narrating it")
   .action(
     async (
       storeUrl: string,
-      opts: { item?: string; quantity: string; dryRun?: boolean; json?: boolean },
+      opts: { item?: string; quantity: string; note?: string; dryRun?: boolean; json?: boolean },
     ) => {
       const name = program.opts<{ profile: string }>().profile;
       try {
@@ -221,6 +222,7 @@ program
         const result = await runDemoPurchase({
           storeUrl,
           itemId: opts.item,
+          note: opts.note,
           quantity: Number(opts.quantity),
           dryRun: Boolean(opts.dryRun),
           buyer,

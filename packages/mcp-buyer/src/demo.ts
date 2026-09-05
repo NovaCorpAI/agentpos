@@ -31,6 +31,8 @@ export interface DemoOptions {
   /** Item id to buy. Defaults to the cheapest published item. */
   itemId?: string | undefined;
   quantity?: number;
+  /** Free-text personalization for the line (engraving, dedication); the store forwards it verbatim. */
+  note?: string | undefined;
   dryRun?: boolean;
   buyer?: BuyerContact | undefined;
   shipping?: Address | undefined;
@@ -177,7 +179,7 @@ export async function runDemoPurchase(options: DemoOptions): Promise<DemoResult>
 
   // 3. Quote. Free, reserves nothing, and returns the exact terms the 402 will demand.
   const cart = await client.createCart(
-    [{ itemId: item.id, quantity }],
+    [{ itemId: item.id, quantity, ...(options.note !== undefined ? { note: options.note } : {}) }],
     options.buyer,
     options.shipping,
   );
