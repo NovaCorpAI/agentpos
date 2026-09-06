@@ -44,6 +44,8 @@ const CSS = `
   .tag.approved { color: #7ee2a8; background: #12261a; border: 1px solid #1f4030; }
   .tag.rejected { color: #ff9c9c; background: #2a1215; border: 1px solid #5a1e24; }
   .tag.expired { color: #8b949e; background: #161b22; border: 1px solid #30363d; }
+  .tag.paid { color: #7ee2a8; background: #12261a; border: 1px solid #1f4030; }
+  .fail { color: #ff9c9c; font-size: 0.85rem; border-left: 3px solid #5a1e24; padding-left: 12px; margin: 12px 0; }
   table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
   th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid #21262d; }
   th { color: #8b949e; font-weight: 500; font-size: 0.8rem; }
@@ -172,6 +174,7 @@ function proposalMeta(p: Proposal): string {
 export function proposalsPage(options: {
   pending: Proposal[];
   approved: Proposal[];
+  paid: Proposal[];
   stores: string[];
   network: string;
   instructionsFor: (p: Proposal) => { checkoutUrl: string; cli: string; note: string };
@@ -195,11 +198,15 @@ export function proposalsPage(options: {
   const approvedCards = options.approved
     .map((p) => {
       const i = options.instructionsFor(p);
+      const failure = p.failure
+        ? `<div class="fail">Last payment attempt failed with <strong>${esc(p.failure.code)}</strong>: ${esc(p.failure.message)} (${esc(p.failure.at)})</div>`
+        : "";
       return `
   <div class="card"${options.highlight === p.id ? ' style="border-color:#58a6ff"' : ""}>
     <div class="amount">${esc(p.amount)} ${esc(p.asset)}${statusTag(p.status)}</div>
     <div>${esc(p.title)}</div>
     ${proposalMeta(p)}
+    ${failure}
     <p class="custody">${esc(i.note)}</p>
     <div class="meta">Checkout: <span class="mono">${esc(i.checkoutUrl)}</span></div>
     <div class="meta">Pay from the machine that holds your key:</div>
@@ -209,6 +216,22 @@ export function proposalsPage(options: {
     </div>
   </div>`;
     })
+    .join("");
+
+  const paidCards = options.paid
+    .map(
+      (p) => `
+  <div class="card">
+    <div class="amount">${esc(p.amount)} ${esc(p.asset)}${statusTag(p.status)}</div>
+    <div>${esc(p.title)}</div>
+    ${proposalMeta(p)}
+    ${
+      p.payment
+        ? `<div class="meta">Settled ${esc(p.payment.paidAt)} · tx <span class="mono">${esc(p.payment.txHash)}</span> · order <span class="mono">${esc(p.payment.orderId)}</span></div>`
+        : ""
+    }
+  </div>`,
+    )
     .join("");
 
   const storeOptions = options.stores
@@ -243,6 +266,7 @@ export function proposalsPage(options: {
   ${pendingCards || '<div class="empty">No pending proposals.</div>'}
   <h2>Approved, awaiting signature</h2>
   ${approvedCards || '<div class="empty">Nothing approved and unpaid.</div>'}
+  ${paidCards ? `<h2>Paid</h2>${paidCards}` : ""}
   ${proposeForm}`;
   return layout({
     title: "Proposals",
@@ -262,6 +286,9 @@ const KIND_LABEL: Record<ActivityEntry["kind"], string> = {
   "proposal.approved": "proposal approved",
   "proposal.rejected": "proposal rejected",
   "proposal.expired": "quote expired",
+  "signer.queue": "signer picked up the queue",
+  "proposal.paid": "paid",
+  "proposal.payment_failed": "payment failed",
 };
 
 function activitySummary(e: ActivityEntry): string {
@@ -271,6 +298,12 @@ function activitySummary(e: ActivityEntry): string {
       return `max ${String(d.maxPerTx)} per purchase, ${String(d.maxTotal)} per ${String(d.period)}`;
     case "search":
       return `"${String(d.query)}" · ${String(d.results)} result(s)`;
+    case "signer.queue":
+      return `${String(d.proposals)} proposal(s) handed to the local signer`;
+    case "proposal.paid":
+      return `${String(d.title)} · ${String(d.amount)} · tx ${String(d.txHash)}`;
+    case "proposal.payment_failed":
+      return `${String(d.title)} · ${String(d.code)}: ${String(d.message)}`;
     default:
       return [d.title, d.amount]
         .filter((x) => x !== undefined)
@@ -294,7 +327,7 @@ export function activityPage(options: {
   const history = options.proposals
     .map(
       (p) =>
-        `<tr><td class="meta">${esc(p.createdAt)}</td><td>${esc(p.title)}</td><td>${esc(p.amount)} ${esc(p.asset)}</td><td>${statusTag(p.status)}</td></tr>`,
+        `<tr><td class="meta">${esc(p.createdAt)}</td><td>${esc(p.title)}</td><td>${esc(p.amount)} ${esc(p.asset)}</td><td>${statusTag(p.status)}${p.payment ? ` <span class="mono">${esc(p.payment.txHash)}</span>` : ""}</td></tr>`,
     )
     .join("");
   const s = options.status;

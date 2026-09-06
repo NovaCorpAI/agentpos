@@ -98,6 +98,50 @@ refusal and is then ignored. `whatsapp:+...` prefixes are normalized before comp
 Logs never contain tokens, phone numbers or message contents: event codes plus an 8-char
 sha256 sender hash only.
 
+## Signing bridge
+
+Approving on the web or WhatsApp **queues** the purchase; money only moves where the wallet
+key lives. That is the whole zero-custody design: this server stores a public address and a
+queue, the buyer's own machine holds the key and does the paying.
+
+The bridge has two halves:
+
+1. **buyer-web (this app)** exposes a pending-signature feed when `SIGNER_TOKEN` is set
+   (min 24 characters, e.g. `openssl rand -hex 24`; without it the routes are not mounted
+   at all):
+   - `GET /api/signer/queue` - approved-and-unpaid proposals, each with
+     `proposalId, storeUrl, itemId, quantity, amount, amountMinor` (the quoted total the
+     human approved).
+   - `POST /api/signer/paid` `{ proposalId, txHash, orderId }` - marks a proposal paid
+     (idempotent; refused with a typed 409/410 for anything not approved).
+   - `POST /api/signer/failed` `{ proposalId, code, message }` - records why a payment
+     attempt failed; the proposal stays approved and the reason is shown on `/proposals`,
+     `/activity` and in the WhatsApp `estado` reply.
+
+   All three require `Authorization: Bearer <SIGNER_TOKEN>` (compared in constant time).
+   The token authorizes the buyer's OWN signer daemon and nothing else; it cannot approve
+   proposals, and possessing it still moves no money.
+
+2. **The watcher** runs on the machine that holds the wallet (the same one where
+   `agentpos-buyer init` created the encrypted keyfile):
+
+   ```sh
+   export AGENTPOS_SIGNER_TOKEN=<same value as SIGNER_TOKEN>   # env only, never a flag
+   export AGENTPOS_BUYER_PASSPHRASE=<your keyfile passphrase>
+   agentpos-buyer watch https://your-buyer-web.example          # polls every 15s
+   ```
+
+   It pays each queued proposal through the exact same `BuyerService` a direct purchase
+   uses, so the local profile mandate (maxPerTx, allowed sellers, period ceiling) still
+   applies: the queue never bypasses it. It refuses to pay more than the human approved
+   (`REQUOTE_REQUIRED` if the store re-quotes higher), reports every outcome back, and
+   never retries a failed proposal in a loop. `--once` processes the queue a single time
+   (cron users), `--interval <seconds>` changes the poll rate. See the
+   `@agentpos/mcp-buyer` README for details.
+
+Once the watcher reports a payment, the proposal shows as **paid** with its transaction
+hash on the web, and WhatsApp `estado` answers "pagada" with the same hash.
+
 ## Run
 
 ```sh
@@ -109,6 +153,7 @@ Environment (all optional):
 - `BUYER_WEB_PORT` - default `8788`
 - `BUYER_WEB_DB` - SQLite file, default `~/.agentpos/buyer-web.sqlite`
 - `AGENTPOS_NETWORK` - `testnet` (default) or `mainnet`
+- `SIGNER_TOKEN` - enables the signing bridge (`/api/signer/*`, see above); min 24 chars
 - WhatsApp (optional, see above): `WHATSAPP_ALLOWED_NUMBERS`, `META_VERIFY_TOKEN`,
   `META_APP_SECRET`, `META_ACCESS_TOKEN`, `META_PHONE_NUMBER_ID`, `TWILIO_ACCOUNT_SID`,
   `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`, `TWILIO_WEBHOOK_URL`

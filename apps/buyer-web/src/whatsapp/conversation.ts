@@ -60,6 +60,7 @@ const STATUS_ES: Record<string, string> = {
   approved: "aprobada, en espera de firma",
   rejected: "rechazada",
   expired: "expirada",
+  paid: "pagada",
 };
 
 /** Lowercase and strip accents so "sí", "Si" and "si" are the same command word. */
@@ -190,6 +191,8 @@ export class ConversationHandler {
       "",
       "Este bot no guarda llaves y no puede pagar por ti. Para pagar, ejecuta en la maquina donde vive tu wallet:",
       instructions.cli,
+      "",
+      "Si en esa maquina corre 'agentpos-buyer watch', el pago se hara solo en unos segundos y aqui veras la propuesta como pagada.",
     ].join("\n");
   }
 
@@ -208,7 +211,16 @@ export class ConversationHandler {
       const proposal = this.service.getProposal(state.lastProposalId);
       if (proposal) {
         const label = STATUS_ES[proposal.status] ?? proposal.status;
-        return `Tu ultima propuesta (${proposal.title}, ${proposal.amount} USDC): ${label}.`;
+        const lines = [`Tu ultima propuesta (${proposal.title}, ${proposal.amount} USDC): ${label}.`];
+        if (proposal.status === "paid" && proposal.payment) {
+          lines.push(`Transaccion: ${proposal.payment.txHash}`);
+        }
+        if (proposal.status === "approved" && proposal.failure) {
+          lines.push(
+            `El ultimo intento de pago fallo (${proposal.failure.code}): ${proposal.failure.message}`,
+          );
+        }
+        return lines.join("\n");
       }
     }
     const s = this.service.status();

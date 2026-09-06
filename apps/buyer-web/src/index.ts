@@ -36,4 +36,5 @@ export type {
   Proposal,
   ProposalStatus,
   ServiceStatus,
+  SignerQueueItem,
 } from "./types.js";

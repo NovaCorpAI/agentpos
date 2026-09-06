@@ -5,7 +5,8 @@
  * Flow: searchOffers -> propose (quote frozen, human notified) -> approve | reject.
  * approve() marks the proposal approved and returns payment instructions; it does NOT pay.
  * This process holds no key and cannot pay. The buyer pays from their own machine
- * (agentpos-buyer CLI, or a later signing bridge) where the local signer lives.
+ * (agentpos-buyer CLI, or its `watch` signing bridge) where the local signer lives; the
+ * bridge then reports the settled txHash back through markPaid()/markPaymentFailed().
  */
 import { randomUUID } from "node:crypto";
 import { AgentPOSError, addUsdc, formatUsdc, usdcFromMinor } from "@agentpos/core";
@@ -20,6 +21,7 @@ import type {
   PaymentInstructions,
   Proposal,
   ServiceStatus,
+  SignerQueueItem,
 } from "./types.js";
 
 /**
@@ -61,6 +63,8 @@ export class BuyerWebService {
   private readonly network: "testnet" | "mainnet";
   private readonly fetchImpl: typeof globalThis.fetch | undefined;
   private readonly now: () => Date;
+  /** Last set of proposal ids handed to the signer, to log queue deliveries without spamming. */
+  private lastQueueKey = "";
 
   constructor(deps: BuyerWebServiceDeps) {
     this.storage = deps.storage;
@@ -225,6 +229,9 @@ export class BuyerWebService {
    */
   approve(proposalId: string): ApprovalResult {
     const proposal = this.requireProposal(proposalId);
+    if (proposal.status === "paid") {
+      throw this.alreadyPaid(proposal);
+    }
     if (proposal.status === "rejected") {
       throw new AgentPOSError("APPROVAL_REJECTED", "This proposal was already rejected", {
         hint: "Ask the agent to propose the purchase again if you changed your mind.",
@@ -256,6 +263,9 @@ export class BuyerWebService {
   /** Reject a pending (or even an approved-but-unpaid) proposal. Idempotent. */
   reject(proposalId: string): Proposal {
     const proposal = this.requireProposal(proposalId);
+    if (proposal.status === "paid") {
+      throw this.alreadyPaid(proposal);
+    }
     if (proposal.status === "rejected") return proposal;
     const decided: Proposal = {
       ...proposal,
@@ -283,8 +293,103 @@ export class BuyerWebService {
     return this.storage.listProposals("approved");
   }
 
+  paidProposals(): Proposal[] {
+    return this.storage.listProposals("paid");
+  }
+
   proposalHistory(): Proposal[] {
     return this.storage.listProposals();
+  }
+
+  // --- signing bridge --------------------------------------------------------
+  // The other half lives in `agentpos-buyer watch`: the buyer's OWN machine polls this
+  // queue, pays with the local wallet (which this server never sees) and reports back.
+
+  /**
+   * Approved-and-unpaid proposals, shaped for the signer daemon. Logged to the activity
+   * trail once per distinct set of ids, so a 15-second poll does not flood the history.
+   */
+  signerQueue(): SignerQueueItem[] {
+    const items = this.storage.listProposals("approved").map(
+      (p): SignerQueueItem => ({
+        proposalId: p.id,
+        storeUrl: p.storeUrl,
+        itemId: p.itemId,
+        quantity: p.quantity,
+        title: p.title,
+        amount: p.amount,
+        amountMinor: p.amountMinor,
+        asset: p.asset,
+        network: p.network,
+        approvedAt: p.decidedAt ?? p.createdAt,
+      }),
+    );
+    const key = items
+      .map((i) => i.proposalId)
+      .sort()
+      .join(",");
+    if (items.length > 0 && key !== this.lastQueueKey) {
+      this.storage.appendActivity(
+        "signer.queue",
+        { proposals: items.length, proposalIds: items.map((i) => i.proposalId) },
+        this.now().toISOString(),
+      );
+    }
+    this.lastQueueKey = key;
+    return items;
+  }
+
+  /**
+   * Record that the buyer's own machine settled the payment for an approved proposal.
+   * Idempotent on an already-paid proposal; anything else that is not `approved` is
+   * refused with a typed error (a payment cannot be claimed for a proposal the human
+   * never approved).
+   */
+  markPaid(proposalId: string, payment: { txHash: string; orderId: string }): Proposal {
+    const proposal = this.requireProposal(proposalId);
+    if (proposal.status === "paid") return proposal;
+    if (proposal.status !== "approved") throw this.notApproved(proposal);
+    // A previous failed attempt is history once the payment settles.
+    const { failure: _failure, ...rest } = proposal;
+    const paidAt = this.now().toISOString();
+    const paid: Proposal = {
+      ...rest,
+      status: "paid",
+      payment: { ...payment, paidAt },
+    };
+    this.storage.saveProposal(paid);
+    this.storage.appendActivity(
+      "proposal.paid",
+      {
+        proposalId: paid.id,
+        title: paid.title,
+        amount: paid.amount,
+        txHash: payment.txHash,
+        orderId: payment.orderId,
+      },
+      paidAt,
+    );
+    return paid;
+  }
+
+  /**
+   * Record why the signer daemon could not pay an approved proposal. The proposal STAYS
+   * approved (the human's decision stands); the failure is shown so the human knows why the
+   * money has not moved. A failure reported after the proposal was paid is ignored (stale).
+   */
+  markPaymentFailed(proposalId: string, failure: { code: string; message: string }): Proposal {
+    const proposal = this.requireProposal(proposalId);
+    if (proposal.status === "paid") return proposal;
+    if (proposal.status !== "approved") throw this.notApproved(proposal);
+    const at = this.now().toISOString();
+    const failed: Proposal = { ...proposal, failure: { ...failure, at } };
+    this.storage.saveProposal(failed);
+    this.storage.appendActivity(
+      "proposal.payment_failed",
+      { proposalId: failed.id, title: failed.title, code: failure.code, message: failure.message },
+      at,
+    );
+    return failed;
   }
 
   instructionsFor(proposal: Proposal): PaymentInstructions {
@@ -355,6 +460,29 @@ export class BuyerWebService {
     return proposal;
   }
 
+  private alreadyPaid(proposal: Proposal): AgentPOSError {
+    return new AgentPOSError("CONFIG_INVALID", "This proposal is already paid", {
+      hint: `Nothing left to decide: it settled with transaction ${proposal.payment?.txHash ?? "(unknown)"}.`,
+    });
+  }
+
+  /** Typed refusal for marking paid/failed a proposal the human never approved. */
+  private notApproved(proposal: Proposal): AgentPOSError {
+    if (proposal.status === "pending") {
+      return new AgentPOSError("APPROVAL_PENDING", "This proposal is not approved yet", {
+        hint: "Only approved proposals can be paid; the human decides on /proposals first.",
+      });
+    }
+    if (proposal.status === "rejected") {
+      return new AgentPOSError("APPROVAL_REJECTED", "This proposal was rejected", {
+        hint: "A rejected proposal can never be paid. Propose the purchase again.",
+      });
+    }
+    return new AgentPOSError("APPROVAL_EXPIRED", "This proposal expired before payment", {
+      hint: "Ask the agent to propose the purchase again for a fresh quote.",
+    });
+  }
+
   private cartExpired(proposal: Proposal): boolean {
     return new Date(proposal.cartExpiresAt).getTime() <= this.now().getTime();
   }
@@ -373,13 +501,19 @@ export class BuyerWebService {
     );
   }
 
-  /** What the human already approved in the current mandate period; the honest ceiling this
-   * platform can enforce, since settlement happens off-box on the buyer's machine. */
+  /** What the human already approved in the current mandate period (paid or still awaiting
+   * signature); the honest ceiling this platform can enforce, since settlement happens
+   * off-box on the buyer's machine. */
   private approvedInPeriod(profile: BuyerWebProfile): UsdcMinor {
     const since = periodStart(profile.mandate.period, this.now());
     return this.storage
-      .listProposals("approved")
-      .filter((p) => p.decidedAt !== undefined && new Date(p.decidedAt) >= since)
+      .listProposals()
+      .filter(
+        (p) =>
+          (p.status === "approved" || p.status === "paid") &&
+          p.decidedAt !== undefined &&
+          new Date(p.decidedAt) >= since,
+      )
       .reduce((acc, p) => addUsdc(acc, usdcFromMinor(p.amountMinor)), usdcFromMinor(0n));
   }
 

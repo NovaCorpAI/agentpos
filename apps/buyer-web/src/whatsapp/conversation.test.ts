@@ -169,6 +169,33 @@ describe("commands", () => {
     expect(await conversation.handle(msg("status"))).toContain("aprobada, en espera de firma");
   });
 
+  it("estado shows 'pagada' with the txHash once the signing bridge reports the payment", async () => {
+    const { conversation, service } = makeConversation();
+    await conversation.handle(msg("buscar mug"));
+    await conversation.handle(msg("comprar 1"));
+    await conversation.handle(msg("si"));
+    const proposal = service.approvedProposals().at(0);
+    service.markPaid(proposal!.id, { txHash: "tx_wa_1", orderId: "order-9" });
+    const reply = await conversation.handle(msg("estado"));
+    expect(reply).toContain("pagada");
+    expect(reply).toContain("Transaccion: tx_wa_1");
+  });
+
+  it("estado explains why an approved proposal has not been paid after a failed attempt", async () => {
+    const { conversation, service } = makeConversation();
+    await conversation.handle(msg("buscar mug"));
+    await conversation.handle(msg("comprar 1"));
+    await conversation.handle(msg("si"));
+    const proposal = service.approvedProposals().at(0);
+    service.markPaymentFailed(proposal!.id, {
+      code: "MANDATE_EXCEEDED",
+      message: "Payment exceeds the per-transaction limit",
+    });
+    const reply = await conversation.handle(msg("estado"));
+    expect(reply).toContain("aprobada, en espera de firma");
+    expect(reply).toContain("fallo (MANDATE_EXCEEDED)");
+  });
+
   it("estado with no proposals falls back to the service status", async () => {
     const { conversation } = makeConversation();
     const reply = await conversation.handle(msg("estado"));

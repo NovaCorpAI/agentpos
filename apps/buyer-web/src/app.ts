@@ -18,6 +18,7 @@ import type { WhatsAppConfig } from "./config.js";
 import { ConversationHandler } from "./whatsapp/conversation.js";
 import { MetaTransport, createMetaWebhook } from "./whatsapp/meta.js";
 import { TwilioTransport, createTwilioWebhook } from "./whatsapp/twilio.js";
+import { timingSafeEqualStrings } from "./whatsapp/types.js";
 import type { WhatsAppLogger, WhatsAppTransport } from "./whatsapp/types.js";
 
 export interface BuyerWebAppDeps {
@@ -27,6 +28,13 @@ export interface BuyerWebAppDeps {
   fetchImpl?: typeof globalThis.fetch;
   /** WhatsApp channel; routes are mounted only when this is present. */
   whatsapp?: WhatsAppConfig;
+  /**
+   * Bearer token for the signing bridge (`/api/signer/*`). It authorizes the buyer's OWN
+   * signer daemon (`agentpos-buyer watch`) and nothing else: the daemon holds the wallet
+   * key on the buyer's machine, this token only lets it read the approved queue and report
+   * settled payments back. Routes are not mounted at all when it is absent. Min 24 chars.
+   */
+  signerToken?: string;
   /** Tests inject fake transports; production builds Meta/Twilio transports from config. */
   whatsappTransports?: { meta?: WhatsAppTransport; twilio?: WhatsAppTransport };
   /** Structured event log for the WhatsApp channel. Event codes and sender hashes only. */
@@ -48,6 +56,9 @@ const STATUS_BY_CODE: Partial<Record<ErrorCode, ContentfulStatusCode>> = {
   CART_NOT_FOUND: 404,
   OUT_OF_STOCK: 409,
   APPROVAL_REJECTED: 409,
+  APPROVAL_PENDING: 409,
+  APPROVAL_UNAUTHORIZED: 401,
+  APPROVAL_EXPIRED: 410,
   CART_EXPIRED: 410,
   SHIPPING_REQUIRED: 422,
   MANDATE_EXCEEDED: 403,
@@ -80,6 +91,11 @@ function asString(value: unknown): string {
 
 export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
   const network = deps.network ?? "testnet";
+  if (deps.signerToken !== undefined && deps.signerToken.length < 24) {
+    throw new AgentPOSError("CONFIG_INVALID", "SIGNER_TOKEN is too short", {
+      hint: "Use at least 24 characters, e.g. `openssl rand -hex 24`. A guessable token would let anyone mark proposals paid.",
+    });
+  }
   const service = new BuyerWebService({
     storage: deps.storage,
     network,
@@ -146,6 +162,7 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
       proposalsPage({
         pending: service.pendingProposals(),
         approved: service.approvedProposals(),
+        paid: service.paidProposals(),
         stores: service.getProfile()?.stores ?? [],
         network,
         instructionsFor: (p) => service.instructionsFor(p),
@@ -225,6 +242,69 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
   app.post("/api/proposals/:id/reject", (c) =>
     c.json({ proposal: service.reject(c.req.param("id")) }),
   );
+
+  // --- signing bridge (mounted only when SIGNER_TOKEN is configured) --------
+  // These endpoints exist for exactly one client: the buyer's OWN signer daemon
+  // (`agentpos-buyer watch`) running on the machine that holds the wallet key. The
+  // bearer token authorizes that daemon, nothing else; it cannot approve proposals,
+  // and this server still cannot sign anything.
+
+  if (deps.signerToken !== undefined) {
+    const signerToken = deps.signerToken;
+    app.use("/api/signer/*", async (c, next) => {
+      const header = c.req.header("authorization") ?? "";
+      const token = header.startsWith("Bearer ") ? header.slice("Bearer ".length) : "";
+      if (token.length === 0 || !timingSafeEqualStrings(signerToken, token)) {
+        return c.json(
+          {
+            error: {
+              code: "APPROVAL_UNAUTHORIZED",
+              message: "Signer token missing or wrong",
+              hint: "Send `Authorization: Bearer <SIGNER_TOKEN>`; the daemon reads it from AGENTPOS_SIGNER_TOKEN.",
+            },
+          },
+          401,
+        );
+      }
+      await next();
+    });
+
+    app.get("/api/signer/queue", (c) => c.json({ proposals: service.signerQueue() }));
+
+    const paidSchema = z.object({
+      proposalId: z.string().min(1),
+      txHash: z.string().min(1),
+      orderId: z.string().min(1),
+    });
+    app.post("/api/signer/paid", async (c) => {
+      const parsed = paidSchema.safeParse(await c.req.json().catch(() => ({})));
+      if (!parsed.success) {
+        throw new AgentPOSError("CONFIG_INVALID", "Invalid paid report", {
+          hint: "Send JSON { proposalId, txHash, orderId }.",
+          details: { issues: parsed.error.issues.map((i) => i.message) },
+        });
+      }
+      const { proposalId, txHash, orderId } = parsed.data;
+      return c.json({ proposal: service.markPaid(proposalId, { txHash, orderId }) });
+    });
+
+    const failedSchema = z.object({
+      proposalId: z.string().min(1),
+      code: z.string().min(1).max(64),
+      message: z.string().min(1).max(500),
+    });
+    app.post("/api/signer/failed", async (c) => {
+      const parsed = failedSchema.safeParse(await c.req.json().catch(() => ({})));
+      if (!parsed.success) {
+        throw new AgentPOSError("CONFIG_INVALID", "Invalid failure report", {
+          hint: "Send JSON { proposalId, code, message }.",
+          details: { issues: parsed.error.issues.map((i) => i.message) },
+        });
+      }
+      const { proposalId, code, message } = parsed.data;
+      return c.json({ proposal: service.markPaymentFailed(proposalId, { code, message }) });
+    });
+  }
 
   // --- WhatsApp channel (mounted only when configured) ----------------------
 
