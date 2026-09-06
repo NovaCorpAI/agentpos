@@ -33,3 +33,28 @@ Claude Desktop / Claude Code MCP config:
 
 Every payment is appended to `~/.agentpos/profiles/<name>.spending.jsonl` with tx hash, site,
 order id and summary.
+
+## `watch`: the signing bridge
+
+If you approve purchases somewhere else (the `@agentpos/buyer-web` app, from a browser or
+WhatsApp), that approval only queues the purchase: buyer-web holds no key and cannot pay.
+`watch` is the half that pays. Run it on the machine that holds the wallet keyfile:
+
+```bash
+export AGENTPOS_SIGNER_TOKEN=...        # same value as buyer-web's SIGNER_TOKEN. Env only,
+                                        # never a CLI flag: flags leak into process lists.
+export AGENTPOS_BUYER_PASSPHRASE=...    # unlocks the local keyfile, as for any purchase
+agentpos-buyer watch https://your-buyer-web.example            # poll every 15s
+agentpos-buyer watch https://your-buyer-web.example --once     # one pass, for cron
+agentpos-buyer watch https://your-buyer-web.example -i 30      # poll every 30s
+```
+
+For each approved-and-unpaid proposal it quotes a fresh cart and pays through the same
+`BuyerService.buy()` a direct purchase uses, so the profile mandate applies unchanged
+(`MANDATE_EXCEEDED`, `SELLER_UNVERIFIED`... refuse exactly as always; the queue is not a
+bypass). It also refuses to pay more than the total the human approved
+(`REQUOTE_REQUIRED`). Outcomes are reported back (`POST /api/signer/paid` with the tx hash,
+`POST /api/signer/failed` with a machine-readable code), printed one line per proposal, and
+a failed proposal is never retried in a loop (attempted ids are kept in memory; a restart
+retries once). A malformed queue item is reported and skipped, never a crash. The wallet
+key never leaves this machine.

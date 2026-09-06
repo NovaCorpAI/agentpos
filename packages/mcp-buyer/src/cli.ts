@@ -17,6 +17,7 @@ import { mandateSchema } from "./mandate.js";
 import { buildBuyerServer } from "./server.js";
 import { BuyerService } from "./buyer.js";
 import { runDemoPurchase } from "./demo.js";
+import { runSignerWatch } from "./watch.js";
 import { SpendingLog } from "./spending.js";
 
 function die(err: unknown): never {
@@ -262,6 +263,64 @@ program
       }
     },
   );
+
+program
+  .command("watch")
+  .description(
+    "Signing bridge: poll a buyer-web instance for proposals the human approved there and pay them with the LOCAL wallet (the key never leaves this machine)",
+  )
+  .argument("<buyer-web-url>", "buyer-web origin, e.g. https://buyer.example")
+  .option("-i, --interval <seconds>", "poll interval in seconds", "15")
+  .option("--once", "process the queue once and exit (for tests and cron)")
+  .action(async (baseUrl: string, opts: { interval: string; once?: boolean }) => {
+    const name = program.opts<{ profile: string }>().profile;
+    try {
+      // The token comes from the environment ONLY: a --token flag would leak it into
+      // process lists (`ps`, task managers). It authorizes this daemon against the
+      // buyer's own buyer-web instance, nothing else.
+      const token = (process.env.AGENTPOS_SIGNER_TOKEN ?? "").trim();
+      if (!token) {
+        throw new AgentPOSError("CONFIG_INVALID", "AGENTPOS_SIGNER_TOKEN is not set", {
+          hint: "Export the same token buyer-web runs with as SIGNER_TOKEN. Environment only, never a flag.",
+        });
+      }
+      const interval = Number(opts.interval);
+      if (!Number.isInteger(interval) || interval < 1) {
+        throw new AgentPOSError("CONFIG_INVALID", `Invalid --interval '${opts.interval}'`, {
+          hint: "Use a whole number of seconds, 1 or more.",
+        });
+      }
+      const profile = loadProfile(name);
+      const buyerService = new BuyerService({ profile });
+      const base = baseUrl.replace(/\/+$/, "");
+      if (!opts.once) {
+        console.log(
+          pc.dim(
+            `watching ${base} every ${interval}s with profile "${name}" (wallet stays on this machine)`,
+          ),
+        );
+      }
+      const outcomes = await runSignerWatch({
+        baseUrl: base,
+        token,
+        buyerService,
+        intervalMs: interval * 1000,
+        once: Boolean(opts.once),
+        onLine: (line) => {
+          console.log(
+            line.startsWith("paid ")
+              ? pc.green(line)
+              : line.startsWith("failed ") || line.startsWith("WARNING")
+                ? pc.red(line)
+                : pc.dim(line),
+          );
+        },
+      });
+      if (opts.once && outcomes.length === 0) console.log(pc.dim("queue empty, nothing to pay"));
+    } catch (err) {
+      die(err);
+    }
+  });
 
 program
   .command("serve")

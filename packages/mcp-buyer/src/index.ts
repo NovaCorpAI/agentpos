@@ -19,5 +19,12 @@ export { SpendingLog } from "./spending.js";
 export type { SpendingEntry } from "./spending.js";
 export { demoCost, runDemoPurchase } from "./demo.js";
 export type { DemoOptions, DemoResult, DemoStep } from "./demo.js";
+export { SignerWatcher, runSignerWatch } from "./watch.js";
+export type {
+  RunSignerWatchOptions,
+  SignerQueueItem,
+  SignerWatcherDeps,
+  WatchOutcome,
+} from "./watch.js";
 export { SiteClient } from "./siteClient.js";
 export type { SiteCart, SiteInfo, SiteItem, SiteOrder } from "./siteClient.js";
