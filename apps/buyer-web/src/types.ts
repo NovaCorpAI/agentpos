@@ -29,12 +29,13 @@ export const buyerWebProfileSchema = z.object({
 export type BuyerWebProfileInput = z.input<typeof buyerWebProfileSchema>;
 export type BuyerWebProfile = z.output<typeof buyerWebProfileSchema>;
 
-export type ProposalStatus = "pending" | "approved" | "rejected" | "expired";
+export type ProposalStatus = "pending" | "approved" | "rejected" | "expired" | "paid";
 
 /**
  * A purchase the agent wants to make, frozen as a quote, waiting for the human.
  * `approved` means exactly that and no more: the money has NOT moved. Payment happens later,
- * on the machine that holds the key.
+ * on the machine that holds the key; `paid` is only ever set when that machine reports back
+ * a settled transaction hash through the signing bridge.
  */
 export interface Proposal {
   id: string;
@@ -58,6 +59,31 @@ export interface Proposal {
   createdAt: string;
   /** Set when the human approves or rejects. */
   decidedAt?: string;
+  /** Set by the signing bridge when the buyer's own machine settled the payment. */
+  payment?: { txHash: string; orderId: string; paidAt: string };
+  /**
+   * Last payment attempt reported failed by the signing bridge. The proposal stays
+   * `approved` (the approval still stands); this is why the money has not moved yet.
+   */
+  failure?: { code: string; message: string; at: string };
+}
+
+/**
+ * One entry of the pending-signature feed (`GET /api/signer/queue`): everything the buyer's
+ * own signer daemon needs to execute the purchase, and nothing that could pay by itself.
+ */
+export interface SignerQueueItem {
+  proposalId: string;
+  storeUrl: string;
+  itemId: string;
+  quantity: number;
+  title: string;
+  /** Quoted total the human approved, decimal USDC. The payer must not exceed it. */
+  amount: string;
+  amountMinor: string;
+  asset: string;
+  network: string;
+  approvedAt: string;
 }
 
 /**
@@ -94,7 +120,10 @@ export interface ActivityEntry {
     | "proposal.created"
     | "proposal.approved"
     | "proposal.rejected"
-    | "proposal.expired";
+    | "proposal.expired"
+    | "signer.queue"
+    | "proposal.paid"
+    | "proposal.payment_failed";
   data: Record<string, unknown>;
 }
 

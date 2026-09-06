@@ -41,6 +41,13 @@ export interface BuyerWebConfig {
   network: "testnet" | "mainnet";
   /** Present only when at least one provider is fully configured. */
   whatsapp?: WhatsAppConfig;
+  /**
+   * Bearer token for the signing bridge (`/api/signer/*`). Authorizes ONLY the buyer's own
+   * signer daemon (`agentpos-buyer watch`) on the machine that holds the wallet key; the
+   * routes are not mounted when it is absent. It is an access token, not a wallet secret:
+   * this process still cannot sign or move money.
+   */
+  signerToken?: string;
 }
 
 function requireAll(
@@ -145,10 +152,17 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): BuyerWebCon
     });
   }
   const whatsapp = whatsappFromEnv(env);
+  const signerToken = (env.SIGNER_TOKEN ?? "").trim();
+  if (signerToken.length > 0 && signerToken.length < 24) {
+    throw new AgentPOSError("CONFIG_INVALID", "SIGNER_TOKEN is too short", {
+      hint: "Use at least 24 characters, e.g. `openssl rand -hex 24`. A guessable token would let anyone mark proposals paid.",
+    });
+  }
   return {
     port,
     network,
     dbFile: env.BUYER_WEB_DB ?? join(agentposHome(), "buyer-web.sqlite"),
     ...(whatsapp ? { whatsapp } : {}),
+    ...(signerToken.length > 0 ? { signerToken } : {}),
   };
 }

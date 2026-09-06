@@ -15,6 +15,7 @@ try {
     storage,
     network: config.network,
     ...(config.whatsapp ? { whatsapp: config.whatsapp } : {}),
+    ...(config.signerToken ? { signerToken: config.signerToken } : {}),
   });
 
   const channels = config.whatsapp
@@ -27,6 +28,9 @@ try {
   console.log(`  storage  ${config.dbFile}`);
   console.log(`  mandate  http://localhost:${config.port}/`);
   console.log(`  whatsapp ${channels}`);
+  console.log(
+    `  signer   ${config.signerToken ? "bridge enabled (/api/signer, run `agentpos-buyer watch` where the wallet lives)" : "bridge disabled (set SIGNER_TOKEN to enable)"}`,
+  );
   console.log(`  custody  this process stores PUBLIC wallet addresses only and cannot sign`);
 
   serve({ fetch: app.fetch, port: config.port });
