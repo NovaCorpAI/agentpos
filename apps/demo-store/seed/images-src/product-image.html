@@ -1,0 +1,54 @@
+<!doctype html>
+<!-- Template for the demo store product images. Rendered to PNG by screenshotting #card
+     at 560x560. Query params: title, sub, icon. -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; padding: 0; background: #0b1020; }
+  #card {
+    width: 560px; height: 560px; box-sizing: border-box;
+    display: flex; flex-direction: column; justify-content: center; align-items: center;
+    gap: 18px; position: relative; overflow: hidden;
+    background:
+      radial-gradient(ellipse 500px 300px at 20% 0%, rgba(77, 132, 255, 0.22), transparent 60%),
+      radial-gradient(ellipse 400px 260px at 90% 100%, rgba(38, 208, 160, 0.16), transparent 60%),
+      linear-gradient(150deg, #0d1428 0%, #0b1020 55%, #101a33 100%);
+    font-family: "Segoe UI", system-ui, sans-serif;
+  }
+  #grid {
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(rgba(120, 150, 220, 0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(120, 150, 220, 0.06) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+  #icon { font-size: 96px; line-height: 1; z-index: 1; }
+  #title {
+    z-index: 1; color: #f4f7ff; font-size: 38px; font-weight: 700;
+    letter-spacing: -0.5px; text-align: center; max-width: 480px;
+  }
+  #sub { z-index: 1; color: #9fb0d0; font-size: 19px; text-align: center; }
+  #brand {
+    position: absolute; bottom: 26px; z-index: 1; display: flex; align-items: center; gap: 12px;
+    color: #6d7ea6; font-size: 15px; font-weight: 600; letter-spacing: 2px;
+  }
+  #brand b { color: #7aa2ff; }
+</style>
+</head>
+<body>
+  <div id="card">
+    <div id="grid"></div>
+    <div id="icon"></div>
+    <div id="title"></div>
+    <div id="sub"></div>
+    <div id="brand"><span>AGENT<b>POS</b> DEMO STORE</span></div>
+  </div>
+  <script>
+    const q = new URLSearchParams(location.search);
+    document.getElementById("icon").textContent = q.get("icon") || "*";
+    document.getElementById("title").textContent = q.get("title") || "";
+    document.getElementById("sub").textContent = q.get("sub") || "";
+  </script>
+</body>
+</html>
