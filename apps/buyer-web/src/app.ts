@@ -11,8 +11,8 @@ import { AgentPOSError, isAgentPOSError } from "@agentpos/core";
 import type { ErrorCode } from "@agentpos/core";
 import { BuyerWebService } from "./service.js";
 import type { BuyerWebStorage } from "./storage.js";
-import { activityPage, errorPage, mandatePage, proposalsPage } from "./pages.js";
-import type { MandateFormValues } from "./pages.js";
+import { activityPage, errorPage, homePage, proposalsPage } from "./pages.js";
+import type { MandateFormValues, OfferSearch } from "./pages.js";
 import type { BuyerWebProfile } from "./types.js";
 import type { WhatsAppConfig } from "./config.js";
 import { ConversationHandler } from "./whatsapp/conversation.js";
@@ -104,15 +104,32 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
   const app = new Hono();
 
   const pendingCount = () => service.pendingProposals().length;
+  // Read-only channel state for the pages: whether each optional channel is mounted.
+  const channels = {
+    whatsapp: deps.whatsapp !== undefined,
+    signer: deps.signerToken !== undefined,
+  };
 
   // --- pages ---------------------------------------------------------------
 
-  app.get("/", (c) => {
+  app.get("/", async (c) => {
+    const query = (c.req.query("q") ?? "").trim();
+    let search: OfferSearch | undefined;
+    if (query.length > 0) {
+      try {
+        search = { query, offers: await service.searchOffers(query) };
+      } catch (err) {
+        if (!isAgentPOSError(err)) throw err;
+        search = { query, error: { code: err.code, message: err.message, hint: err.hint } };
+      }
+    }
     return c.html(
-      mandatePage({
+      homePage({
         values: formValues(service.getProfile()),
         network,
-        pendingCount: pendingCount(),
+        status: service.status(),
+        channels,
+        ...(search ? { search } : {}),
         ...(c.req.query("saved") === "1" ? { saved: true } : {}),
       }),
     );
@@ -138,14 +155,15 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
       if (isAgentPOSError(err)) {
         // Re-render the form with what the user typed, so nothing is lost.
         return c.html(
-          mandatePage({
+          homePage({
             values: {
               ...input,
               stores: input.stores.join("\n"),
               period: input.period,
             },
             network,
-            pendingCount: pendingCount(),
+            status: service.status(),
+            channels,
             error: { code: err.code, message: err.message, hint: err.hint },
           }),
           STATUS_BY_CODE[err.code] ?? 500,
@@ -165,6 +183,7 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
         paid: service.paidProposals(),
         stores: service.getProfile()?.stores ?? [],
         network,
+        signerConfigured: channels.signer,
         instructionsFor: (p) => service.instructionsFor(p),
         ...(highlight ? { highlight } : {}),
       }),

@@ -184,7 +184,7 @@ describe("paid reports", () => {
     const approved = await approvedProposal(app);
     await markPaid(app, approved.id, "tx_visible");
     const proposalsHtml = await (await app.request("/proposals")).text();
-    expect(proposalsHtml).toContain("Paid");
+    expect(proposalsHtml).toContain("Pagadas");
     expect(proposalsHtml).toContain("tx_visible");
     const activityHtml = await (await app.request("/activity")).text();
     expect(activityHtml).toContain("tx_visible");
@@ -222,7 +222,7 @@ describe("failure reports", () => {
 
     const html = await (await app.request("/proposals")).text();
     expect(html).toContain("MANDATE_EXCEEDED");
-    expect(html).toContain("Last payment attempt failed");
+    expect(html).toContain("El ultimo intento de pago fallo");
     expect(service.activity().some((e) => e.kind === "proposal.payment_failed")).toBe(true);
   });
 

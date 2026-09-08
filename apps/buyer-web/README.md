@@ -4,13 +4,14 @@ The buyer-side web platform: a human configures their buying agent's **mandate**
 limits, allowed stores, physical goods or not) and then watches and decides what the agent
 does. The agent proposes purchases with real quotes; the human approves or rejects them.
 
-Three server-rendered pages, zero frontend framework, zero CDN assets:
+Three server-rendered pages (Spanish-first UI, "Espacio del comprador"), zero frontend
+framework, zero CDN assets:
 
-| Page         | What it does                                                                                                                         |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `/`          | Mandate editor: max per purchase, max per period, allowed stores, physical goods, contact email, linked wallet (public address).     |
-| `/proposals` | Pending proposals with Approve / Reject; approved ones show as **approved, awaiting signature** with the exact payment instructions. |
-| `/activity`  | Append-only activity log plus the full proposal history.                                                                             |
+| Page         | What it does                                                                                                                                                                                                    |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/`          | Home: mandate state (limits, period, approved vs available with a budget bar), an offer search (`?q=`) that can turn a result into a proposal, the mandate editor, and the channel status (WhatsApp, signing bridge). |
+| `/proposals` | Proposal cards by state: pendiente (Aprobar / Rechazar), aprobada **esperando firma** (with the exact payment instructions and any failed-attempt reason), pagada (transaction link + order id).                  |
+| `/activity`  | Proposal history plus the append-only activity log as a readable timeline.                                                                                                                                       |
 
 ## The custody rule, plainly
 

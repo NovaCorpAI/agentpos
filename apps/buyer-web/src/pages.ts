@@ -1,8 +1,15 @@
 /**
- * Server-rendered pages, one self-contained HTML document each, same constraints as
- * packages/site/src/dashboard.ts: zero external resources (no CDN, no fonts, no analytics)
- * and nothing interpolated without escaping. Plain forms, no client framework.
+ * Server-rendered pages for the buyer's space ("Espacio del comprador"), Spanish-first.
+ * Same constraints as packages/site/src/dashboard.ts: one self-contained HTML document per
+ * page, zero external resources (no CDN, no fonts, no analytics) and nothing interpolated
+ * without escaping. Plain forms, no client framework.
+ *
+ * Visual identity (shared with the landing): background #0b1020, surfaces #0d1428/#101a33,
+ * borders rgba(120,150,220,0.15), headings #f4f7ff, body #9fb0d0, muted #6d7ea6, accent
+ * #7aa2ff, money/success #26d0a0. No emojis: this surface moves the user's money.
  */
+import { formatUsdc, usdc, usdcFromMinor } from "@agentpos/core";
+import type { Offer } from "@agentpos/mcp-buyer";
 import type { ActivityEntry, Proposal, ServiceStatus } from "./types.js";
 
 const esc = (s: string): string =>
@@ -11,52 +18,110 @@ const esc = (s: string): string =>
 const CSS = `
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
-  body { margin: 0; background: #0d1117; color: #e6edf3; font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  .wrap { max-width: 880px; margin: 0 auto; padding: 32px 20px 60px; }
-  header { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
-  h1 { font-size: 1.3rem; margin: 0; letter-spacing: -0.02em; }
-  h2 { font-size: 1.05rem; margin: 28px 0 10px; }
-  nav { margin-left: auto; display: flex; gap: 14px; }
-  nav a { color: #8b949e; text-decoration: none; font-size: 0.92rem; }
-  nav a[data-on] { color: #e6edf3; border-bottom: 2px solid #58a6ff; padding-bottom: 2px; }
-  .net { font-family: ui-monospace, monospace; font-size: 0.75rem; color: #7ee2a8; background: #12261a; border: 1px solid #1f4030; border-radius: 999px; padding: 2px 10px; }
-  .sub { color: #8b949e; margin: 0 0 20px; }
-  .card { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 18px; margin-bottom: 14px; }
-  .banner { border-radius: 10px; padding: 10px 14px; margin-bottom: 16px; font-size: 0.92rem; }
-  .banner.ok { background: #12261a; border: 1px solid #1f4030; color: #7ee2a8; }
-  .banner.err { background: #2a1215; border: 1px solid #5a1e24; color: #ff9c9c; }
-  .custody { color: #8b949e; font-size: 0.85rem; border-left: 3px solid #58a6ff; padding-left: 12px; margin: 16px 0; }
-  label { display: block; color: #8b949e; font-size: 0.85rem; margin: 14px 0 4px; }
-  input[type=text], input[type=email], select, textarea { width: 100%; background: #0d1117; color: #e6edf3; border: 1px solid #30363d; border-radius: 8px; padding: 8px 10px; font: inherit; }
-  textarea { min-height: 74px; font-family: ui-monospace, monospace; font-size: 0.85rem; }
+  body { margin: 0; background: #0b1020; color: #9fb0d0; font: 15px/1.55 "Segoe UI", system-ui, sans-serif; }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 26px 20px 64px; }
+  a { color: #7aa2ff; }
+  header { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .wordmark { color: #f4f7ff; font-weight: 700; font-size: 1.05rem; letter-spacing: 0.08em; }
+  .wordmark .pos { color: #7aa2ff; }
+  .space { color: #6d7ea6; font-size: 0.88rem; border-left: 1px solid rgba(120,150,220,0.25); padding-left: 14px; }
+  .net { font-family: Consolas, ui-monospace, monospace; font-size: 0.72rem; border-radius: 999px; padding: 2px 10px; border: 1px solid rgba(120,150,220,0.25); color: #9fb0d0; white-space: nowrap; }
+  .net.main { color: #26d0a0; border-color: rgba(38,208,160,0.35); }
+  nav { margin-left: auto; display: flex; gap: 16px; }
+  nav a { color: #9fb0d0; text-decoration: none; font-size: 0.92rem; padding-bottom: 3px; }
+  nav a[data-on] { color: #f4f7ff; border-bottom: 2px solid #7aa2ff; }
+  .assure { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 16px 0 26px; padding: 9px 14px; background: #0d1428; border: 1px solid rgba(120,150,220,0.15); border-radius: 10px; color: #6d7ea6; font-size: 0.82rem; }
+  .assure span::before { content: "\\2713"; color: #26d0a0; margin-right: 7px; }
+  h2 { color: #f4f7ff; font-size: 1.02rem; margin: 30px 0 12px; font-weight: 600; }
+  .lead { color: #f4f7ff; font-size: 1.28rem; font-weight: 600; margin: 6px 0 4px; letter-spacing: -0.01em; }
+  .sub { color: #6d7ea6; margin: 0 0 20px; }
+  .card { background: #0d1428; border: 1px solid rgba(120,150,220,0.15); border-radius: 14px; padding: 20px; margin-bottom: 14px; }
+  .banner { border-radius: 10px; padding: 10px 14px; margin: 0 0 16px; font-size: 0.92rem; }
+  .banner.ok { background: rgba(38,208,160,0.08); border: 1px solid rgba(38,208,160,0.3); color: #26d0a0; }
+  .banner.err { background: rgba(255,130,130,0.07); border: 1px solid rgba(255,130,130,0.28); color: #ff9c9c; }
+  .custody { color: #6d7ea6; font-size: 0.85rem; border-left: 3px solid #7aa2ff; padding-left: 12px; margin: 16px 0; }
+  label { display: block; color: #6d7ea6; font-size: 0.84rem; margin: 14px 0 5px; }
+  input[type=text], input[type=email], select, textarea { width: 100%; background: #101a33; color: #f4f7ff; border: 1px solid rgba(120,150,220,0.22); border-radius: 8px; padding: 8px 10px; font: inherit; }
+  input:focus, select:focus, textarea:focus { outline: 1px solid #7aa2ff; }
+  textarea { min-height: 74px; font-family: Consolas, ui-monospace, monospace; font-size: 0.85rem; }
   .row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
-  .check { display: flex; gap: 8px; align-items: center; margin-top: 14px; color: #e6edf3; font-size: 0.92rem; }
+  .check { display: flex; gap: 8px; align-items: center; margin-top: 14px; color: #f4f7ff; font-size: 0.92rem; }
   .check input { width: auto; }
-  button { background: #1f6feb; color: #fff; border: 0; border-radius: 8px; padding: 8px 18px; font: inherit; cursor: pointer; margin-top: 18px; }
-  button.ghost { background: #161b22; color: #e6edf3; border: 1px solid #30363d; }
-  button.danger { background: #161b22; color: #ff9c9c; border: 1px solid #5a1e24; }
+  button { background: #7aa2ff; color: #0b1020; font-weight: 600; border: 0; border-radius: 8px; padding: 8px 18px; font-family: inherit; font-size: inherit; cursor: pointer; margin-top: 18px; }
+  button.ghost { background: transparent; color: #9fb0d0; font-weight: 500; border: 1px solid rgba(120,150,220,0.3); }
+  button.danger { background: transparent; color: #ff9c9c; font-weight: 500; border: 1px solid rgba(255,130,130,0.35); }
   .actions { display: flex; gap: 10px; }
   .actions form { margin: 0; }
-  .meta { color: #8b949e; font-size: 0.83rem; }
-  .amount { font-size: 1.25rem; font-weight: 650; letter-spacing: -0.02em; }
-  .tag { display: inline-block; font-size: 0.75rem; border-radius: 999px; padding: 1px 10px; margin-left: 8px; vertical-align: middle; }
-  .tag.pending { color: #d29922; background: #271d12; border: 1px solid #4d3800; }
-  .tag.approved { color: #7ee2a8; background: #12261a; border: 1px solid #1f4030; }
-  .tag.rejected { color: #ff9c9c; background: #2a1215; border: 1px solid #5a1e24; }
-  .tag.expired { color: #8b949e; background: #161b22; border: 1px solid #30363d; }
-  .tag.paid { color: #7ee2a8; background: #12261a; border: 1px solid #1f4030; }
-  .fail { color: #ff9c9c; font-size: 0.85rem; border-left: 3px solid #5a1e24; padding-left: 12px; margin: 12px 0; }
+  .meta { color: #6d7ea6; font-size: 0.83rem; }
+  .title { color: #f4f7ff; margin: 2px 0; }
+  .cardhead { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .amount { color: #26d0a0; font-size: 1.28rem; font-weight: 650; letter-spacing: -0.02em; }
+  .money { color: #26d0a0; }
+  .tag { display: inline-block; font-size: 0.74rem; border-radius: 999px; padding: 1px 10px; vertical-align: middle; }
+  .tag.pending { color: #d9b96c; background: rgba(217,185,108,0.08); border: 1px solid rgba(217,185,108,0.35); }
+  .tag.approved { color: #7aa2ff; background: rgba(122,162,255,0.08); border: 1px solid rgba(122,162,255,0.35); }
+  .tag.rejected { color: #ff9c9c; background: rgba(255,130,130,0.07); border: 1px solid rgba(255,130,130,0.3); }
+  .tag.expired { color: #6d7ea6; background: #101a33; border: 1px solid rgba(120,150,220,0.2); }
+  .tag.paid { color: #26d0a0; background: rgba(38,208,160,0.08); border: 1px solid rgba(38,208,160,0.35); }
+  .fail { color: #ff9c9c; font-size: 0.85rem; border-left: 3px solid rgba(255,130,130,0.5); padding-left: 12px; margin: 12px 0; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin-bottom: 16px; }
+  .stat .k { color: #6d7ea6; font-size: 0.78rem; margin-bottom: 2px; }
+  .stat .v { color: #f4f7ff; font-size: 1.12rem; font-weight: 600; }
+  .bar { height: 8px; margin: 8px 0 6px; background: #101a33; border: 1px solid rgba(120,150,220,0.15); border-radius: 999px; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: #26d0a0; }
+  .bar i.full { background: #ff9c9c; }
+  .searchrow { display: flex; gap: 10px; align-items: center; }
+  .searchrow input { flex: 1; }
+  .searchrow button { margin-top: 0; }
+  .offer { display: flex; justify-content: space-between; gap: 16px; align-items: center; flex-wrap: wrap; }
+  .offer form { display: flex; gap: 10px; align-items: center; margin: 0; }
+  .offer form input { width: 64px; text-align: center; }
+  .offer form button { margin-top: 0; }
+  .chan { display: flex; gap: 12px; align-items: baseline; margin: 8px 0; }
+  .chan .st { flex: 0 0 auto; font-size: 0.72rem; border-radius: 999px; padding: 1px 10px; }
+  .chan .st.on { color: #26d0a0; border: 1px solid rgba(38,208,160,0.35); }
+  .chan .st.off { color: #6d7ea6; border: 1px solid rgba(120,150,220,0.25); }
+  .chan strong { color: #f4f7ff; font-weight: 600; }
   table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid #21262d; }
-  th { color: #8b949e; font-weight: 500; font-size: 0.8rem; }
-  code, .mono { font-family: ui-monospace, monospace; font-size: 0.85em; color: #a5d6ff; word-break: break-all; }
-  pre { background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 10px 12px; overflow-x: auto; }
-  .empty { color: #8b949e; padding: 24px 0; text-align: center; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid rgba(120,150,220,0.12); }
+  th { color: #6d7ea6; font-weight: 500; font-size: 0.8rem; }
+  td { color: #9fb0d0; }
+  .timeline { list-style: none; margin: 0; padding: 0 0 0 8px; }
+  .timeline li { position: relative; padding: 0 0 18px 22px; border-left: 1px solid rgba(120,150,220,0.18); }
+  .timeline li:last-child { border-left-color: transparent; }
+  .timeline li::before { content: ""; position: absolute; left: -5px; top: 5px; width: 9px; height: 9px; border-radius: 50%; background: #7aa2ff; }
+  .timeline li.k-ok::before { background: #26d0a0; }
+  .timeline li.k-err::before { background: #ff9c9c; }
+  .timeline li.k-muted::before { background: #6d7ea6; }
+  .tl-label { color: #f4f7ff; font-weight: 600; font-size: 0.92rem; margin-right: 10px; }
+  .tl-when { color: #6d7ea6; font-size: 0.8rem; font-family: Consolas, ui-monospace, monospace; }
+  .tl-detail { color: #9fb0d0; font-size: 0.88rem; margin-top: 1px; word-break: break-word; }
+  code, .mono { font-family: Consolas, ui-monospace, monospace; font-size: 0.85em; color: #b9ccff; word-break: break-all; }
+  pre { background: #101a33; border: 1px solid rgba(120,150,220,0.15); border-radius: 8px; padding: 10px 12px; overflow-x: auto; }
+  .empty { color: #6d7ea6; padding: 22px 0; text-align: center; }
 `;
+
+/** ISO timestamp -> "2026-09-07 14:32 UTC" (all our timestamps are already UTC). */
+function fmtWhen(iso: string): string {
+  return `${iso.slice(0, 16).replace("T", " ")} UTC`;
+}
+
+function netBadge(network: string): string {
+  return network === "mainnet"
+    ? `<span class="net main">red principal</span>`
+    : `<span class="net">red de prueba (${esc(network)})</span>`;
+}
+
+/** Public explorer link for a settled transaction. A link only; the page loads nothing external. */
+function txLink(network: string, txHash: string): string {
+  const net = network === "mainnet" ? "public" : "testnet";
+  const href = `https://stellar.expert/explorer/${net}/tx/${encodeURIComponent(txHash)}`;
+  return `<a class="mono" href="${esc(href)}" rel="noopener noreferrer">${esc(txHash)}</a>`;
+}
 
 export interface LayoutInput {
   title: string;
-  active: "mandate" | "proposals" | "activity";
+  active: "home" | "proposals" | "activity";
   network: string;
   pendingCount: number;
   body: string;
@@ -65,33 +130,74 @@ export interface LayoutInput {
 export function layout(input: LayoutInput): string {
   const tab = (href: string, id: LayoutInput["active"], label: string) =>
     `<a href="${href}"${input.active === id ? " data-on" : ""}>${esc(label)}</a>`;
-  const proposalsLabel = input.pendingCount > 0 ? `Proposals (${input.pendingCount})` : "Proposals";
+  const proposalsLabel =
+    input.pendingCount > 0 ? `Propuestas (${input.pendingCount})` : "Propuestas";
   return `<!doctype html>
-<html lang="en">
+<html lang="es">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(input.title)} · AgentPOS buyer</title>
+<title>${esc(input.title)} · AgentPOS, espacio del comprador</title>
 <style>${CSS}</style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <h1>AgentPOS buyer</h1>
-    <span class="net">${esc(input.network)}</span>
+    <span class="wordmark">AGENT<span class="pos">POS</span></span>
+    <span class="space">Espacio del comprador</span>
+    ${netBadge(input.network)}
     <nav>
-      ${tab("/", "mandate", "Mandate")}
+      ${tab("/", "home", "Inicio")}
       ${tab("/proposals", "proposals", proposalsLabel)}
-      ${tab("/activity", "activity", "Activity")}
+      ${tab("/activity", "activity", "Actividad")}
     </nav>
   </header>
+  <div class="assure">
+    <span>Tu llave nunca sale de tu maquina</span>
+    <span>Limites de gasto que tu defines</span>
+    <span>Cada compra con comprobante firmado</span>
+  </div>
   ${input.body}
 </div>
 </body>
 </html>`;
 }
 
-// --- mandate editor ---------------------------------------------------------
+// --- shared bits -------------------------------------------------------------
+
+const STATUS_LABEL: Record<Proposal["status"], string> = {
+  pending: "pendiente",
+  approved: "esperando firma",
+  rejected: "rechazada",
+  expired: "expirada",
+  paid: "pagada",
+};
+
+function statusTag(status: Proposal["status"]): string {
+  return `<span class="tag ${status}">${esc(STATUS_LABEL[status])}</span>`;
+}
+
+const PERIOD_ES: Record<string, string> = { day: "dia", week: "semana", month: "mes" };
+
+function periodEs(period: string): string {
+  return PERIOD_ES[period] ?? period;
+}
+
+function proposalMeta(p: Proposal): string {
+  return `<div class="meta">${esc(p.storeName)} · <span class="mono">${esc(p.storeUrl)}</span> · propuesta el ${esc(fmtWhen(p.createdAt))}</div>`;
+}
+
+interface PageError {
+  code: string;
+  message: string;
+  hint: string;
+}
+
+function errBanner(error: PageError): string {
+  return `<div class="banner err"><strong>${esc(error.code)}</strong>: ${esc(error.message)}<br><span class="meta">${esc(error.hint)}</span></div>`;
+}
+
+// --- home: mandate state, offer search, mandate editor, channels -------------
 
 export interface MandateFormValues {
   maxPerTx: string;
@@ -103,73 +209,202 @@ export interface MandateFormValues {
   walletAddress: string;
 }
 
-export function mandatePage(options: {
+export interface ChannelsState {
+  /** True when at least one WhatsApp provider is mounted. */
+  whatsapp: boolean;
+  /** True when the signing bridge (/api/signer/*) is mounted. */
+  signer: boolean;
+}
+
+export interface OfferSearch {
+  query: string;
+  offers?: Offer[];
+  error?: PageError;
+}
+
+/**
+ * Visual budget bar. Amount math is done in minor units (bigint); only the final
+ * percentage, an integer 0..100 for a CSS width, leaves bigint land.
+ */
+function spendBar(spentDecimal: string, maxTotalDecimal: string, period: string): string {
+  const spent = usdc(spentDecimal);
+  const total = usdc(maxTotalDecimal);
+  const remaining = formatUsdc(usdcFromMinor(total > spent ? total - spent : 0n));
+  const pct = total > 0n ? Math.min(100, Number((spent * 100n) / total)) : 0;
+  return `
+    <div class="meta">Aprobado en este periodo: <span class="money">${esc(spentDecimal)} USDC</span> de ${esc(maxTotalDecimal)} USDC por ${esc(periodEs(period))}</div>
+    <div class="bar"><i${pct >= 100 ? ' class="full"' : ""} style="width:${String(pct)}%"></i></div>
+    <div class="meta">Disponible: <span class="money">${esc(remaining)} USDC</span></div>`;
+}
+
+function mandateState(status: ServiceStatus): string {
+  const m = status.mandate;
+  if (!m) {
+    return `<div class="card"><div class="meta">Aun no hay mandato. Guarda abajo los limites de gasto para que tu agente pueda actuar.</div></div>`;
+  }
+  const wallet = status.walletLinked ? "Vinculada" : "Sin vincular";
+  const storesLine =
+    status.stores.length > 0
+      ? `${String(status.stores.length)} tienda(s) permitida(s)`
+      : "Cualquier tienda permitida (agrega URLs abajo para acotar y poder buscar)";
+  return `
+  <h2>Estado del mandato</h2>
+  <div class="card">
+    <div class="stats">
+      <div class="stat"><div class="k">Maximo por compra</div><div class="v money">${esc(m.maxPerTx)} USDC</div></div>
+      <div class="stat"><div class="k">Maximo por periodo</div><div class="v money">${esc(m.maxTotal)} USDC</div></div>
+      <div class="stat"><div class="k">Periodo</div><div class="v">${esc(periodEs(m.period))}</div></div>
+      <div class="stat"><div class="k">Wallet</div><div class="v">${esc(wallet)}</div></div>
+    </div>
+    ${spendBar(status.approvedInPeriod, m.maxTotal, m.period)}
+    <div class="meta" style="margin-top:8px">${esc(storesLine)} · Bienes fisicos: ${m.allowPhysicalGoods ? "permitidos" : "no permitidos"} · Propuestas pendientes: ${String(status.pendingProposals)} · Esperando firma: ${String(status.approvedAwaitingSignature)}</div>
+  </div>`;
+}
+
+function offerSearchSection(status: ServiceStatus, search: OfferSearch | undefined): string {
+  if (!status.profileConfigured) {
+    return `
+  <h2>Buscador de ofertas</h2>
+  <div class="card"><div class="meta">Guarda primero tu mandato: la busqueda usa tus tiendas permitidas y tus limites.</div></div>`;
+  }
+  const form = `
+  <form method="get" action="/" class="card">
+    <div class="searchrow">
+      <input type="text" name="q" value="${esc(search?.query ?? "")}" placeholder="Que quieres comprar, por ejemplo: taza" aria-label="Buscar ofertas">
+      <button type="submit">Buscar</button>
+    </div>
+    <p class="meta" style="margin:10px 0 0">Busca solo en tus tiendas permitidas. Proponer no compra nada: toda compra pasa por tu aprobacion y se firma en tu maquina.</p>
+  </form>`;
+  let results = "";
+  if (search?.error) {
+    results = errBanner(search.error);
+  } else if (search?.offers) {
+    results =
+      search.offers.length === 0
+        ? `<div class="empty">Sin resultados para "${esc(search.query)}" en tus tiendas.</div>`
+        : search.offers
+            .map(
+              (o) => `
+  <div class="card offer">
+    <div>
+      <div class="title">${esc(o.title)}</div>
+      <div class="meta">${esc(o.siteName)} · <span class="mono">${esc(o.site)}</span></div>
+    </div>
+    <div class="amount">${esc(o.price.amount)} ${esc(o.price.asset)}</div>
+    <form method="post" action="/proposals">
+      <input type="hidden" name="storeUrl" value="${esc(o.site)}">
+      <input type="hidden" name="itemId" value="${esc(o.id)}">
+      <input type="text" name="quantity" value="1" inputmode="numeric" aria-label="Cantidad">
+      <button type="submit" class="ghost">Proponer compra</button>
+    </form>
+  </div>`,
+            )
+            .join("");
+  }
+  return `
+  <h2>Buscador de ofertas</h2>
+  ${form}
+  ${results}`;
+}
+
+function channelsSection(channels: ChannelsState): string {
+  const row = (on: boolean, head: string, rest: string) => `
+    <div class="chan">
+      <span class="st ${on ? "on" : "off"}">${on ? "Activo" : "No configurado"}</span>
+      <div><strong>${esc(head)}</strong>. ${esc(rest)}</div>
+    </div>`;
+  const whatsapp = channels.whatsapp
+    ? row(true, "Canal WhatsApp activo", "Puedes buscar, proponer y aprobar desde tu telefono.")
+    : row(
+        false,
+        "Canal WhatsApp",
+        "Para activarlo, define WHATSAPP_ALLOWED_NUMBERS y las credenciales de Meta o Twilio en el entorno del servidor.",
+      );
+  const signer = channels.signer
+    ? row(
+        true,
+        "Puente de firma configurado",
+        "Tu watcher local (agentpos-buyer watch) firmara los pagos aprobados; el dinero solo se mueve desde tu maquina.",
+      )
+    : row(
+        false,
+        "Puente de firma",
+        "Para activarlo, define SIGNER_TOKEN en este servidor y ejecuta agentpos-buyer watch en la maquina donde vive tu wallet.",
+      );
+  return `
+  <h2>Canales</h2>
+  <div class="card">
+    ${whatsapp}
+    ${signer}
+  </div>`;
+}
+
+export function homePage(options: {
   values: MandateFormValues;
   network: string;
-  pendingCount: number;
+  status: ServiceStatus;
+  channels: ChannelsState;
   saved?: boolean;
-  error?: { code: string; message: string; hint: string };
+  error?: PageError;
+  search?: OfferSearch;
 }): string {
   const v = options.values;
   const banner = options.error
-    ? `<div class="banner err"><strong>${esc(options.error.code)}</strong>: ${esc(options.error.message)}<br><span class="meta">${esc(options.error.hint)}</span></div>`
+    ? errBanner(options.error)
     : options.saved
-      ? `<div class="banner ok">Mandate saved. The agent obeys it from the next action on.</div>`
+      ? `<div class="banner ok">Mandato guardado. El agente lo obedece desde la proxima accion.</div>`
       : "";
   const period = (value: string, label: string) =>
     `<option value="${value}"${v.period === value ? " selected" : ""}>${label}</option>`;
   const body = `
-  <p class="sub">What your buying agent is allowed to do. It can never edit this page; only you can.</p>
+  <p class="lead">Tu agente de compras: busca, propone y tu apruebas.</p>
+  <p class="sub">El agente nunca puede cambiar tus limites ni pagar solo: cada compra espera tu aprobacion y se firma en tu propia maquina.</p>
   ${banner}
+  ${mandateState(options.status)}
+  ${offerSearchSection(options.status, options.search)}
+  <h2>Mandato</h2>
+  <p class="sub" style="margin-bottom:12px">Lo que tu agente tiene permitido hacer. El agente no puede editar esta pagina; solo tu.</p>
   <form method="post" action="/profile" class="card">
     <div class="row">
       <div>
-        <label for="maxPerTx">Max per purchase (USDC)</label>
+        <label for="maxPerTx">Maximo por compra (USDC)</label>
         <input type="text" id="maxPerTx" name="maxPerTx" value="${esc(v.maxPerTx)}" inputmode="decimal" required>
       </div>
       <div>
-        <label for="maxTotal">Max per period (USDC)</label>
+        <label for="maxTotal">Maximo por periodo (USDC)</label>
         <input type="text" id="maxTotal" name="maxTotal" value="${esc(v.maxTotal)}" inputmode="decimal" required>
       </div>
       <div>
-        <label for="period">Period</label>
+        <label for="period">Periodo</label>
         <select id="period" name="period">
-          ${period("day", "Day")}${period("week", "Week")}${period("month", "Month")}
+          ${period("day", "Dia")}${period("week", "Semana")}${period("month", "Mes")}
         </select>
       </div>
     </div>
-    <label for="stores">Allowed stores (one URL per line; empty allows any store)</label>
-    <textarea id="stores" name="stores" placeholder="https://shop.example">${esc(v.stores)}</textarea>
+    <label for="stores">Tiendas permitidas (una URL por linea; vacio permite cualquier tienda)</label>
+    <textarea id="stores" name="stores" placeholder="https://tienda.ejemplo">${esc(v.stores)}</textarea>
     <div class="check">
       <input type="checkbox" id="allowPhysicalGoods" name="allowPhysicalGoods"${v.allowPhysicalGoods ? " checked" : ""}>
-      <label for="allowPhysicalGoods" style="margin:0">Allow physical goods (things that ship to an address)</label>
+      <label for="allowPhysicalGoods" style="margin:0">Permitir bienes fisicos (cosas que se envian a una direccion)</label>
     </div>
-    <label for="email">Your contact email (stores send order updates here)</label>
-    <input type="email" id="email" name="email" value="${esc(v.email)}" placeholder="you@example.com">
-    <label for="walletAddress">Wallet public address (starts with G)</label>
+    <label for="email">Tu correo de contacto (las tiendas envian alli las novedades de la orden)</label>
+    <input type="email" id="email" name="email" value="${esc(v.email)}" placeholder="tu@ejemplo.com">
+    <label for="walletAddress">Direccion publica de tu wallet (empieza con G)</label>
     <input type="text" id="walletAddress" name="walletAddress" value="${esc(v.walletAddress)}" placeholder="G...">
-    <p class="custody">This platform never stores or asks for a secret key. Payments are signed on your own machine; here you only link the public address so your agent knows which wallet the mandate is about.</p>
-    <button type="submit">Save mandate</button>
-  </form>`;
+    <p class="custody">Esta plataforma nunca guarda ni pide una llave secreta. Los pagos se firman en tu propia maquina; aqui solo vinculas la direccion publica para que tu agente sepa de que wallet trata el mandato.</p>
+    <button type="submit">Guardar mandato</button>
+  </form>
+  ${channelsSection(options.channels)}`;
   return layout({
-    title: "Mandate",
-    active: "mandate",
+    title: "Inicio",
+    active: "home",
     network: options.network,
-    pendingCount: options.pendingCount,
+    pendingCount: options.status.pendingProposals,
     body,
   });
 }
 
-// --- proposals --------------------------------------------------------------
-
-function statusTag(status: Proposal["status"]): string {
-  const label = status === "approved" ? "approved · awaiting signature" : status;
-  return `<span class="tag ${status}">${esc(label)}</span>`;
-}
-
-function proposalMeta(p: Proposal): string {
-  return `<div class="meta">${esc(p.storeName)} · <span class="mono">${esc(p.storeUrl)}</span> · proposed ${esc(p.createdAt)}</div>`;
-}
+// --- proposals ---------------------------------------------------------------
 
 export function proposalsPage(options: {
   pending: Proposal[];
@@ -177,6 +412,7 @@ export function proposalsPage(options: {
   paid: Proposal[];
   stores: string[];
   network: string;
+  signerConfigured: boolean;
   instructionsFor: (p: Proposal) => { checkoutUrl: string; cli: string; note: string };
   highlight?: string;
 }): string {
@@ -184,35 +420,40 @@ export function proposalsPage(options: {
     .map(
       (p) => `
   <div class="card">
-    <div class="amount">${esc(p.amount)} ${esc(p.asset)}${statusTag(p.status)}</div>
-    <div>${esc(p.title)}</div>
+    <div class="cardhead"><span class="amount">${esc(p.amount)} ${esc(p.asset)}</span>${statusTag(p.status)}</div>
+    <div class="title">${esc(p.title)}</div>
     ${proposalMeta(p)}
+    <div class="meta">Cotizacion congelada, valida hasta ${esc(fmtWhen(p.cartExpiresAt))}.</div>
     <div class="actions">
-      <form method="post" action="/proposals/${esc(p.id)}/approve"><button type="submit">Approve</button></form>
-      <form method="post" action="/proposals/${esc(p.id)}/reject"><button type="submit" class="danger">Reject</button></form>
+      <form method="post" action="/proposals/${esc(p.id)}/approve"><button type="submit">Aprobar</button></form>
+      <form method="post" action="/proposals/${esc(p.id)}/reject"><button type="submit" class="danger">Rechazar</button></form>
     </div>
   </div>`,
     )
     .join("");
 
+  const signingNote = options.signerConfigured
+    ? "Puente de firma configurado: tu watcher local firmara este pago; el dinero solo se mueve desde tu maquina."
+    : "Tu watcher local firmara este pago; el dinero solo se mueve desde tu maquina. Deja corriendo agentpos-buyer watch, o ejecuta el comando de abajo, donde vive tu wallet.";
+
   const approvedCards = options.approved
     .map((p) => {
       const i = options.instructionsFor(p);
       const failure = p.failure
-        ? `<div class="fail">Last payment attempt failed with <strong>${esc(p.failure.code)}</strong>: ${esc(p.failure.message)} (${esc(p.failure.at)})</div>`
+        ? `<div class="fail">El ultimo intento de pago fallo con <strong>${esc(p.failure.code)}</strong>: ${esc(p.failure.message)} (${esc(fmtWhen(p.failure.at))})</div>`
         : "";
       return `
-  <div class="card"${options.highlight === p.id ? ' style="border-color:#58a6ff"' : ""}>
-    <div class="amount">${esc(p.amount)} ${esc(p.asset)}${statusTag(p.status)}</div>
-    <div>${esc(p.title)}</div>
+  <div class="card"${options.highlight === p.id ? ' style="border-color:#7aa2ff"' : ""}>
+    <div class="cardhead"><span class="amount">${esc(p.amount)} ${esc(p.asset)}</span>${statusTag(p.status)}</div>
+    <div class="title">${esc(p.title)}</div>
     ${proposalMeta(p)}
     ${failure}
-    <p class="custody">${esc(i.note)}</p>
-    <div class="meta">Checkout: <span class="mono">${esc(i.checkoutUrl)}</span></div>
-    <div class="meta">Pay from the machine that holds your key:</div>
+    <p class="custody">${esc(signingNote)}</p>
+    <div class="meta">Pago (checkout): <span class="mono">${esc(i.checkoutUrl)}</span></div>
+    <div class="meta">Para pagar a mano desde la maquina que tiene tu llave:</div>
     <pre><code>${esc(i.cli)}</code></pre>
     <div class="actions">
-      <form method="post" action="/proposals/${esc(p.id)}/reject"><button type="submit" class="ghost">Cancel approval</button></form>
+      <form method="post" action="/proposals/${esc(p.id)}/reject"><button type="submit" class="ghost">Cancelar aprobacion</button></form>
     </div>
   </div>`;
     })
@@ -222,12 +463,13 @@ export function proposalsPage(options: {
     .map(
       (p) => `
   <div class="card">
-    <div class="amount">${esc(p.amount)} ${esc(p.asset)}${statusTag(p.status)}</div>
-    <div>${esc(p.title)}</div>
+    <div class="cardhead"><span class="amount">${esc(p.amount)} ${esc(p.asset)}</span>${statusTag(p.status)}</div>
+    <div class="title">${esc(p.title)}</div>
     ${proposalMeta(p)}
     ${
       p.payment
-        ? `<div class="meta">Settled ${esc(p.payment.paidAt)} · tx <span class="mono">${esc(p.payment.txHash)}</span> · order <span class="mono">${esc(p.payment.orderId)}</span></div>`
+        ? `<div class="meta">Pago liquidado el ${esc(fmtWhen(p.payment.paidAt))} · orden <span class="mono">${esc(p.payment.orderId)}</span></div>
+    <div class="meta">Transaccion: ${txLink(options.network, p.payment.txHash)}</div>`
         : ""
     }
   </div>`,
@@ -240,36 +482,36 @@ export function proposalsPage(options: {
   const proposeForm =
     options.stores.length > 0
       ? `
-  <h2>Propose a purchase yourself</h2>
+  <h2>Proponer una compra tu mismo</h2>
   <form method="post" action="/proposals" class="card">
     <div class="row">
       <div>
-        <label for="storeUrl">Store</label>
+        <label for="storeUrl">Tienda</label>
         <select id="storeUrl" name="storeUrl">${storeOptions}</select>
       </div>
       <div>
-        <label for="itemId">Item id</label>
+        <label for="itemId">Id del producto</label>
         <input type="text" id="itemId" name="itemId" required>
       </div>
       <div>
-        <label for="quantity">Quantity</label>
+        <label for="quantity">Cantidad</label>
         <input type="text" id="quantity" name="quantity" value="1" inputmode="numeric">
       </div>
     </div>
-    <button type="submit" class="ghost">Get a quote</button>
+    <button type="submit" class="ghost">Pedir cotizacion</button>
   </form>`
       : "";
 
   const body = `
-  <p class="sub">What the agent wants to buy. Nothing is charged until you approve AND sign on your own machine.</p>
-  <h2>Waiting for you</h2>
-  ${pendingCards || '<div class="empty">No pending proposals.</div>'}
-  <h2>Approved, awaiting signature</h2>
-  ${approvedCards || '<div class="empty">Nothing approved and unpaid.</div>'}
-  ${paidCards ? `<h2>Paid</h2>${paidCards}` : ""}
+  <p class="sub">Lo que tu agente quiere comprar. Nada se cobra hasta que apruebas, y la firma sale siempre de tu propia maquina.</p>
+  <h2>Esperando tu decision</h2>
+  ${pendingCards || '<div class="empty">No hay propuestas pendientes.</div>'}
+  <h2>Aprobadas, esperando firma</h2>
+  ${approvedCards || '<div class="empty">Nada aprobado sin pagar.</div>'}
+  ${paidCards ? `<h2>Pagadas</h2>${paidCards}` : ""}
   ${proposeForm}`;
   return layout({
-    title: "Proposals",
+    title: "Propuestas",
     active: "proposals",
     network: options.network,
     pendingCount: options.pending.length,
@@ -277,35 +519,45 @@ export function proposalsPage(options: {
   });
 }
 
-// --- activity ---------------------------------------------------------------
+// --- activity ----------------------------------------------------------------
 
 const KIND_LABEL: Record<ActivityEntry["kind"], string> = {
-  "profile.saved": "mandate saved",
-  search: "search",
-  "proposal.created": "proposal created",
-  "proposal.approved": "proposal approved",
-  "proposal.rejected": "proposal rejected",
-  "proposal.expired": "quote expired",
-  "signer.queue": "signer picked up the queue",
-  "proposal.paid": "paid",
-  "proposal.payment_failed": "payment failed",
+  "profile.saved": "mandato guardado",
+  search: "busqueda",
+  "proposal.created": "propuesta creada",
+  "proposal.approved": "propuesta aprobada",
+  "proposal.rejected": "propuesta rechazada",
+  "proposal.expired": "cotizacion expirada",
+  "signer.queue": "cola entregada al firmador",
+  "proposal.paid": "pago liquidado",
+  "proposal.payment_failed": "pago fallido",
+};
+
+/** Dot color on the timeline: green for money settled, red for failures, muted for noise. */
+const KIND_CLASS: Partial<Record<ActivityEntry["kind"], string>> = {
+  "proposal.paid": "k-ok",
+  "proposal.payment_failed": "k-err",
+  "proposal.rejected": "k-err",
+  "proposal.expired": "k-muted",
+  search: "k-muted",
+  "signer.queue": "k-muted",
 };
 
 function activitySummary(e: ActivityEntry): string {
   const d = e.data;
   switch (e.kind) {
     case "profile.saved":
-      return `max ${String(d.maxPerTx)} per purchase, ${String(d.maxTotal)} per ${String(d.period)}`;
+      return `limite ${String(d.maxPerTx)} USDC por compra, ${String(d.maxTotal)} USDC por ${periodEs(String(d.period))}`;
     case "search":
-      return `"${String(d.query)}" · ${String(d.results)} result(s)`;
+      return `"${String(d.query)}" · ${String(d.results)} resultado(s)`;
     case "signer.queue":
-      return `${String(d.proposals)} proposal(s) handed to the local signer`;
+      return `${String(d.proposals)} propuesta(s) entregadas al firmador local`;
     case "proposal.paid":
-      return `${String(d.title)} · ${String(d.amount)} · tx ${String(d.txHash)}`;
+      return `${String(d.title)} · ${String(d.amount)} USDC · transaccion ${String(d.txHash)}`;
     case "proposal.payment_failed":
       return `${String(d.title)} · ${String(d.code)}: ${String(d.message)}`;
     default:
-      return [d.title, d.amount]
+      return [d.title, d.amount !== undefined ? `${String(d.amount)} USDC` : undefined]
         .filter((x) => x !== undefined)
         .map(String)
         .join(" · ");
@@ -318,31 +570,34 @@ export function activityPage(options: {
   status: ServiceStatus;
   network: string;
 }): string {
-  const rows = options.activity
-    .map(
-      (e) =>
-        `<tr><td class="meta">${esc(e.at)}</td><td>${esc(KIND_LABEL[e.kind] ?? e.kind)}</td><td class="meta">${esc(activitySummary(e))}</td></tr>`,
-    )
+  const timeline = options.activity
+    .map((e) => {
+      const detail = activitySummary(e);
+      return `<li${KIND_CLASS[e.kind] ? ` class="${KIND_CLASS[e.kind]}"` : ""}>
+      <span class="tl-label">${esc(KIND_LABEL[e.kind] ?? e.kind)}</span><span class="tl-when">${esc(fmtWhen(e.at))}</span>
+      ${detail ? `<div class="tl-detail">${esc(detail)}</div>` : ""}
+    </li>`;
+    })
     .join("");
   const history = options.proposals
     .map(
       (p) =>
-        `<tr><td class="meta">${esc(p.createdAt)}</td><td>${esc(p.title)}</td><td>${esc(p.amount)} ${esc(p.asset)}</td><td>${statusTag(p.status)}${p.payment ? ` <span class="mono">${esc(p.payment.txHash)}</span>` : ""}</td></tr>`,
+        `<tr><td class="meta">${esc(fmtWhen(p.createdAt))}</td><td>${esc(p.title)}</td><td class="money">${esc(p.amount)} ${esc(p.asset)}</td><td>${statusTag(p.status)}${p.payment ? ` <span class="mono">${esc(p.payment.txHash)}</span>` : ""}</td></tr>`,
     )
     .join("");
   const s = options.status;
   const body = `
-  <p class="sub">Everything the agent and you did, in order. Approved in this period: <strong>${esc(s.approvedInPeriod)} USDC</strong>${s.mandate ? ` of ${esc(s.mandate.maxTotal)} allowed per ${esc(s.mandate.period)}` : ""}.</p>
-  <h2>Proposal history</h2>
+  <p class="sub">Todo lo que hicieron tu agente y tu, en orden. Aprobado en este periodo: <span class="money">${esc(s.approvedInPeriod)} USDC</span>${s.mandate ? ` de ${esc(s.mandate.maxTotal)} USDC permitidos por ${esc(periodEs(s.mandate.period))}` : ""}.</p>
+  <h2>Historial de propuestas</h2>
   <div class="card">
-    ${history ? `<table><tr><th>When</th><th>What</th><th>Amount</th><th>Status</th></tr>${history}</table>` : '<div class="empty">No proposals yet.</div>'}
+    ${history ? `<table><tr><th>Fecha</th><th>Detalle</th><th>Monto</th><th>Estado</th></tr>${history}</table>` : '<div class="empty">Aun no hay propuestas.</div>'}
   </div>
-  <h2>Activity log</h2>
+  <h2>Linea de tiempo</h2>
   <div class="card">
-    ${rows ? `<table><tr><th>When</th><th>Event</th><th>Detail</th></tr>${rows}</table>` : '<div class="empty">Nothing yet.</div>'}
+    ${timeline ? `<ol class="timeline">${timeline}</ol>` : '<div class="empty">Nada todavia.</div>'}
   </div>`;
   return layout({
-    title: "Activity",
+    title: "Actividad",
     active: "activity",
     network: options.network,
     pendingCount: s.pendingProposals,
@@ -350,7 +605,7 @@ export function activityPage(options: {
   });
 }
 
-// --- error ------------------------------------------------------------------
+// --- error -------------------------------------------------------------------
 
 export function errorPage(options: {
   network: string;
@@ -363,7 +618,7 @@ export function errorPage(options: {
   const body = `
   <div class="banner err"><strong>${esc(options.code)}</strong>: ${esc(options.message)}</div>
   <p class="meta">${esc(options.hint)}</p>
-  <p><a href="${esc(options.backHref)}" style="color:#58a6ff">&larr; back</a></p>`;
+  <p><a href="${esc(options.backHref)}">Volver a propuestas</a></p>`;
   return layout({
     title: "Error",
     active: "proposals",
