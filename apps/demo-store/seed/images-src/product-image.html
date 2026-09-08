@@ -1,6 +1,7 @@
 <!doctype html>
 <!-- Template for the demo store product images. Rendered to PNG by screenshotting #card
-     at 560x560. Query params: title, sub, icon. -->
+     at 560x560. Query params: title, sub, icon (guide | stickers | support). No emojis:
+     inline SVG line icons only, per brand direction. -->
 <html>
 <head>
 <meta charset="utf-8">
@@ -9,7 +10,7 @@
   #card {
     width: 560px; height: 560px; box-sizing: border-box;
     display: flex; flex-direction: column; justify-content: center; align-items: center;
-    gap: 18px; position: relative; overflow: hidden;
+    gap: 26px; position: relative; overflow: hidden;
     background:
       radial-gradient(ellipse 500px 300px at 20% 0%, rgba(77, 132, 255, 0.22), transparent 60%),
       radial-gradient(ellipse 400px 260px at 90% 100%, rgba(38, 208, 160, 0.16), transparent 60%),
@@ -23,14 +24,15 @@
       linear-gradient(90deg, rgba(120, 150, 220, 0.06) 1px, transparent 1px);
     background-size: 40px 40px;
   }
-  #icon { font-size: 96px; line-height: 1; z-index: 1; }
+  #icon { z-index: 1; width: 110px; height: 110px; }
+  #icon svg { width: 100%; height: 100%; stroke: #7aa2ff; fill: none; stroke-width: 1.5; }
   #title {
     z-index: 1; color: #f4f7ff; font-size: 38px; font-weight: 700;
     letter-spacing: -0.5px; text-align: center; max-width: 480px;
   }
-  #sub { z-index: 1; color: #9fb0d0; font-size: 19px; text-align: center; }
+  #sub { z-index: 1; color: #9fb0d0; font-size: 19px; text-align: center; max-width: 460px; }
   #brand {
-    position: absolute; bottom: 26px; z-index: 1; display: flex; align-items: center; gap: 12px;
+    position: absolute; bottom: 26px; z-index: 1;
     color: #6d7ea6; font-size: 15px; font-weight: 600; letter-spacing: 2px;
   }
   #brand b { color: #7aa2ff; }
@@ -45,8 +47,13 @@
     <div id="brand"><span>AGENT<b>POS</b> DEMO STORE</span></div>
   </div>
   <script>
+    const ICONS = {
+      guide: '<svg viewBox="0 0 24 24"><path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v17.5H6.5A2.5 2.5 0 0 0 4 22V4.5z"/><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M8 7h8M8 10.5h6"/></svg>',
+      stickers: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="10" height="10" rx="2"/><rect x="11" y="11" width="10" height="10" rx="5"/><path d="M6.5 8l1.8 1.8L11.5 6"/></svg>',
+      support: '<svg viewBox="0 0 24 24"><path d="M12 21s-7.5-4.6-9.5-9A5.4 5.4 0 0 1 12 6.7 5.4 5.4 0 0 1 21.5 12c-2 4.4-9.5 9-9.5 9z"/></svg>',
+    };
     const q = new URLSearchParams(location.search);
-    document.getElementById("icon").textContent = q.get("icon") || "*";
+    document.getElementById("icon").innerHTML = ICONS[q.get("icon")] || ICONS.guide;
     document.getElementById("title").textContent = q.get("title") || "";
     document.getElementById("sub").textContent = q.get("sub") || "";
   </script>

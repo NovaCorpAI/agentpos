@@ -46,7 +46,7 @@ const scan = await scanSite({
 console.log(`scan: ${scan.drafts.length} drafts`, scan.stats);
 storage.replaceDrafts(scan.drafts);
 
-let confirmed = 0;
+const confirmedIds = new Set();
 for (const draft of scan.drafts) {
   const sku = draft.attributes?.sku ?? draft.externalId ?? draft.id;
   const price =
@@ -55,11 +55,21 @@ for (const draft of scan.drafts) {
     console.log(`skip ${draft.id}: no price suggestion and no override`);
     continue;
   }
-  gate.catalog.confirm(draft, price);
-  confirmed += 1;
+  confirmedIds.add(gate.catalog.confirm(draft, price).id);
 }
-const published = gate.catalog.publishAll();
-console.log(`confirmed ${confirmed}, published ${published.length}:`);
+let published = gate.catalog.publishAll();
+// Renamed/removed source products leave stale published items behind (item id is the title
+// slug). Unpublish anything this run did not confirm; orders keep their own copies, so
+// history is untouched.
+for (const item of published) {
+  if (!confirmedIds.has(item.id)) {
+    gate.catalog.unpublish(item.id);
+    storage.setItemStatus(item.id, "draft");
+    console.log(`unpublished stale ${item.id} (${item.title})`);
+  }
+}
+published = published.filter((i) => confirmedIds.has(i.id));
+console.log(`confirmed ${confirmedIds.size}, published ${published.length}:`);
 for (const item of published) console.log(`  ${item.id}  ${item.title}`);
 storage.close();
 if (published.length === 0) process.exit(1);
