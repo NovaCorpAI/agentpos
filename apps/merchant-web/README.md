@@ -1,9 +1,11 @@
 # @agentpos/merchant-web
 
-The merchant onboarding wizard: a single web page where a store owner produces a valid AgentPOS
-configuration and verifies their deployment, without reading docs. It walks the same steps as
-`docs/onboarding.es.md` (store basics, wallet, WooCommerce keys, generated files, verification),
-in Spanish first with an English toggle.
+The seller's space: a single web page where a store owner connects their store in four guided
+steps, without reading docs. Step 1 "Tu tienda" (store URL, name, WooCommerce REST keys with a
+live probe), step 2 "Tu wallet" (public address only; a pasted secret is refused instantly),
+step 3 "Revisa y descarga" (generated `agentpos.config.json` and `.env`, testnet by default),
+step 4 "Instala y vende" (proxy rules, install commands, and the same verification checklist a
+real buying agent runs). Spanish first with an English toggle, mirroring `docs/onboarding.es.md`.
 
 ## Stateless, on purpose
 
