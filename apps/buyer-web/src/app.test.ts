@@ -47,8 +47,8 @@ describe("pages", () => {
     const res = await app.request("/");
     expect(res.status).toBe(200);
     const html = await res.text();
-    expect(html).toContain("Max per purchase");
-    expect(html).toContain("never stores or asks for a secret key");
+    expect(html).toContain("Maximo por compra");
+    expect(html).toContain("nunca guarda ni pide una llave secreta");
   });
 
   it("saves the mandate through the form and shows it back", async () => {
@@ -56,7 +56,7 @@ describe("pages", () => {
     expect(post.status).toBe(303);
     expect(post.headers.get("location")).toBe("/?saved=1");
     const html = await (await app.request("/?saved=1")).text();
-    expect(html).toContain("Mandate saved");
+    expect(html).toContain("Mandato guardado");
     expect(html).toContain('value="25"');
     expect(html).toContain("https://shop.test");
   });
@@ -78,16 +78,17 @@ describe("pages", () => {
 
     let html = await (await app.request("/proposals")).text();
     expect(html).toContain("1 x Sticker");
-    expect(html).toContain("Approve");
-    expect(html).toContain("Reject");
+    expect(html).toContain("Aprobar");
+    expect(html).toContain("Rechazar");
 
     const approve = await app.request(`/proposals/${proposal.id}/approve`, { method: "POST" });
     expect(approve.status).toBe(303);
     html = await (await app.request("/proposals")).text();
-    expect(html).toContain("awaiting signature");
+    expect(html).toContain("esperando firma");
     expect(html).toContain("agentpos-buyer demo");
-    // The page never pretends the purchase happened.
-    expect(html).not.toContain("Paid");
+    // The page never pretends the purchase happened: no paid tag, no paid section.
+    expect(html).not.toContain("tag paid");
+    expect(html).not.toContain("Pagadas");
   });
 
   it("renders the activity page with the history", async () => {
@@ -95,9 +96,9 @@ describe("pages", () => {
     const proposal = await proposeViaApi(app);
     await app.request(`/proposals/${proposal.id}/reject`, { method: "POST" });
     const html = await (await app.request("/activity")).text();
-    expect(html).toContain("mandate saved");
-    expect(html).toContain("proposal created");
-    expect(html).toContain("proposal rejected");
+    expect(html).toContain("mandato guardado");
+    expect(html).toContain("propuesta creada");
+    expect(html).toContain("propuesta rechazada");
     expect(html).toContain("1 x Sticker");
   });
 });
