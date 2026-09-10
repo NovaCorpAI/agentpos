@@ -24,7 +24,6 @@ import {
   newTraceId,
   silentLogger,
   toReceipt,
-  usdc,
   usdcFromMinor,
 } from "@agentpos/core";
 import type {
@@ -56,6 +55,7 @@ import { buildReconciliationCsv } from "./export.js";
 import { FailoverFacilitator, resolveFacilitatorEndpoints } from "./facilitators.js";
 import type { FacilitatorClientFactory, FacilitatorEndpoint } from "./facilitators.js";
 import { createMcpHandler } from "./mcp.js";
+import { buildRulesView, registerMerchantApi } from "./merchant-api.js";
 import { TokenBucketLimiter, clientIp, rateLimit } from "./ratelimit.js";
 import { loadOrCreateReceiptSigner } from "./receipt-key.js";
 import { SiteStorage } from "./storage.js";
@@ -86,6 +86,12 @@ export interface AgentPOSDeps {
   receiptSecret?: string | undefined;
   /** Shared secret the merchant signs approval resolutions with. Without it, resolve answers 401. */
   approvalSecret?: string | undefined;
+  /**
+   * The STORE OWNER's bearer token for the read-only merchant API (`{base}/api/merchant/*`),
+   * the surface AgentPOS Cloud and the merchant's own tooling read. Min 24 chars (enforced).
+   * When absent the routes are not mounted at all (same pattern as the buyer-web signer bridge).
+   */
+  merchantApiToken?: string | undefined;
   /** Tests only: fetch used for facilitator health checks. */
   healthFetch?: typeof globalThis.fetch;
 }
@@ -162,6 +168,8 @@ const STATUS_BY_CODE: Record<string, number> = {
   APPROVAL_SNAPSHOT_CHANGED: 409,
   // verifiable receipts (M4)
   RECEIPT_NOT_FOUND: 404,
+  // merchant API (Cloud foundation): the owner token is missing or wrong.
+  MERCHANT_UNAUTHORIZED: 401,
   // agent identity (M3): 401 when the caller failed to prove who it is, 403 when it proved it
   // and the answer is still no.
   AGENT_IDENTITY_REQUIRED: 401,
@@ -434,10 +442,15 @@ export function createAgentPOSApp(deps: AgentPOSDeps): AgentPOSSite {
     perMinute: rl.checkoutAttemptsPerCart,
     burst: 0,
   });
+  const merchantApiLimiter = new TokenBucketLimiter({
+    perMinute: rl.merchantApiPerMinute,
+    burst: rl.burst,
+  });
   setInterval(() => {
     ipCartLimiter.sweep();
     ipCheckoutLimiter.sweep();
     cartAttemptLimiter.sweep();
+    merchantApiLimiter.sweep();
   }, 60_000).unref();
 
   // --- facilitator health (cached) ------------------------------------------------
@@ -616,48 +629,10 @@ export function createAgentPOSApp(deps: AgentPOSDeps): AgentPOSSite {
   });
   app.get(`${base}/dashboard`, (c) => c.html(dashboardHtml));
 
-  // The rules the store enforces on agents, for the Rules tab of the dashboard. Read-only view
-  // derived from SiteConfig. Exposing it adds no attack surface: every rule here is already
-  // discoverable by probing the store (policy denials carry code + details, the 402 carries the
-  // payment terms, the UCP manifest carries payTo), so this only saves the merchant the probing.
-  // Secrets never appear: channels are reduced to configured/not booleans on purpose.
-  app.get(`${base}/dashboard/rules`, (c) => {
-    const p = site.policy;
-    // Optional USDC amounts normalized through the money types; null means "no limit".
-    const money = (v: string | undefined): string | null =>
-      v === undefined ? null : formatUsdc(usdc(v));
-    return c.json({
-      store: { name: site.displayName, url: siteUrl },
-      network: core.caip2,
-      asset: core.checkoutAsset,
-      payTo: site.payTo,
-      cartTtlMinutes: site.cartTtlMinutes,
-      policy: {
-        status: p.status,
-        maxOrderUsdc: money(p.maxOrderUsdc),
-        period: p.period,
-        maxPeriodUsdc: money(p.maxPeriodUsdc),
-        maxQuantityPerItem: p.maxQuantityPerItem ?? null,
-        maxQuantityPerOrder: p.maxQuantityPerOrder ?? null,
-        excludedItemsCount: p.excludedItems.length,
-        allowedShippingCountries: p.allowedShippingCountries,
-        approvalThresholdUsdc: money(p.approvalThresholdUsdc),
-      },
-      approvals: {
-        enabled: site.approvals.enabled,
-        ttlMinutes: site.approvals.ttlMinutes,
-        channels: {
-          webhook: site.approvals.webhookUrl !== undefined,
-          whatsapp: site.approvals.whatsapp !== undefined,
-        },
-      },
-      identity: { mode: site.identity.mode, autoRegister: site.identity.autoRegister },
-      receipts: {
-        enabled: site.receipts.enabled,
-        publicOrderReceipts: site.receipts.publicOrderReceipts,
-      },
-    });
-  });
+  // The rules the store enforces on agents, for the Rules tab of the dashboard. Shared with the
+  // merchant API (`/api/merchant/rules`), so the two views can never drift; see buildRulesView
+  // for why exposing this adds no attack surface.
+  app.get(`${base}/dashboard/rules`, (c) => c.json(buildRulesView(site, core)));
 
   // Reconciliation export: one CSV row per order in the requested window, for the merchant's
   // accounting (unified conciliation across rails as they land). Privacy: the file carries
@@ -693,34 +668,44 @@ export function createAgentPOSApp(deps: AgentPOSDeps): AgentPOSSite {
     });
   });
 
-  app.get(`${base}/health`, async (c) => {
-    const stuck = checkout.stuckOrders().length;
-    // Per-facilitator report: host only, never URLs beyond the host and never API keys.
-    // With a pool the store is healthy while ANY facilitator can take payments (that is the
-    // point of failover); the entries say which one is degraded and which one is active.
-    let facilitator: FacilitatorHealth;
-    let pool: Array<Record<string, unknown>>;
+  // Per-facilitator report: host only, never URLs beyond the host and never API keys.
+  // With a pool the store is healthy while ANY facilitator can take payments (that is the
+  // point of failover); the entries say which one is degraded and which one is active.
+  // Shared by /health and the merchant API summary, so both report the same picture.
+  const facilitatorReport = async (): Promise<{
+    facilitator: FacilitatorHealth;
+    pool: Array<Record<string, unknown>>;
+  }> => {
     if (failover) {
       const health = await failover.health();
       const active = health.endpoints[health.active];
-      facilitator = {
-        ok: health.endpoints.some((e) => e.status === "ok"),
-        status: undefined,
-        supportsNetwork: active?.status === "ok",
-        checkedAt: active?.checkedAt ?? new Date().toISOString(),
+      return {
+        facilitator: {
+          ok: health.endpoints.some((e) => e.status === "ok"),
+          status: undefined,
+          supportsNetwork: active?.status === "ok",
+          checkedAt: active?.checkedAt ?? new Date().toISOString(),
+        },
+        pool: health.endpoints.map((e) => ({ ...e })),
       };
-      pool = health.endpoints.map((e) => ({ ...e }));
-    } else {
-      facilitator = await facilitatorStatus();
-      pool = [
+    }
+    const facilitator = await facilitatorStatus();
+    return {
+      facilitator,
+      pool: [
         {
           host: new URL(primaryEndpoint.url).host,
           status: facilitator.ok ? "ok" : "degraded",
           active: true,
           checkedAt: facilitator.checkedAt,
         },
-      ];
-    }
+      ],
+    };
+  };
+
+  app.get(`${base}/health`, async (c) => {
+    const stuck = checkout.stuckOrders().length;
+    const { facilitator, pool } = await facilitatorReport();
     const ok = facilitator.ok && stuck === 0;
     return c.json(
       {
@@ -1063,6 +1048,25 @@ export function createAgentPOSApp(deps: AgentPOSDeps): AgentPOSSite {
         );
       }
       return c.json({ receipt, verification: verifyReceipt(receipt) });
+    });
+  }
+
+  // --- merchant API (read-only; AgentPOS Cloud foundation) -------------------
+  // Mounted only when the store owner's token is configured; see merchant-api.ts for why the
+  // surface is read-only by design.
+  if (deps.merchantApiToken !== undefined) {
+    registerMerchantApi(app, {
+      token: deps.merchantApiToken,
+      base,
+      siteUrl,
+      site,
+      core,
+      storage,
+      checkout,
+      receipts,
+      facilitatorReport,
+      limiter: merchantApiLimiter,
+      logger,
     });
   }
 

@@ -102,12 +102,15 @@ export const siteConfigSchema = z.object({
       cartPerMinutePerIp: z.number().int().min(1).default(60),
       checkoutPerMinutePerIp: z.number().int().min(1).default(60),
       checkoutAttemptsPerCart: z.number().int().min(1).default(10),
+      /** Merchant API reads (per IP). The Cloud polls; 120/min covers a tight sync loop. */
+      merchantApiPerMinute: z.number().int().min(1).default(120),
       burst: z.number().int().min(0).default(20),
     })
     .default({
       cartPerMinutePerIp: 60,
       checkoutPerMinutePerIp: 60,
       checkoutAttemptsPerCart: 10,
+      merchantApiPerMinute: 120,
       burst: 20,
     }),
 });
@@ -127,6 +130,11 @@ export interface SiteSecrets {
   receiptSecret: string | undefined;
   twilioAccountSid: string | undefined;
   twilioAuthToken: string | undefined;
+  /**
+   * The STORE OWNER's bearer token for the read-only merchant API (`{base}/api/merchant/*`),
+   * the surface AgentPOS Cloud reads. Min 24 chars. Unset means the routes are not mounted.
+   */
+  merchantApiToken: string | undefined;
 }
 
 export function parseSiteConfig(input: unknown): SiteConfig {
@@ -162,6 +170,14 @@ export function loadSiteConfig(cwd: string = process.cwd()): SiteConfig {
 }
 
 export function secretsFromEnv(env: Record<string, string | undefined> = process.env): SiteSecrets {
+  const merchantApiToken = env.MERCHANT_API_TOKEN;
+  // Enforced here, at the config boundary: a short owner token would make every order and buyer
+  // email guessable. Refusing to start beats starting exposed.
+  if (merchantApiToken !== undefined && merchantApiToken.length < 24) {
+    throw new AgentPOSError("CONFIG_INVALID", "MERCHANT_API_TOKEN is too short", {
+      hint: "Use at least 24 characters, e.g. `openssl rand -hex 24`, or unset it to keep the merchant API unmounted.",
+    });
+  }
   return {
     wooConsumerKey: env.AGENTPOS_WOO_CONSUMER_KEY,
     wooConsumerSecret: env.AGENTPOS_WOO_CONSUMER_SECRET,
@@ -171,6 +187,7 @@ export function secretsFromEnv(env: Record<string, string | undefined> = process
     receiptSecret: env.AGENTPOS_RECEIPT_SECRET,
     twilioAccountSid: env.AGENTPOS_TWILIO_ACCOUNT_SID,
     twilioAuthToken: env.AGENTPOS_TWILIO_AUTH_TOKEN,
+    merchantApiToken,
   };
 }
 

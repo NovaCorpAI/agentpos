@@ -55,7 +55,7 @@ function csvField(value: string): string {
  * "x402-stellar"). Constant today; when a second rail lands, its payment records carry another
  * network and the CSV schema does not change.
  */
-function railOf(network: string): string {
+export function railOf(network: string): string {
   const chain = network.split(":")[0];
   return chain ? `x402-${chain}` : "";
 }

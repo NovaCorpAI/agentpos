@@ -200,6 +200,10 @@ export async function createAgentPOS(options: CreateAgentPOSOptions = {}): Promi
     alert,
     ...(approvals ? { approvals } : {}),
     approvalSecret: secrets.approvalSecret,
+    // Read-only merchant API (Cloud foundation): mounted only when the owner set a token.
+    ...(secrets.merchantApiToken !== undefined
+      ? { merchantApiToken: secrets.merchantApiToken }
+      : {}),
     ...(options.facilitator ? { facilitator: options.facilitator } : {}),
   });
   const retryPending = async (): Promise<number> => {
