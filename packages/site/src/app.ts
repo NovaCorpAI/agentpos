@@ -52,6 +52,7 @@ import { buildDashboardHtml } from "./dashboard.js";
 import { CheckoutService } from "./checkout.js";
 import type { AlertSink } from "./checkout.js";
 import type { SiteConfig } from "./config.js";
+import { buildReconciliationCsv } from "./export.js";
 import { FailoverFacilitator, resolveFacilitatorEndpoints } from "./facilitators.js";
 import type { FacilitatorClientFactory, FacilitatorEndpoint } from "./facilitators.js";
 import { createMcpHandler } from "./mcp.js";
@@ -655,6 +656,40 @@ export function createAgentPOSApp(deps: AgentPOSDeps): AgentPOSSite {
         enabled: site.receipts.enabled,
         publicOrderReceipts: site.receipts.publicOrderReceipts,
       },
+    });
+  });
+
+  // Reconciliation export: one CSV row per order in the requested window, for the merchant's
+  // accounting (unified conciliation across rails as they land). Privacy: the file carries
+  // buyer emails, which the merchant already sees on each of their own orders; the endpoint
+  // sits on the dashboard path like the rest of the merchant surface.
+  const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+  app.get(`${base}/dashboard/export.csv`, (c) => {
+    const today = new Date();
+    const from = c.req.query("from")?.slice(0, 10) ??
+      new Date(today.getTime() - 30 * 86_400_000).toISOString().slice(0, 10);
+    const to = c.req.query("to")?.slice(0, 10) ?? today.toISOString().slice(0, 10);
+    const since = new Date(`${from}T00:00:00.000Z`);
+    const until = new Date(`${to}T23:59:59.999Z`);
+    if (
+      !DATE_ONLY.test(from) ||
+      !DATE_ONLY.test(to) ||
+      Number.isNaN(since.getTime()) ||
+      Number.isNaN(until.getTime()) ||
+      from > to
+    ) {
+      return errorResponse(
+        c,
+        new AgentPOSError("CONFIG_INVALID", "Invalid export range", {
+          hint: "Use ?from=YYYY-MM-DD&to=YYYY-MM-DD with from <= to (default: last 30 days).",
+          details: { from, to },
+        }),
+      );
+    }
+    const csv = buildReconciliationCsv(storage.listOrdersBetween(since, until), site.locale);
+    return c.body(csv, 200, {
+      "content-type": "text/csv; charset=utf-8",
+      "content-disposition": `attachment; filename="agentpos-conciliacion-${from}-${to}.csv"`,
     });
   });
 

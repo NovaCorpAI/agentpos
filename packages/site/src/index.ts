@@ -45,6 +45,7 @@ export type {
   FacilitatorPoolHealth,
   FacilitatorPoolEntryHealth,
 } from "./facilitators.js";
+export { buildReconciliationCsv } from "./export.js";
 
 export interface CreateAgentPOSOptions {
   /** Directory holding agentpos.config.json and the data dir. Ignored when `site` is given. */

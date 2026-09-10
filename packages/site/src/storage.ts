@@ -319,6 +319,16 @@ export class SiteStorage {
     return rows.map((r) => reviveOrder(r.json));
   }
 
+  /** Orders created inside [since, until], oldest first (reconciliation export). */
+  listOrdersBetween(since: Date, until: Date): Order[] {
+    const rows = this.db
+      .prepare(
+        "select json from orders where created_at >= ? and created_at <= ? order by created_at asc",
+      )
+      .all(since.toISOString(), until.toISOString()) as Row[];
+    return rows.map((r) => reviveOrder(r.json));
+  }
+
   /**
    * Volume already committed since `since` (M1 policy accumulator): settled orders plus carts
    * awaiting merchant approval that have not expired. Counting the pending ones is deliberate,

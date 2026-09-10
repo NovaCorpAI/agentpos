@@ -62,5 +62,11 @@ existing stuck-order path instead of risking a double settlement. `/agentpos/hea
 facilitator (host only) as `ok`/`degraded` and marks the active one. With a single facilitator
 nothing changes.
 
+Reconciliation export: `GET /agentpos/dashboard/export.csv?from=YYYY-MM-DD&to=YYYY-MM-DD`
+(default: last 30 days) returns one CSV row per order (date, ids, status, items, gross USDC,
+rail, asset, tx hash, settled at, buyer email) with localized headers (EN/ES per `locale`),
+RFC 4180 quoting and a UTF-8 BOM so Excel opens it directly. The dashboard's Metrics tab links
+it ("Exportar CSV").
+
 Storage: `node:sqlite` in `.agentpos/agentpos.sqlite` (no native dependencies). Secrets stay in
 `.env` on the merchant's server. See `docs/quickstart.en.md` / `docs/quickstart.es.md`.
