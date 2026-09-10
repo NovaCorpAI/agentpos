@@ -319,6 +319,83 @@ export class SiteStorage {
     return rows.map((r) => reviveOrder(r.json));
   }
 
+  /**
+   * Keyset-paginated order page, oldest first (merchant API). The `(created_at, id)` pair is a
+   * total order over rows, so a cursor made of the last row's pair resumes exactly where the
+   * previous page ended even when two orders share a timestamp; AgentPOS Cloud syncs
+   * incrementally by keeping the last cursor and asking again.
+   */
+  listOrdersPage(options: {
+    status?: OrderStatus;
+    since?: Date;
+    until?: Date;
+    limit: number;
+    after?: { createdAt: string; id: string };
+  }): Order[] {
+    const where: string[] = [];
+    const params: Array<string | number> = [];
+    if (options.status) {
+      where.push("status = ?");
+      params.push(options.status);
+    }
+    if (options.since) {
+      where.push("created_at >= ?");
+      params.push(options.since.toISOString());
+    }
+    if (options.until) {
+      where.push("created_at <= ?");
+      params.push(options.until.toISOString());
+    }
+    if (options.after) {
+      where.push("(created_at > ? or (created_at = ? and id > ?))");
+      params.push(options.after.createdAt, options.after.createdAt, options.after.id);
+    }
+    const rows = this.db
+      .prepare(
+        `select json from orders${where.length > 0 ? ` where ${where.join(" and ")}` : ""} order by created_at asc, id asc limit ?`,
+      )
+      .all(...params, options.limit) as Row[];
+    return rows.map((r) => reviveOrder(r.json));
+  }
+
+  /** Orders per status (merchant API summary). */
+  orderStatusCounts(): Record<string, number> {
+    const rows = this.db
+      .prepare("select status, count(*) as n from orders group by status")
+      .all() as Array<{ status: string; n: number }>;
+    return Object.fromEntries(rows.map((r) => [r.status, Number(r.n)]));
+  }
+
+  /** Published items only, without deserializing them (merchant API summary). */
+  publishedItemCount(): number {
+    const row = this.db
+      .prepare("select count(*) as n from items where status = 'published'")
+      .get() as { n: number };
+    return Number(row.n);
+  }
+
+  /** Height of the receipt chain as stored (merchant API summary). */
+  receiptCount(): number {
+    const row = this.db.prepare("select count(*) as n from receipts").get() as { n: number };
+    return Number(row.n);
+  }
+
+  /** Receipt chain page by sequence, ascending (merchant API). `seq` is 1-based and gap-free. */
+  listReceiptsAfterSeq(afterSeq: number, limit: number): Receipt[] {
+    const rows = this.db
+      .prepare("select json from receipts where seq > ? order by seq asc limit ?")
+      .all(afterSeq, limit) as Row[];
+    return rows.map((r) => JSON.parse(r.json) as Receipt);
+  }
+
+  /** One receipt by chain position (merchant API detail). */
+  getReceiptBySeq(seq: number): Receipt | undefined {
+    const row = this.db.prepare("select json from receipts where seq = ?").get(seq) as
+      | Row
+      | undefined;
+    return row ? (JSON.parse(row.json) as Receipt) : undefined;
+  }
+
   /** Orders created inside [since, until], oldest first (reconciliation export). */
   listOrdersBetween(since: Date, until: Date): Order[] {
     const rows = this.db

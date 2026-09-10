@@ -68,5 +68,38 @@ rail, asset, tx hash, settled at, buyer email) with localized headers (EN/ES per
 RFC 4180 quoting and a UTF-8 BOM so Excel opens it directly. The dashboard's Metrics tab links
 it ("Exportar CSV").
 
+## Merchant API
+
+Token-authenticated, READ-ONLY endpoints under `/agentpos/api/merchant/*` for the store owner's
+own tooling, and the surface AgentPOS Cloud reads: the hosted dashboard consumes a store through
+this API instead of touching its database, and self-hosted merchants get the same programmatic
+access to their own data. Read-only is deliberate: prices, policies and rules live in the
+merchant's `agentpos.config.json` on their machine, so nothing remote (our Cloud included) can
+ever change what a store sells or for how much.
+
+Set `MERCHANT_API_TOKEN` (min 24 chars, e.g. `openssl rand -hex 24`) in the sidecar's
+environment; without it the routes are not mounted at all. The token belongs to the store owner:
+treat it like a password.
+
+```
+curl -H "Authorization: Bearer <MERCHANT_API_TOKEN>" \
+  https://shop.example/agentpos/api/merchant/summary
+```
+
+- `GET /api/merchant/summary` — store identity, order/receipt/catalog counts, facilitator
+  health (hosts only) and adapter version: a dashboard front page in one call.
+- `GET /api/merchant/orders?status=&from=&to=&limit=&cursor=` — paginated orders, oldest
+  first, with payment, rail and tx hash per order. The cursor is opaque; keep the returned
+  `nextCursor` to sync incrementally.
+- `GET /api/merchant/orders/:id` — full detail, `connectorError` and `hold` included.
+- `GET /api/merchant/receipts?limit=&cursor=` — the signed receipt chain (seq, hash, event,
+  order id, timestamp); `GET /api/merchant/receipts/:seq` returns one full receipt with body,
+  hash and signature.
+- `GET /api/merchant/rules` — the same JSON the dashboard's Rules tab renders.
+
+Wrong or missing token answers `401` with code `MERCHANT_UNAUTHORIZED`; the group is rate
+limited (`rateLimit.merchantApiPerMinute`, default 120/min) with `429` + `Retry-After`. Logs
+carry a sha256-8 hash of the token, never the token.
+
 Storage: `node:sqlite` in `.agentpos/agentpos.sqlite` (no native dependencies). Secrets stay in
 `.env` on the merchant's server. See `docs/quickstart.en.md` / `docs/quickstart.es.md`.
