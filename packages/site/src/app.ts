@@ -52,6 +52,8 @@ import { buildDashboardHtml } from "./dashboard.js";
 import { CheckoutService } from "./checkout.js";
 import type { AlertSink } from "./checkout.js";
 import type { SiteConfig } from "./config.js";
+import { FailoverFacilitator, resolveFacilitatorEndpoints } from "./facilitators.js";
+import type { FacilitatorClientFactory, FacilitatorEndpoint } from "./facilitators.js";
 import { createMcpHandler } from "./mcp.js";
 import { TokenBucketLimiter, clientIp, rateLimit } from "./ratelimit.js";
 import { loadOrCreateReceiptSigner } from "./receipt-key.js";
@@ -62,8 +64,15 @@ export interface AgentPOSDeps {
   core: CoreConfig;
   connector: OrderConnector;
   storage?: SiteStorage;
-  /** Tests only: stub facilitator. */
+  /** Tests only: stub facilitator. Takes precedence over `facilitators`. */
   facilitator?: FacilitatorClient;
+  /**
+   * Ordered facilitator endpoints (primary + fallbacks). Resolved from the site config's
+   * `facilitators` array or from env (AGENTPOS_FACILITATOR_FALLBACK_URL/_API_KEY) when omitted.
+   */
+  facilitators?: FacilitatorEndpoint[];
+  /** Tests only: builds the per-endpoint client for the failover pool. */
+  facilitatorClientFactory?: FacilitatorClientFactory;
   logger?: Logger;
   alert?: AlertSink;
   /** Human approval queue (M2). Built from storage when the site enables approvals. */
@@ -347,7 +356,28 @@ export function createAgentPOSApp(deps: AgentPOSDeps): AgentPOSSite {
   };
 
   // --- x402 resource server with settlement hooks ---------------------------
-  const resourceServer = createResourceServer(core, deps.facilitator);
+  // Facilitator failover (operational continuity): with the default single facilitator this is
+  // exactly the pre-failover path (core builds the one HTTP client, no probes, no retries).
+  // Only an explicit pool (config `facilitators`, fallback env vars, or injected endpoints)
+  // routes through the FailoverFacilitator.
+  const facilitatorEndpoints = deps.facilitators ?? resolveFacilitatorEndpoints(site, core);
+  const primaryEndpoint = facilitatorEndpoints[0] as FacilitatorEndpoint;
+  const primaryIsCoreDefault =
+    facilitatorEndpoints.length === 1 &&
+    primaryEndpoint.url === core.facilitatorUrl &&
+    primaryEndpoint.apiKeys.join(",") === core.facilitatorApiKeys.join(",");
+  const failover =
+    deps.facilitator || primaryIsCoreDefault
+      ? undefined
+      : new FailoverFacilitator({
+          endpoints: facilitatorEndpoints,
+          network: core.caip2,
+          logger,
+          ...(deps.facilitatorClientFactory
+            ? { createClient: deps.facilitatorClientFactory }
+            : {}),
+        });
+  const resourceServer = createResourceServer(core, deps.facilitator ?? failover);
   const cartIdFrom = (transport: unknown): string | undefined => {
     const t = transport as HTTPTransportContext | undefined;
     const value = t?.request?.adapter?.getQueryParam?.("cart");
@@ -629,8 +659,33 @@ export function createAgentPOSApp(deps: AgentPOSDeps): AgentPOSSite {
   });
 
   app.get(`${base}/health`, async (c) => {
-    const facilitator = await facilitatorStatus();
     const stuck = checkout.stuckOrders().length;
+    // Per-facilitator report: host only, never URLs beyond the host and never API keys.
+    // With a pool the store is healthy while ANY facilitator can take payments (that is the
+    // point of failover); the entries say which one is degraded and which one is active.
+    let facilitator: FacilitatorHealth;
+    let pool: Array<Record<string, unknown>>;
+    if (failover) {
+      const health = await failover.health();
+      const active = health.endpoints[health.active];
+      facilitator = {
+        ok: health.endpoints.some((e) => e.status === "ok"),
+        status: undefined,
+        supportsNetwork: active?.status === "ok",
+        checkedAt: active?.checkedAt ?? new Date().toISOString(),
+      };
+      pool = health.endpoints.map((e) => ({ ...e }));
+    } else {
+      facilitator = await facilitatorStatus();
+      pool = [
+        {
+          host: new URL(primaryEndpoint.url).host,
+          status: facilitator.ok ? "ok" : "degraded",
+          active: true,
+          checkedAt: facilitator.checkedAt,
+        },
+      ];
+    }
     const ok = facilitator.ok && stuck === 0;
     return c.json(
       {
@@ -640,6 +695,7 @@ export function createAgentPOSApp(deps: AgentPOSDeps): AgentPOSSite {
         network: core.caip2,
         asset: core.checkoutAsset,
         facilitator,
+        facilitators: pool,
         orders: { stuck },
         // The key third parties check this store's receipts against (M4).
         ...(receipts

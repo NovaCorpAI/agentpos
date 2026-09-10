@@ -51,5 +51,16 @@ Trust layer, all optional and off by default: `policy` (what may be sold and up 
 `receipts` (a signed, chained record of every sale and every refusal, on by default). See
 `@agentpos/policy`, `@agentpos/approvals`, `@agentpos/identity` and `@agentpos/receipts`.
 
+Facilitator failover (operational continuity): configure an ordered facilitator list and the
+store keeps selling when the primary is down. Env: `AGENTPOS_FACILITATOR_URL` /
+`AGENTPOS_FACILITATOR_API_KEY` stay the primary; add `AGENTPOS_FACILITATOR_FALLBACK_URL` /
+`AGENTPOS_FACILITATOR_FALLBACK_API_KEY` for the fallback. Or in `agentpos.config.json`:
+`"facilitators": [{ "url": "...", "apiKey": "..." }, ...]` (the config file wins). Verify and
+settle of one payment always use the same facilitator, and a settle is retried on the next one
+only when the first attempt provably never connected; anything ambiguous goes through the
+existing stuck-order path instead of risking a double settlement. `/agentpos/health` lists each
+facilitator (host only) as `ok`/`degraded` and marks the active one. With a single facilitator
+nothing changes.
+
 Storage: `node:sqlite` in `.agentpos/agentpos.sqlite` (no native dependencies). Secrets stay in
 `.env` on the merchant's server. See `docs/quickstart.en.md` / `docs/quickstart.es.md`.

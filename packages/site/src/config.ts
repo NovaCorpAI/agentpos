@@ -30,6 +30,18 @@ export const siteConfigSchema = z.object({
       allowInsecureHttp: z.boolean().default(false),
     })
     .optional(),
+  /**
+   * Ordered facilitator list (operational continuity): the first entry is the primary, the
+   * rest are fallbacks tried in order when the primary is unhealthy. When present it wins over
+   * the env shape (AGENTPOS_FACILITATOR_URL/_API_KEY as primary plus
+   * AGENTPOS_FACILITATOR_FALLBACK_URL/_API_KEY). Prefer keeping apiKey in env; this field
+   * exists for merchants who manage one config file per deployment.
+   */
+  facilitators: z
+    .array(z.object({ url: z.url(), apiKey: z.string().min(1).optional() }))
+    .min(1)
+    .max(4)
+    .optional(),
   /** Path prefix for AgentPOS routes on the site. */
   basePath: z
     .string()

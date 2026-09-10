@@ -404,6 +404,9 @@ importers:
       '@stellar/stellar-sdk':
         specifier: ^16.2.0
         version: 16.2.0(debug@4.4.3)
+      '@x402/core':
+        specifier: 2.23.0
+        version: 2.23.0
       '@x402/hono':
         specifier: 2.23.0
         version: 2.23.0(hono@4.13.4)(typescript@5.9.3)
@@ -423,9 +426,6 @@ importers:
       '@types/node':
         specifier: ^24.13.3
         version: 24.13.3
-      '@x402/core':
-        specifier: 2.23.0
-        version: 2.23.0
       tsx:
         specifier: ^4.23.12
         version: 4.23.12

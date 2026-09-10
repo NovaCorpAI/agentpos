@@ -38,6 +38,13 @@ export { buildMcpServer, createMcpHandler } from "./mcp.js";
 export { TokenBucketLimiter } from "./ratelimit.js";
 export type { GateForPaymentResult } from "./checkout.js";
 export { generateAndStoreKeypair, loadKeypair, keysDir } from "./keys.js";
+export { FailoverFacilitator, resolveFacilitatorEndpoints } from "./facilitators.js";
+export type {
+  FacilitatorEndpoint,
+  FacilitatorClientFactory,
+  FacilitatorPoolHealth,
+  FacilitatorPoolEntryHealth,
+} from "./facilitators.js";
 
 export interface CreateAgentPOSOptions {
   /** Directory holding agentpos.config.json and the data dir. Ignored when `site` is given. */
