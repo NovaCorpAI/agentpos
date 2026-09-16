@@ -81,6 +81,8 @@ services:
       AGENTPOS_FACILITATOR_API_KEY: ${AGENTPOS_FACILITATOR_API_KEY:?}
       AGENTPOS_WOO_CONSUMER_KEY: ${DEMO_WOO_CONSUMER_KEY:?}
       AGENTPOS_WOO_CONSUMER_SECRET: ${DEMO_WOO_CONSUMER_SECRET:?}
+      # Read-only merchant API for the Cloud panel; empty = endpoints not mounted.
+      MERCHANT_API_TOKEN: ${DEMO_MERCHANT_API_TOKEN:-}
     volumes:
       # agentpos.config.json + .agentpos (SQLite, receipt signer) live here, on the host.
       - /root/.agentpos/demo-store:/data
