@@ -1,3 +1,9 @@
+/**
+ * Reconciliation export: the CSV document itself (RFC 4180 quoting, BOM, localized headers, money
+ * from minor units) and the guarantee that it is served ONLY behind the merchant token. The file
+ * carries buyer emails, order ids and transaction hashes; it used to sit on the public dashboard
+ * path, and that regression must stay closed.
+ */
 import { describe, expect, it } from "vitest";
 import { Keypair } from "@stellar/stellar-sdk";
 import { resolveConfig, usdc, usdcFromMinor } from "@agentpos/core";
@@ -10,6 +16,7 @@ import { stubFacilitator } from "./test-utils.js";
 const payTo = Keypair.random().publicKey();
 const core = resolveConfig({ network: "testnet" });
 const BOM = String.fromCharCode(0xfeff);
+const TOKEN = "owner-token-0123456789abcdef"; // 28 chars, as a store owner would generate
 
 const ES_HEADER =
   "fecha,orden,orden_externa,estado,items,monto_usdc,riel,activo,hash_transaccion,liquidado_el,correo_comprador";
@@ -42,6 +49,8 @@ function order(overrides: Partial<Order> & { id: string; createdAt: string }): O
   };
 }
 
+const EXPORT_PATH = "/agentpos/api/merchant/export.csv";
+
 function build(locale: "en" | "es") {
   const storage = new SiteStorage(":memory:");
   const site = parseSiteConfig({
@@ -57,10 +66,14 @@ function build(locale: "en" | "es") {
     connector,
     storage,
     facilitator: stubFacilitator(),
+    merchantApiToken: TOKEN,
   });
-  const csv = async (query = "") => {
+  // `null` means "send no Authorization header at all".
+  const csv = async (query = "", token: string | null = TOKEN) => {
     const res = await gate.fetch(
-      new Request(`https://shop.test/agentpos/dashboard/export.csv${query}`),
+      new Request(`https://shop.test${EXPORT_PATH}${query}`, {
+        headers: token !== null ? { authorization: `Bearer ${token}` } : {},
+      }),
     );
     // Raw bytes: Response.text() silently strips a UTF-8 BOM, which is what we assert on.
     const bytes = new Uint8Array(await res.arrayBuffer());
@@ -162,6 +175,7 @@ describe("reconciliation export", () => {
 
   it("rejects malformed or inverted ranges with a typed error", async () => {
     const t = build("es");
+    // "01-09-2026" is the trap: `new Date` reads it as a January date instead of refusing it.
     for (const query of ["?from=01-09-2026", "?from=2026-09-10&to=2026-09-01", "?to=notadate"]) {
       const { res, text } = await t.csv(query);
       expect(res.status).toBe(400);
@@ -187,5 +201,80 @@ describe("reconciliation export", () => {
     );
     const { text } = await t.csv("?from=2026-09-01&to=2026-09-01");
     expect(text).toContain(",0.0000001,x402-stellar,");
+  });
+});
+
+describe("the export is private merchant data", () => {
+  it("answers 401 without a token and with a wrong token, leaking no row", async () => {
+    const t = build("es");
+    t.storage.saveOrder(
+      order({
+        id: "ord_secret",
+        createdAt: "2026-09-01T10:00:00.000Z",
+        buyer: { email: "ada@example.com" },
+      }),
+    );
+    for (const token of [null, "wrong", `${TOKEN}x`, TOKEN.slice(0, -1) + "X"]) {
+      const { res, text } = await t.csv("?from=2026-09-01&to=2026-09-01", token);
+      expect(res.status).toBe(401);
+      expect((JSON.parse(text) as { error: { code: string } }).error.code).toBe(
+        "MERCHANT_UNAUTHORIZED",
+      );
+      expect(text).not.toContain("ada@example.com");
+      expect(text).not.toContain("ord_secret");
+    }
+  });
+
+  it("no longer serves the old public dashboard path", async () => {
+    const t = build("es");
+    t.storage.saveOrder(
+      order({
+        id: "ord_secret",
+        createdAt: "2026-09-01T10:00:00.000Z",
+        buyer: { email: "ada@example.com" },
+      }),
+    );
+    for (const path of [
+      "/agentpos/dashboard/export.csv",
+      "/agentpos/dashboard/export.csv?from=2026-09-01&to=2026-09-01",
+    ]) {
+      const res = await t.gate.fetch(new Request(`https://shop.test${path}`));
+      expect(res.status).toBe(404);
+      expect(await res.text()).not.toContain("ada@example.com");
+    }
+  });
+
+  it("is not mounted at all when the store configures no merchant token", async () => {
+    const storage = new SiteStorage(":memory:");
+    const bare = createAgentPOSApp({
+      site: parseSiteConfig({
+        siteUrl: "https://shop.test",
+        displayName: "Export Shop",
+        payTo,
+        platform: "generic",
+      }),
+      core,
+      connector,
+      storage,
+      facilitator: stubFacilitator(),
+    });
+    const res = await bare.fetch(
+      new Request(`https://shop.test${EXPORT_PATH}`, {
+        headers: { authorization: `Bearer ${TOKEN}` },
+      }),
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("the public dashboard page links no export, and shows the authed command instead", async () => {
+    const t = build("es");
+    const html = await (
+      await t.gate.fetch(new Request("https://shop.test/agentpos/dashboard"))
+    ).text();
+    expect(html).not.toContain("/dashboard/export.csv");
+    expect(html).toContain("/agentpos/api/merchant/export.csv");
+    expect(html).toContain("Authorization: Bearer $MERCHANT_API_TOKEN");
+    // No browser-side fetch of the export: that would mean shipping the owner's token to visitors.
+    expect(html).not.toContain("fetch(EXPORT");
   });
 });

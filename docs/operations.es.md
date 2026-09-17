@@ -46,29 +46,40 @@ Si está vacío, confirmaste precios pero no ejecutaste `publish`.
 Es de solo lectura por diseño: las reglas viven en `agentpos.config.json` en tu máquina, así que
 nada remoto puede cambiar qué vendes ni a qué precio.
 
-> **Quién lo puede ver.** El panel y `/agentpos/metrics` traen solo agregados, sin datos de
-> compradores, y en métricas el CORS está abierto a propósito. Pero
-> **`/agentpos/dashboard/export.csv` contiene correos de compradores y hoy no tiene ninguna
-> autenticación.** Si publicas `/agentpos/*` por proxy, restringe `/agentpos/dashboard` (o al
-> menos la exportación) a tu propia IP o detrás de autenticación básica en el proxy. Es una
-> carencia conocida, no una decisión de diseño.
+> **Quién lo puede ver.** Todo lo que hay en `/agentpos/dashboard` es público a propósito:
+> agregados sin datos de compradores, tu catálogo publicado y las reglas que se aplican a los
+> agentes. En métricas el CORS también está abierto a propósito. Nada que identifique a un
+> comprador se sirve desde esta ruta. La exportación de conciliación, que sí lleva correos de
+> compradores, vive detrás del token del comercio en `/agentpos/api/merchant/export.csv` (sección
+> siguiente).
 
 ## CSV de conciliación
 
-```
-GET https://TU-TIENDA/agentpos/dashboard/export.csv?from=AAAA-MM-DD&to=AAAA-MM-DD
+La exportación son datos privados del comercio, así que exige `MERCHANT_API_TOKEN` (ver
+[Rotar el token de la API del comercio](#rotar-el-token-de-la-api-del-comercio)):
+
+```bash
+curl -H "Authorization: Bearer $MERCHANT_API_TOKEN" \
+  "https://TU-TIENDA/agentpos/api/merchant/export.csv?from=AAAA-MM-DD&to=AAAA-MM-DD" \
+  -o conciliacion.csv
 ```
 
-Rango por defecto: últimos 30 días. Una fila por orden, comillas según RFC 4180, saltos CRLF y BOM
-UTF-8 para que Excel lo abra directo. Los encabezados siguen tu `locale` (`en` o `es`); el orden de
-las columnas nunca cambia:
+Rango por defecto: últimos 30 días. Los límites aceptan `AAAA-MM-DD` (días completos) o una marca
+de tiempo ISO completa; un rango mal formado o invertido responde `400` con código
+`CONFIG_INVALID`, y un token ausente o equivocado responde `401` `MERCHANT_UNAUTHORIZED`.
+
+Una fila por orden, comillas según RFC 4180, saltos CRLF y BOM UTF-8 para que Excel lo abra
+directo. Los encabezados siguen tu `locale` (`en` o `es`); el orden de las columnas nunca cambia:
 
 `fecha, orden, orden_externa, estado, items, monto_usdc, riel, activo, hash_transaccion,
 liquidado_el, correo_comprador`
 
 `riel` se deriva de la red del pago (hoy `x402-stellar`), así que sumar un segundo riel de pago más
-adelante no cambia la forma del archivo. La pestaña de Métricas enlaza este archivo como
-"Exportar CSV".
+adelante no cambia la forma del archivo.
+
+La pestaña de Métricas del panel no descarga el archivo: te muestra este mismo comando para que lo
+copies. El panel de AgentPOS Cloud sí puede descargarlo por ti, porque guarda ese token por tu
+cuenta.
 
 ## Estados de una orden
 
@@ -233,9 +244,10 @@ npx @agentpos/site agents revoke GAGENT... -r "llave perdida"
 ## Rotar el token de la API del comercio
 
 `MERCHANT_API_TOKEN` es el token del dueño de la tienda para la API de solo lectura
-(`GET /agentpos/api/merchant/summary | orders | orders/:id | receipts | receipts/:seq | rules`).
-Mínimo 24 caracteres; sin él esas rutas ni siquiera se montan. Trátalo como una contraseña: puede
-leer tus órdenes, incluidos los correos de compradores.
+(`GET /agentpos/api/merchant/summary | orders | orders/:id | receipts | receipts/:seq | rules |
+export.csv`). Mínimo 24 caracteres; sin él esas rutas ni siquiera se montan, incluida la
+exportación de conciliación. Trátalo como una contraseña: puede leer tus órdenes, incluidos los
+correos de compradores.
 
 **No hay comando de rotación**: rotar es editar el entorno y reiniciar.
 

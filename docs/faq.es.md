@@ -85,9 +85,9 @@ agentes.
 Lo que **no** se expone: datos de compradores. `/agentpos/metrics` y el panel son agregados por
 construcción, sin correos, sin direcciones y sin ids de orden.
 
-Una salvedad real: la exportación de conciliación (`/agentpos/dashboard/export.csv`) sí contiene
-correos de compradores y hoy no está autenticada. Restringe `/agentpos/dashboard` en tu proxy, como
-se explica en [operación](operations.es.md#leer-el-panel).
+El único archivo que sí lleva correos de compradores es la exportación de conciliación, y nunca es
+pública: `GET /agentpos/api/merchant/export.csv` exige tu `MERCHANT_API_TOKEN`, y sin ese token la
+ruta ni siquiera se monta. Ver [operación](operations.es.md#csv-de-conciliación).
 
 ## ¿Impuestos y facturación?
 
@@ -106,7 +106,15 @@ facturación exactamente como con cualquier otra orden pagada.
 
 Para conciliar, la exportación CSV le entrega a tu contador una fila por orden con fecha, ids,
 estado, artículos, monto bruto en USDC, riel, activo, hash de transacción, momento de liquidación y
-correo del comprador. Ver [operación](operations.es.md#csv-de-conciliación).
+correo del comprador. La descargas con el token de tu comercio:
+
+```bash
+curl -H "Authorization: Bearer $MERCHANT_API_TOKEN" \
+  "https://TU-TIENDA/agentpos/api/merchant/export.csv?from=2026-09-01&to=2026-09-30" \
+  -o conciliacion.csv
+```
+
+Ver [operación](operations.es.md#csv-de-conciliación).
 
 ## ¿Tengo que usar mainnet?
 

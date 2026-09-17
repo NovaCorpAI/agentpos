@@ -62,12 +62,6 @@ existing stuck-order path instead of risking a double settlement. `/agentpos/hea
 facilitator (host only) as `ok`/`degraded` and marks the active one. With a single facilitator
 nothing changes.
 
-Reconciliation export: `GET /agentpos/dashboard/export.csv?from=YYYY-MM-DD&to=YYYY-MM-DD`
-(default: last 30 days) returns one CSV row per order (date, ids, status, items, gross USDC,
-rail, asset, tx hash, settled at, buyer email) with localized headers (EN/ES per `locale`),
-RFC 4180 quoting and a UTF-8 BOM so Excel opens it directly. The dashboard's Metrics tab links
-it ("Exportar CSV").
-
 ## Merchant API
 
 Token-authenticated, READ-ONLY endpoints under `/agentpos/api/merchant/*` for the store owner's
@@ -96,6 +90,21 @@ curl -H "Authorization: Bearer <MERCHANT_API_TOKEN>" \
   order id, timestamp); `GET /api/merchant/receipts/:seq` returns one full receipt with body,
   hash and signature.
 - `GET /api/merchant/rules` — the same JSON the dashboard's Rules tab renders.
+- `GET /api/merchant/export.csv?from=YYYY-MM-DD&to=YYYY-MM-DD` — the reconciliation export
+  (default: last 30 days): one CSV row per order (date, ids, status, items, gross USDC, rail,
+  asset, tx hash, settled at, buyer email), localized headers (EN/ES per `locale`), RFC 4180
+  quoting and a UTF-8 BOM so Excel opens it directly. Bounds accept `YYYY-MM-DD` or a full ISO
+  timestamp; a malformed or inverted range answers `400 CONFIG_INVALID`.
+
+  ```
+  curl -H "Authorization: Bearer $MERCHANT_API_TOKEN" \
+    "https://shop.example/agentpos/api/merchant/export.csv?from=2026-09-01&to=2026-09-30" \
+    -o conciliacion.csv
+  ```
+
+  This file carries buyer emails, order ids and transaction hashes, so it is served **only**
+  here, behind the token. It is not on the public dashboard path and the dashboard page does not
+  link it: the Metrics tab only prints the command above.
 
 Wrong or missing token answers `401` with code `MERCHANT_UNAUTHORIZED`; the group is rate
 limited (`rateLimit.merchantApiPerMinute`, default 120/min) with `429` + `Retry-After`. Logs
