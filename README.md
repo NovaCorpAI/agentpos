@@ -88,9 +88,20 @@ Every payment-path change must keep `gate:check` at 100%: exact amount/asset/des
 verification, idempotency by tx hash, replay rejection, quote TTLs, sad paths with defined
 behavior, rate limits, secret scanning of the full git history.
 
-Docs for merchants: [`docs/quickstart.en.md`](docs/quickstart.en.md) ·
-[`docs/quickstart.es.md`](docs/quickstart.es.md) ·
-[`docs/onboarding.en.md`](docs/onboarding.en.md) (assisted, < 30 min).
+## Documentation
+
+Everything user-facing is in [`docs/`](docs/README.md), in English and Spanish:
+
+| Guide | What it covers |
+| --- | --- |
+| [Merchant quickstart](docs/quickstart-merchant.en.md) ([ES](docs/quickstart-merchant.es.md)) | WooCommerce store to agent-buyable store in under 30 minutes: keys, sidecar (node or docker), scan/confirm/publish, verification checklist, what it costs. |
+| [Buyer quickstart](docs/quickstart-buyer.en.md) ([ES](docs/quickstart-buyer.es.md)) | The buying agent: mandate, funding, demo purchase, MCP client, the buyer web space with WhatsApp and the signing bridge. |
+| [Operations](docs/operations.en.md) ([ES](docs/operations.es.md)) | Running a live store: dashboard, reconciliation CSV, order states, held orders, stuck settlements, facilitator failover, token rotation, receipts. |
+| [FAQ](docs/faq.en.md) ([ES](docs/faq.es.md)) | Custody, wrong amounts, pausing agentic sales, catalog exposure, taxes, what happens if we disappear. |
+
+Also: the full-reference [quickstart](docs/quickstart.en.md), the assisted
+[onboarding script](docs/onboarding.en.md), and the operational
+[runbook](docs/RUNBOOK.md).
 
 ## What is open and what is not
 
