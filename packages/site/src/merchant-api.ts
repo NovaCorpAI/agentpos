@@ -3,9 +3,14 @@
  * plan/COMERCIAL.md phase 2).
  *
  * The bearer token (`MERCHANT_API_TOKEN`) belongs to the STORE OWNER: it lets them, or a
- * dashboard they authorize (AgentPOS Cloud), read their own orders, receipts, rules and health
- * programmatically. It is not an agent credential and it unlocks nothing an agent-facing
- * endpoint does not already require.
+ * dashboard they authorize (AgentPOS Cloud), read their own orders, receipts, rules, health and
+ * the reconciliation CSV programmatically. It is not an agent credential and it unlocks nothing
+ * an agent-facing endpoint does not already require.
+ *
+ * Everything that identifies a BUYER lives behind this token and only behind it. The
+ * reconciliation export (`export.csv`: buyer emails, order ids, transaction hashes) was public
+ * on the dashboard path until it was moved here; the dashboard path keeps only aggregates, the
+ * published catalog and the rules.
  *
  * READ-ONLY BY DESIGN: this surface has no mutations, in this milestone and on purpose. Prices,
  * policies and rules live in the merchant's own `agentpos.config.json` on their machine; a
@@ -25,7 +30,7 @@ import type { Receipt } from "@agentpos/receipts";
 import { orderView } from "./app.js";
 import type { CheckoutService } from "./checkout.js";
 import type { SiteConfig } from "./config.js";
-import { railOf } from "./export.js";
+import { buildReconciliationCsv, railOf } from "./export.js";
 import { clientIp, rateLimit } from "./ratelimit.js";
 import type { TokenBucketLimiter } from "./ratelimit.js";
 import type { SiteStorage } from "./storage.js";
@@ -166,20 +171,48 @@ function parseLimit(raw: string | undefined, fallback: number, max: number): num
 }
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+/**
+ * A full ISO 8601 timestamp. Checked with a pattern instead of trusting `new Date`, whose legacy
+ * fallback happily reads "01-09-2026" as a January date: a merchant asking for the wrong window
+ * must get a typed refusal, not a silently different reconciliation file.
+ */
+const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?$/;
 
 /** `from`/`to` accept YYYY-MM-DD (whole days, like the CSV export) or a full ISO timestamp. */
 function parseBound(raw: string | undefined, name: "from" | "to"): Date | undefined {
   if (raw === undefined || raw === "") return undefined;
-  const value = DATE_ONLY.test(raw)
-    ? `${raw}T${name === "from" ? "00:00:00.000" : "23:59:59.999"}Z`
-    : raw;
+  const dateOnly = DATE_ONLY.test(raw);
+  const value = dateOnly ? `${raw}T${name === "from" ? "00:00:00.000" : "23:59:59.999"}Z` : raw;
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
+  if ((!dateOnly && !ISO_TIMESTAMP.test(raw)) || Number.isNaN(date.getTime())) {
     throw new AgentPOSError("CONFIG_INVALID", `Invalid ${name} date`, {
       hint: "Use YYYY-MM-DD or a full ISO 8601 timestamp.",
     });
   }
   return date;
+}
+
+/**
+ * The reconciliation window: the same `from`/`to` bounds the order list accepts, defaulted to the
+ * last 30 days, plus the YYYY-MM-DD labels the download filename carries. One helper so the
+ * export and the order list can never disagree about what a date means.
+ */
+function parseExportRange(
+  rawFrom: string | undefined,
+  rawTo: string | undefined,
+): { since: Date; until: Date; from: string; to: string } {
+  const now = new Date();
+  const since = parseBound(rawFrom, "from") ?? new Date(now.getTime() - 30 * 86_400_000);
+  const until = parseBound(rawTo, "to") ?? now;
+  const from = since.toISOString().slice(0, 10);
+  const to = until.toISOString().slice(0, 10);
+  if (since.getTime() > until.getTime()) {
+    throw new AgentPOSError("CONFIG_INVALID", "Invalid export range", {
+      hint: "Use ?from=YYYY-MM-DD&to=YYYY-MM-DD with from <= to (default: last 30 days).",
+      details: { from, to },
+    });
+  }
+  return { since, until, from, to };
 }
 
 export function registerMerchantApi(app: Hono, deps: MerchantApiDeps): void {
@@ -263,6 +296,19 @@ export function registerMerchantApi(app: Hono, deps: MerchantApiDeps): void {
   app.get(`${prefix}/orders/:id`, (c) =>
     c.json({ order: merchantOrderView(deps.checkout.getOrder(c.req.param("id").slice(0, 64))) }),
   );
+
+  // Reconciliation export (unified conciliation file): one CSV row per order in the window, for
+  // the merchant's accounting. It carries buyer emails, order ids and transaction hashes, so it
+  // belongs HERE, behind the owner token and the merchant rate limiter, and nowhere on the
+  // public dashboard path. Same window contract as the order list, shared parser.
+  app.get(`${prefix}/export.csv`, (c) => {
+    const { since, until, from, to } = parseExportRange(c.req.query("from"), c.req.query("to"));
+    const csv = buildReconciliationCsv(storage.listOrdersBetween(since, until), site.locale);
+    return c.body(csv, 200, {
+      "content-type": "text/csv; charset=utf-8",
+      "content-disposition": `attachment; filename="agentpos-conciliacion-${from}-${to}.csv"`,
+    });
+  });
 
   // The receipt chain, ascending by seq. Chain entries only; fetch /receipts/:seq for a body.
   app.get(`${prefix}/receipts`, (c) => {

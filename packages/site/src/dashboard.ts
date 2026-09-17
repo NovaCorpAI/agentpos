@@ -34,8 +34,12 @@ const STRINGS = {
     range7: "7 días",
     range30: "30 días",
     range90: "90 días",
-    exportCsv: "Exportar CSV",
-    exportTitle: "Archivo de conciliación: una fila por orden, últimos 30 días",
+    exportTitle: "Exportar la conciliación (privado)",
+    exportWhy:
+      "El archivo de conciliación lleva correos de compradores, ids de orden y hashes de transacción. Por eso no se descarga desde esta página: se pide con el token del comercio, desde tu terminal.",
+    exportHow: "Cambia el token y las fechas por los tuyos:",
+    exportCloud:
+      "El panel de AgentPOS Cloud puede descargarlo por ti, porque guarda ese token por tu cuenta.",
     empty: "Sin ventas en este período todavía.",
     error: "No se pudieron cargar las métricas.",
     footer: "Verificable por cualquiera en",
@@ -109,8 +113,12 @@ const STRINGS = {
     range7: "7 days",
     range30: "30 days",
     range90: "90 days",
-    exportCsv: "Export CSV",
-    exportTitle: "Reconciliation file: one row per order, last 30 days",
+    exportTitle: "Export the reconciliation file (private)",
+    exportWhy:
+      "The reconciliation file carries buyer emails, order ids and transaction hashes. That is why this page does not download it: you ask for it with the merchant token, from your terminal.",
+    exportHow: "Replace the token and the dates with your own:",
+    exportCloud:
+      "The AgentPOS Cloud panel can download it for you, because it stores that token on your behalf.",
     empty: "No sales in this period yet.",
     error: "Could not load metrics.",
     footer: "Verifiable by anyone at",
@@ -172,6 +180,8 @@ const STRINGS = {
 export interface DashboardInput {
   displayName: string;
   basePath: string;
+  /** The store's own origin, without a trailing slash: only used to print a copy-paste command. */
+  siteUrl: string;
   locale: "en" | "es";
   network: string;
   asset: string;
@@ -182,7 +192,11 @@ export function buildDashboardHtml(input: DashboardInput): string {
   const metricsPath = `${input.basePath}/metrics`;
   const catalogPath = `${input.basePath}/catalog`;
   const rulesPath = `${input.basePath}/dashboard/rules`;
-  const exportPath = `${input.basePath}/dashboard/export.csv`;
+  // The reconciliation export is NOT linked: it carries buyer emails, so it lives behind the
+  // merchant token and this page can only tell the owner how to ask for it. No fetch from the
+  // browser either: that would mean putting the owner's token into a public page.
+  const exportUrl = `${input.siteUrl}${input.basePath}/api/merchant/export.csv?from=2026-09-01&to=2026-09-30`;
+  const exportCommand = `curl -H "Authorization: Bearer $MERCHANT_API_TOKEN" "${exportUrl}" -o conciliacion.csv`;
   // Static shell + client-side rendering. JSON.stringify guards every interpolated value that
   // could carry markup; displayName is merchant-controlled but escaped anyway. The client
   // script escapes again everything it takes from the JSON endpoints (item titles, attributes).
@@ -214,8 +228,12 @@ export function buildDashboardHtml(input: DashboardInput): string {
   .rangebar h2 { font-size: 1rem; margin: 0 auto 0 0; }
   .rangebar button { background: #161b22; color: #8b949e; border: 1px solid #30363d; border-radius: 8px; padding: 4px 12px; cursor: pointer; font: inherit; font-size: 0.82rem; }
   .rangebar button[data-on] { color: #e6edf3; border-color: #58a6ff; }
-  .rangebar a.csv { background: #161b22; color: #8b949e; border: 1px solid #30363d; border-radius: 8px; padding: 4px 12px; font-size: 0.82rem; text-decoration: none; }
-  .rangebar a.csv:hover { color: #e6edf3; border-color: #58a6ff; }
+  .expbox { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 12px 18px; margin-top: 16px; }
+  .expbox summary { cursor: pointer; font-size: 0.9rem; color: #e6edf3; }
+  .expbox summary:focus-visible { outline: 2px solid #58a6ff; outline-offset: 2px; }
+  .expbox p { color: #8b949e; font-size: 0.85rem; }
+  .expbox pre { background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 10px 12px; overflow-x: auto; }
+  .expbox code { font-family: ui-monospace, monospace; font-size: 0.76rem; color: #7ee2a8; white-space: pre; }
   .chart { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 18px; min-height: 180px; }
   .chart svg { width: 100%; height: 170px; display: block; }
   .bar { fill: #58a6ff; }
@@ -252,9 +270,15 @@ export function buildDashboardHtml(input: DashboardInput): string {
       <button data-days="7">${esc(t.range7)}</button>
       <button data-days="30" data-on>${esc(t.range30)}</button>
       <button data-days="90">${esc(t.range90)}</button>
-      <a class="csv" href="${esc(exportPath)}" title="${esc(t.exportTitle)}" download>${esc(t.exportCsv)}</a>
     </div>
     <div class="chart" id="chart"><div class="msg">…</div></div>
+    <details class="expbox">
+      <summary>${esc(t.exportTitle)}</summary>
+      <p>${esc(t.exportWhy)}</p>
+      <p>${esc(t.exportHow)}</p>
+      <pre><code>${esc(exportCommand)}</code></pre>
+      <p>${esc(t.exportCloud)}</p>
+    </details>
     <p class="foot">${esc(t.footer)} <code>${esc(metricsPath)}</code> · <span id="updated"></span></p>
   </section>
   <section id="tab-catalog" hidden>

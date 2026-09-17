@@ -45,27 +45,39 @@ Empty means you have confirmed prices but not run `publish`.
 read-only by design: the rules live in `agentpos.config.json` on your machine, so nothing remote
 can change what you sell or for how much.
 
-> **Who can see it.** The dashboard and `/agentpos/metrics` carry aggregates only, no buyer data,
-> and CORS is open on metrics on purpose. But **`/agentpos/dashboard/export.csv` contains buyer
-> emails and is not behind any authentication today.** If you proxy `/agentpos/*`, restrict
-> `/agentpos/dashboard` (or at least the export) to your own IP or behind HTTP basic auth at the
-> proxy. This is a known gap, not a design decision.
+> **Who can see it.** Everything on `/agentpos/dashboard` is public on purpose: aggregates with no
+> buyer data, your published catalog, and the rules agents are held to. CORS is open on metrics on
+> purpose too. Nothing that identifies a buyer is served from this path. The reconciliation export,
+> which does carry buyer emails, lives behind your merchant token at
+> `/agentpos/api/merchant/export.csv` (next section).
 
 ## Reconciliation CSV
 
-```
-GET https://YOUR-STORE/agentpos/dashboard/export.csv?from=YYYY-MM-DD&to=YYYY-MM-DD
+The export is private merchant data, so it requires `MERCHANT_API_TOKEN` (see
+[Rotating the merchant API token](#rotating-the-merchant-api-token)):
+
+```bash
+curl -H "Authorization: Bearer $MERCHANT_API_TOKEN" \
+  "https://YOUR-STORE/agentpos/api/merchant/export.csv?from=YYYY-MM-DD&to=YYYY-MM-DD" \
+  -o conciliacion.csv
 ```
 
-Default range: the last 30 days. One row per order, RFC 4180 quoting, CRLF, UTF-8 BOM so Excel
-opens it directly. Column headers follow your `locale` (`en` or `es`); the column order never
-changes:
+Default range: the last 30 days. Bounds accept `YYYY-MM-DD` (whole days) or a full ISO timestamp;
+a malformed or inverted range answers `400` with code `CONFIG_INVALID`, and a missing or wrong
+token answers `401` `MERCHANT_UNAUTHORIZED`.
+
+One row per order, RFC 4180 quoting, CRLF, UTF-8 BOM so Excel opens it directly. Column headers
+follow your `locale` (`en` or `es`); the column order never changes:
 
 `date_iso, order_id, external_order_id, status, items, gross_usdc, rail, asset, tx_hash,
 settled_at, buyer_email`
 
 `rail` is derived from the payment network (`x402-stellar` today), so adding a second payment
-rail later will not change the file's shape. The Metrics tab links this file as "Export CSV".
+rail later will not change the file's shape.
+
+The dashboard's Metrics tab does not download the file: it prints this same command for you to
+copy. The AgentPOS Cloud panel can download it for you, because it stores that token on your
+behalf.
 
 ## Order states
 
@@ -228,9 +240,10 @@ npx @agentpos/site agents revoke GAGENT... -r "key lost"
 ## Rotating the merchant API token
 
 `MERCHANT_API_TOKEN` is the store owner's bearer token for the read-only merchant API
-(`GET /agentpos/api/merchant/summary | orders | orders/:id | receipts | receipts/:seq | rules`).
-Minimum 24 characters; without it those routes are not mounted at all. Treat it like a password:
-it can read your orders, including buyer emails.
+(`GET /agentpos/api/merchant/summary | orders | orders/:id | receipts | receipts/:seq | rules |
+export.csv`). Minimum 24 characters; without it those routes are not mounted at all, the
+reconciliation export included. Treat it like a password: it can read your orders, including
+buyer emails.
 
 There is **no rotation command**: rotation is editing the environment and restarting.
 

@@ -86,10 +86,9 @@ agents.
 What is **not** exposed: buyer data. `/agentpos/metrics` and the dashboard are aggregates by
 construction, with no emails, no addresses and no order ids.
 
-One real caveat: the reconciliation export
-(`/agentpos/dashboard/export.csv`) does contain buyer emails and is not authenticated today.
-Restrict `/agentpos/dashboard` at your proxy, as described in
-[operations](operations.en.md#reading-the-dashboard).
+The one file that does carry buyer emails is the reconciliation export, and it is never public:
+`GET /agentpos/api/merchant/export.csv` requires your `MERCHANT_API_TOKEN`, and without that token
+the route is not even mounted. See [operations](operations.en.md#reconciliation-csv).
 
 ## Taxes and invoicing?
 
@@ -106,8 +105,16 @@ planned and deliberately outside the payment path; **it does not exist in the co
 treat invoicing exactly as you do for any other paid order.
 
 For reconciliation, the CSV export gives your accountant one row per order with the date, ids,
-status, items, gross USDC, rail, asset, transaction hash, settlement time and buyer email. See
-[operations](operations.en.md#reconciliation-csv).
+status, items, gross USDC, rail, asset, transaction hash, settlement time and buyer email. You
+download it with your merchant token:
+
+```bash
+curl -H "Authorization: Bearer $MERCHANT_API_TOKEN" \
+  "https://YOUR-STORE/agentpos/api/merchant/export.csv?from=2026-09-01&to=2026-09-30" \
+  -o conciliacion.csv
+```
+
+See [operations](operations.en.md#reconciliation-csv).
 
 ## Do I have to use mainnet?
 

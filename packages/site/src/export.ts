@@ -4,9 +4,9 @@
  * money helpers, never floats (guardrail 4). RFC 4180 quoting, CRLF rows, UTF-8 BOM so Excel
  * opens it with the right encoding out of the box.
  *
- * Privacy: the CSV carries buyer emails, which the merchant already sees on each of their own
- * orders; the endpoint lives on the dashboard path with the rest of the merchant surface and
- * exposes nothing an agent-facing endpoint does not already hand the merchant.
+ * Privacy: the CSV carries buyer emails, order ids and transaction hashes. It is private merchant
+ * data, so the only endpoint that serves it is `{base}/api/merchant/export.csv`, behind the store
+ * owner's bearer token. Never mount this document on a public path.
  */
 import { formatUsdc } from "@agentpos/core";
 import type { Order } from "@agentpos/core";

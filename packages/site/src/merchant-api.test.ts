@@ -145,7 +145,11 @@ describe("merchant API", () => {
 
   it("is not mounted at all when the token is absent", async () => {
     const { gate: bare } = buildApp({});
-    for (const path of ["/agentpos/api/merchant/summary", "/agentpos/api/merchant/orders"]) {
+    for (const path of [
+      "/agentpos/api/merchant/summary",
+      "/agentpos/api/merchant/orders",
+      "/agentpos/api/merchant/export.csv",
+    ]) {
       const res = await bare.fetch(
         new Request(`https://shop.test${path}`, {
           headers: { authorization: `Bearer ${TOKEN}` },
@@ -327,6 +331,8 @@ describe("merchant API", () => {
       "/agentpos/api/merchant/receipts",
       "/agentpos/api/merchant/receipts/1",
       "/agentpos/api/merchant/rules",
+      // The reconciliation CSV: buyer data by design, but still never the owner's own token.
+      "/agentpos/api/merchant/export.csv?from=2026-09-01&to=2026-09-01",
     ];
     for (const path of paths) {
       const res = await req(path);
