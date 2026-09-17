@@ -11,8 +11,13 @@ npx @agentpos/mcp-buyer sites add https://shop.example
 ```
 
 Mandate (`~/.agentpos/profiles/default.json`): `maxPerTx`, `maxTotal` per `period`
-(day/week/month), `allowedSellers` (`any` | hostnames | `verified-only`), `requireConfirmAboveUsdc`,
+(day/week/month), `allowedSellers` (`any` or a list of hostnames), `requireConfirmAboveUsdc`,
 `allowPhysicalGoods`, `shippingAddressLocked`. Fund the wallet like a prepaid card.
+
+`allowedSellers: "verified-only"` was retired: it asked a hosted seller registry that was never
+built, so it refused every site. A profile that still carries it loads as an explicit empty list
+(same refusal, legible reason) and prints a `MANDATE_MODE_RETIRED` warning telling you to list
+the hostnames you trust, or to set `"any"`. Your profile file is never rewritten for you.
 
 Claude Desktop / Claude Code MCP config:
 

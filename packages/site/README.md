@@ -7,7 +7,8 @@ npx @agentpos/site init      # config + wallet
 npx @agentpos/site scan      # read your own site -> draft (nothing published)
 npx @agentpos/site confirm   # you set every price
 npx @agentpos/site publish   # verify the payment rail, expose the catalog
-npx @agentpos/site serve     # sidecar on :8402 (reverse-proxy /.well-known/ucp and /agentpos/*)
+npx @agentpos/site serve     # sidecar on :8402; prints the proxy config for nginx | caddy |
+                             # apache | cloudflare (--proxy <one> for just one)
 npx @agentpos/site status    # orders, tx hashes, connector errors (--retry)
 npx @agentpos/site approvals # orders parked for your decision (M2)
 npx @agentpos/site agents    # who may buy: register | revoke (M3)
@@ -44,6 +45,13 @@ Surfaces: `/.well-known/ucp`, `/agentpos/catalog`, `/agentpos/feed`, `/agentpos/
 `POST /agentpos/cart`, `POST /agentpos/checkout?cart=`, `/agentpos/orders/:id`,
 `/agentpos/approvals/:id`, `/agentpos/orders/:id/receipt`, `/agentpos/receipts/:hash`,
 `/agentpos/health`.
+
+Order lifecycle: `pending_payment -> paid -> fulfilled | cancelled`, plus `expired` for a cart
+that was never paid. While the sidecar runs, a sweep re-reads the platform status of paid orders
+(`completed -> fulfilled`; `cancelled`, `refunded`, `failed -> cancelled`; anything else is left
+alone) and expires unpaid orders whose cart is gone. A paid order is never expired by a timer.
+`gate.sweepOrderLifecycle()` runs one pass by hand, `checkout.syncOrderStatus(orderId)` syncs one
+order, and `statusSyncIntervalMs` (default 5 min) sets the sweep's clock.
 
 Trust layer, all optional and off by default: `policy` (what may be sold and up to how much),
 `approvals` (park large orders for a human; the agent is never charged while you decide) and

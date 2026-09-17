@@ -30,8 +30,22 @@ export {
 } from "./config.js";
 export { SiteStorage } from "./storage.js";
 export { CatalogService } from "./catalog.js";
-export { CheckoutService } from "./checkout.js";
+export {
+  CheckoutService,
+  PLATFORM_ORDER_STATUS,
+  TERMINAL_ORDER_STATUSES,
+  isTerminalStatus,
+  mapPlatformStatus,
+} from "./checkout.js";
 export type { AlertEvent, AlertSink, SettledTerms } from "./checkout.js";
+export {
+  PROXY_LABELS,
+  PROXY_TARGETS,
+  agentposProxyPaths,
+  proxySnippet,
+  proxySnippets,
+} from "./proxy.js";
+export type { ProxyInput, ProxyTarget } from "./proxy.js";
 export { createAgentPOSApp, cartView, orderView } from "./app.js";
 export type { AgentPOSDeps, AgentPOSSite } from "./app.js";
 export { buildMcpServer, createMcpHandler } from "./mcp.js";
@@ -66,6 +80,12 @@ export interface CreateAgentPOSOptions {
   approvalChannels?: NotificationChannel[];
   /** Retry loop interval for paid orders without a platform order (default 30s). */
   retryIntervalMs?: number;
+  /**
+   * Interval of the order lifecycle sweep: platform status of paid orders, expiry of unpaid ones
+   * (default 5 min). Deliberately slower than the retry loop, because each pass talks to the
+   * merchant's platform. Like the retry loop it only runs under `serve()`, never in tests.
+   */
+  statusSyncIntervalMs?: number;
 }
 
 export function buildConnector(
@@ -159,6 +179,8 @@ export interface AgentPOS extends AgentPOSSite {
   serve(port?: number, hostname?: string): Promise<{ port: number; close: () => void }>;
   /** Runs one pass of the persistent retry loop (also used by `agentpos status --retry`). */
   retryPending(): Promise<number>;
+  /** Runs one pass of the order lifecycle sweep; returns how many orders changed status. */
+  sweepOrderLifecycle(): Promise<number>;
 }
 
 export async function createAgentPOS(options: CreateAgentPOSOptions = {}): Promise<AgentPOS> {
@@ -210,12 +232,15 @@ export async function createAgentPOS(options: CreateAgentPOSOptions = {}): Promi
     const retried = await built.checkout.retryPending();
     return retried.filter((o) => o.externalOrderId).length;
   };
+  const sweepOrderLifecycle = async (): Promise<number> =>
+    (await built.checkout.sweepOrderLifecycle()).length;
   return {
     ...built,
     site,
     core,
     connector,
     retryPending,
+    sweepOrderLifecycle,
     serve(port = 8402, hostname = "0.0.0.0") {
       return new Promise((resolvePort) => {
         const server = honoServe({ fetch: built.app.fetch, port, hostname }, (info) => {
@@ -235,6 +260,18 @@ export async function createAgentPOS(options: CreateAgentPOSOptions = {}): Promi
             }
           }, options.retryIntervalMs ?? 30_000);
           timer.unref();
+          // Lifecycle sweep on its own (slower) clock: it talks to the merchant's platform.
+          const lifecycleTimer = setInterval(
+            () => {
+              sweepOrderLifecycle().catch((err: unknown) =>
+                logger.error("order.sweep_failed", {
+                  error: err instanceof Error ? err.message : String(err),
+                }),
+              );
+            },
+            options.statusSyncIntervalMs ?? 5 * 60_000,
+          );
+          lifecycleTimer.unref();
           logger.info("sidecar.started", {
             port: info.port,
             network: core.caip2,
@@ -244,6 +281,7 @@ export async function createAgentPOS(options: CreateAgentPOSOptions = {}): Promi
             port: info.port,
             close: () => {
               clearInterval(timer);
+              clearInterval(lifecycleTimer);
               server.close();
             },
           });

@@ -30,6 +30,7 @@ const STRINGS = {
     latency: "checkout → orden creada",
     held: "en revisión",
     pending: "por crear en plataforma",
+    fulfilled: "cumplidas en tu plataforma",
     perDay: "Órdenes por día",
     range7: "7 días",
     range30: "30 días",
@@ -109,6 +110,7 @@ const STRINGS = {
     latency: "checkout → platform order",
     held: "on hold",
     pending: "pending platform order",
+    fulfilled: "completed in your platform",
     perDay: "Orders per day",
     range7: "7 days",
     range30: "30 days",
@@ -308,6 +310,7 @@ function card(value, key, small) {
 
 function render(m) {
   const held = [];
+  if (m.fulfilledOrders > 0) held.push(m.fulfilledOrders + " " + T.fulfilled);
   if (m.heldOrders > 0) held.push(m.heldOrders + " " + T.held);
   if (m.pendingPlatformOrders > 0) held.push(m.pendingPlatformOrders + " " + T.pending);
   document.getElementById("cards").innerHTML =

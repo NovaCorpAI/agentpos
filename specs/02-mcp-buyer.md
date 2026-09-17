@@ -31,8 +31,11 @@ x402/UCP/ACP puede comprarles.
 ## Mandato humano (config del server, no del agente)
 
 `mandate.json` local del usuario: { maxPerTx, maxTotal, period,
-allowedSellers?: 'verified-only' | list, requireConfirmAboveUsdc?,
+allowedSellers?: 'any' | lista de hostnames, requireConfirmAboveUsdc?,
 allowPhysicalGoods?: boolean, shippingAddressLocked?: boolean }.
+(`'verified-only'` se retiró: dependía de un registro alojado que nunca
+existió, así que rechazaba todo sitio. Un perfil que lo tenga se carga como
+lista vacía y avisa con `MANDATE_MODE_RETIRED`.)
 Si `requireConfirmAboveUsdc` aplica: la tool devuelve
 `CONFIRMATION_REQUIRED` con la ficha del carrito; el humano confirma fuera
 de banda (re-call con token de confirmación). El agente jamás puede

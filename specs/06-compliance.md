@@ -29,9 +29,11 @@ on-chain manual en v1 (guía), automático en Build.
    implementación v1 con API pública/low-cost configurable. Se corre sobre
    CADA wallet vinculada al vincular, al publicar y semanalmente (cron).
    Hit => unpublish + flag + notificar.
-3. Lado comprador: mcp-buyer expone `verified` y soporta mandato
-   'verified-only'. Sitios no registrados en el hosted se muestran como
-   `unverified`, nunca se ocultan.
+3. Lado comprador: hoy el mandato solo conoce `allowedSellers: "any"` o una
+   lista explícita de hostnames, porque son las dos cosas que se pueden hacer
+   cumplir sin registro. Cuando el registro exista, mcp-buyer podrá exponer
+   `verified` y recién ahí tendrá sentido un modo que dependa de él. Sitios no
+   registrados se mostrarían como `unverified`, nunca se ocultan.
 
 ## Capa D: trazabilidad del gasto agéntico
 

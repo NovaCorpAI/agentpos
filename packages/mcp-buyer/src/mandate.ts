@@ -14,10 +14,13 @@ export const mandateSchema = z.object({
   /** Ceiling for the sum of payments inside `period`. */
   maxTotal: money,
   period: z.enum(["day", "week", "month"]).default("day"),
-  /** "any", "verified-only" (reserved until the hosted registry exists) or a list of site hostnames. */
-  allowedSellers: z
-    .union([z.literal("any"), z.literal("verified-only"), z.array(z.string().min(1))])
-    .default("any"),
+  /**
+   * "any" (every site), or an explicit list of site hostnames. Two modes, both enforceable here
+   * and now. There used to be a third, "verified-only", which asked a hosted registry that does
+   * not exist, so it refused every site on earth; `migrateMandateJson` turns it into an explicit
+   * empty list and says so out loud.
+   */
+  allowedSellers: z.union([z.literal("any"), z.array(z.string().min(1))]).default("any"),
   /** Above this amount the human must approve out of band (`agentpos-buyer approve <cartId>`). */
   requireConfirmAboveUsdc: money.optional(),
   allowPhysicalGoods: z.boolean().default(false),
@@ -31,10 +34,52 @@ export type Mandate = z.output<typeof mandateSchema>;
 export interface MandateCheckInput {
   amount: UsdcMinor;
   siteHost: string;
-  siteVerified: boolean;
   hasPhysicalItems: boolean;
   spentInPeriod: UsdcMinor;
   humanApproved: boolean;
+}
+
+/** Retired mandate value, kept only so an existing profile can be recognized and explained. */
+export const RETIRED_VERIFIED_ONLY = "verified-only";
+
+/** A problem with a stored profile that is worth saying out loud but must not stop the buyer. */
+export interface MandateWarning {
+  code: "MANDATE_MODE_RETIRED";
+  message: string;
+  hint: string;
+  details: Record<string, unknown>;
+}
+
+/**
+ * Reads a mandate as it was written on disk and returns it in today's vocabulary, plus whatever
+ * had to change. `allowedSellers: "verified-only"` depended on a hosted registry that was never
+ * built, so it refused every site: it becomes an explicit empty allowlist, which refuses every
+ * site too. Behaviour is identical on purpose; what changes is that the refusal now names a
+ * reason the human can act on instead of pointing at a registry that does not exist.
+ */
+export function migrateMandateJson(raw: unknown): {
+  mandate: unknown;
+  warnings: MandateWarning[];
+} {
+  if (
+    typeof raw !== "object" ||
+    raw === null ||
+    (raw as { allowedSellers?: unknown }).allowedSellers !== RETIRED_VERIFIED_ONLY
+  ) {
+    return { mandate: raw, warnings: [] };
+  }
+  return {
+    mandate: { ...(raw as Record<string, unknown>), allowedSellers: [] },
+    warnings: [
+      {
+        code: "MANDATE_MODE_RETIRED",
+        message:
+          'allowedSellers: "verified-only" no longer exists (the seller registry it asked was never built, so it refused every site). This profile now carries an empty allowlist and still refuses every site.',
+        hint: 'Edit the profile and set "allowedSellers" to the hostnames you trust, e.g. ["shop.example"], or to "any" to allow every site the mandate limits already cover.',
+        details: { allowedSellers: [] },
+      },
+    ],
+  };
 }
 
 export type MandateVerdict =
@@ -83,21 +128,15 @@ export function evaluateMandate(mandate: Mandate, input: MandateCheckInput): Man
       },
     };
   }
-  if (mandate.allowedSellers === "verified-only" && !input.siteVerified) {
-    return {
-      ok: false,
-      code: "SELLER_UNVERIFIED",
-      message: "Mandate only allows verified sellers",
-      hint: "This site is not verified by the AgentPOS registry. Ask the human to allowlist its hostname.",
-      details: { siteHost: input.siteHost },
-    };
-  }
   if (Array.isArray(mandate.allowedSellers) && !mandate.allowedSellers.includes(input.siteHost)) {
     return {
       ok: false,
       code: "SELLER_UNVERIFIED",
       message: "Seller is not in the mandate allowlist",
-      hint: `Allowed: ${mandate.allowedSellers.join(", ")}. Ask the human to add ${input.siteHost}.`,
+      hint:
+        mandate.allowedSellers.length === 0
+          ? `The allowlist is empty, so no site can be paid. Ask the human to add ${input.siteHost} to allowedSellers, or to set it to "any".`
+          : `Allowed: ${mandate.allowedSellers.join(", ")}. Ask the human to add ${input.siteHost}.`,
       details: { siteHost: input.siteHost, allowedSellers: mandate.allowedSellers },
     };
   }

@@ -11,7 +11,7 @@ import {
   formatUsdc,
   generateAndStoreKeypair,
 } from "@agentpos/core";
-import { approve, listPending, loadProfile, saveProfile } from "./profile.js";
+import { approve, listPending, loadProfileWithWarnings, saveProfile } from "./profile.js";
 import type { Profile } from "./profile.js";
 import { mandateSchema } from "./mandate.js";
 import { buildBuyerServer } from "./server.js";
@@ -26,6 +26,20 @@ function die(err: unknown): never {
     console.error(pc.dim(`hint: ${err.hint}`));
   } else console.error(pc.red(String(err)));
   process.exit(1);
+}
+
+/**
+ * Loads a profile and tells the human about anything that had to be reinterpreted to read it
+ * (a retired mandate mode, for instance). Warnings never stop the command: the profile still
+ * works, the human just needs to know what it now means.
+ */
+function loadProfile(name: string): Profile {
+  const { profile, warnings } = loadProfileWithWarnings(name);
+  for (const w of warnings) {
+    console.error(pc.yellow(`\n${w.code}: ${w.message}`));
+    console.error(pc.dim(`hint: ${w.hint}`));
+  }
+  return profile;
 }
 
 const program = new Command();

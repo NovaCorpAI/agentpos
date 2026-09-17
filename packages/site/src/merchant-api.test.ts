@@ -304,9 +304,11 @@ describe("merchant API", () => {
     expect(summary.network).toBe("stellar:testnet");
     expect(summary.asset).toBe("USDC");
     expect(typeof summary.adapterVersion).toBe("string");
+    // Every lifecycle status is reported, zero included: a reader never has to guess whether a
+    // missing key means "none" or "not tracked".
     expect(summary.counts.orders).toEqual({
       total: 3,
-      byStatus: { paid: 2, pending_payment: 1 },
+      byStatus: { pending_payment: 1, paid: 2, fulfilled: 0, cancelled: 0, expired: 0 },
     });
     expect(summary.counts.receipts).toBe(1);
     expect(summary.counts.publishedItems).toBe(2);

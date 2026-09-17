@@ -49,14 +49,19 @@ evaluated before any signature, on every purchase.
 | --- | --- |
 | `maxPerTx` | Hard ceiling for a single payment, in USDC. |
 | `maxTotal` + `period` | Ceiling for everything spent inside `day`, `week` or `month`. |
-| `allowedSellers` | `"any"` (default), a list of hostnames, or `"verified-only"`. |
+| `allowedSellers` | `"any"` (default) or a list of hostnames. |
 | `requireConfirmAboveUsdc` | Above this amount the agent must ask you out of band. |
 | `allowPhysicalGoods` | Whether the agent may buy things that ship. |
 | `shippingAddressLocked` | When true the agent cannot supply an address; the profile's is used. |
 
 `init` does not ask for `allowedSellers`: edit the JSON file to restrict it, for example
-`"allowedSellers": ["demo.agentposhq.com"]`. **`"verified-only"` is reserved** and refuses every
-site until the hosted registry exists, so use an explicit hostname list today.
+`"allowedSellers": ["demo.agentposhq.com"]`.
+
+There used to be a third value, `"verified-only"`. It asked a hosted seller registry that was
+never built, so it refused every site on earth. It is gone. A profile that still has it loads as
+`"allowedSellers": []`, which refuses every site just the same, and the buyer prints a
+`MANDATE_MODE_RETIRED` warning telling you to replace it with the hostnames you trust (or with
+`"any"`). Nothing rewrites your profile for you.
 
 Manage the default store list separately:
 

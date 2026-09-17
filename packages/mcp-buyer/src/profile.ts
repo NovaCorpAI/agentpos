@@ -15,7 +15,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
 import { AgentPOSError, addressSchema, buyerContactSchema } from "@agentpos/core";
-import { mandateSchema } from "./mandate.js";
+import { mandateSchema, migrateMandateJson } from "./mandate.js";
+import type { MandateWarning } from "./mandate.js";
 
 export function agentposHome(): string {
   return process.env.AGENTPOS_HOME ?? join(homedir(), ".agentpos");
@@ -47,7 +48,18 @@ export function profilePath(name: string): string {
   return join(profilesDir(), `${name}.json`);
 }
 
-export function loadProfile(name: string): Profile {
+/** A profile as stored, plus everything that had to be reinterpreted to load it. */
+export interface LoadedProfile {
+  profile: Profile;
+  warnings: MandateWarning[];
+}
+
+/**
+ * Loads a profile, migrating retired fields instead of refusing the file. Warnings are returned,
+ * never printed: the CLI shows them to the human and the MCP server logs them, but nothing here
+ * decides for them. The profile on disk is left untouched, so the human's file stays the human's.
+ */
+export function loadProfileWithWarnings(name: string): LoadedProfile {
   const file = profilePath(name);
   if (!existsSync(file)) {
     throw new AgentPOSError("CONFIG_INVALID", `Profile '${name}' not found`, {
@@ -55,14 +67,23 @@ export function loadProfile(name: string): Profile {
       details: { file },
     });
   }
-  const parsed = profileSchema.safeParse(JSON.parse(readFileSync(file, "utf8")));
+  const raw = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+  const migrated = migrateMandateJson(raw.mandate);
+  const parsed = profileSchema.safeParse({ ...raw, mandate: migrated.mandate });
   if (!parsed.success) {
     throw new AgentPOSError("CONFIG_INVALID", `Profile '${name}' is invalid`, {
       hint: "Fix the fields listed in details or recreate the profile.",
       details: { issues: parsed.error.issues },
     });
   }
-  return parsed.data;
+  return {
+    profile: parsed.data,
+    warnings: migrated.warnings.map((w) => ({ ...w, details: { ...w.details, file } })),
+  };
+}
+
+export function loadProfile(name: string): Profile {
+  return loadProfileWithWarnings(name).profile;
 }
 
 export function saveProfile(profile: Profile): string {
