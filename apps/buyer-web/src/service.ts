@@ -176,7 +176,6 @@ export class BuyerWebService {
     const verdict = evaluateMandate(profile.mandate, {
       amount,
       siteHost: client.host,
-      siteVerified: info.verified,
       hasPhysicalItems: hasPhysical,
       spentInPeriod: this.approvedInPeriod(profile),
       // Approving the proposal IS the human confirmation this platform exists for, so a

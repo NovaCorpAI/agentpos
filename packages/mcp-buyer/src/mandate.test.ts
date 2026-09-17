@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { usdc } from "@agentpos/core";
-import { evaluateMandate, mandateSchema, periodStart } from "./mandate.js";
+import {
+  evaluateMandate,
+  mandateSchema,
+  migrateMandateJson,
+  periodStart,
+} from "./mandate.js";
 
 const base = mandateSchema.parse({
   maxPerTx: "10",
@@ -11,7 +16,6 @@ const base = mandateSchema.parse({
 const input = {
   amount: usdc("5"),
   siteHost: "shop.test",
-  siteVerified: false,
   hasPhysicalItems: false,
   spentInPeriod: usdc("0"),
   humanApproved: false,
@@ -35,14 +39,44 @@ describe("mandate", () => {
     if (!verdict.ok) expect(verdict.code).toBe(code);
   });
 
-  it("enforces seller allowlists and verified-only", () => {
+  it("enforces the seller allowlist, and says so when it is empty", () => {
     const listed = mandateSchema.parse({ ...base, allowedSellers: ["good.test"] });
     const v1 = evaluateMandate(listed, input);
     expect(v1.ok === false && v1.code).toBe("SELLER_UNVERIFIED");
     expect(evaluateMandate(listed, { ...input, siteHost: "good.test" })).toEqual({ ok: true });
-    const verified = mandateSchema.parse({ ...base, allowedSellers: "verified-only" });
-    expect(evaluateMandate(verified, input).ok).toBe(false);
-    expect(evaluateMandate(verified, { ...input, siteVerified: true })).toEqual({ ok: true });
+    const empty = mandateSchema.parse({ ...base, allowedSellers: [] });
+    const v2 = evaluateMandate(empty, input);
+    expect(v2.ok).toBe(false);
+    if (!v2.ok) expect(v2.hint).toContain("allowlist is empty");
+  });
+
+  it("refuses the retired verified-only mode outright", () => {
+    const parsed = mandateSchema.safeParse({ ...base, allowedSellers: "verified-only" });
+    expect(parsed.success).toBe(false);
+  });
+
+  it("migrates a verified-only profile into an explicit empty list, with a warning", () => {
+    const { mandate, warnings } = migrateMandateJson({
+      maxPerTx: "10",
+      maxTotal: "25",
+      allowedSellers: "verified-only",
+    });
+    expect((mandate as { allowedSellers: string[] }).allowedSellers).toEqual([]);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.code).toBe("MANDATE_MODE_RETIRED");
+    expect(warnings[0]?.message).toContain("verified-only");
+    expect(warnings[0]?.hint).toContain("allowedSellers");
+
+    // The migrated mandate parses, and behaves exactly as before: it refuses every site.
+    const migrated = mandateSchema.parse(mandate);
+    expect(evaluateMandate(migrated, input).ok).toBe(false);
+
+    // Anything else is passed through untouched, warnings included.
+    expect(migrateMandateJson({ allowedSellers: "any" })).toEqual({
+      mandate: { allowedSellers: "any" },
+      warnings: [],
+    });
+    expect(migrateMandateJson(undefined)).toEqual({ mandate: undefined, warnings: [] });
   });
 
   it("requires human confirmation above the threshold until approved", () => {

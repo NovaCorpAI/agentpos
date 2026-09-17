@@ -13,7 +13,7 @@ import {
 } from "@agentpos/core";
 import { BuyerService } from "./buyer.js";
 import type { BuyerDeps } from "./buyer.js";
-import { listProfiles, loadProfile } from "./profile.js";
+import { listProfiles, loadProfileWithWarnings } from "./profile.js";
 
 function ok(payload: unknown) {
   return {
@@ -47,9 +47,16 @@ export function buildBuyerServer(options: BuyerServerOptions): McpServer {
     const key = name ?? options.defaultProfile;
     let b = buyers.get(key);
     if (!b) {
-      b = options.buyerFactory
-        ? options.buyerFactory(key)
-        : new BuyerService({ profile: loadProfile(key), ...(options.depsOverrides ?? {}) });
+      if (options.buyerFactory) {
+        b = options.buyerFactory(key);
+      } else {
+        const loaded = loadProfileWithWarnings(key);
+        // stderr, never stdout: stdout is the MCP transport. The human running the server sees
+        // why their profile now refuses everything.
+        for (const w of loaded.warnings)
+          console.error(`[agentpos-buyer] ${w.code}: ${w.message} ${w.hint}`);
+        b = new BuyerService({ profile: loaded.profile, ...(options.depsOverrides ?? {}) });
+      }
       buyers.set(key, b);
     }
     return b;

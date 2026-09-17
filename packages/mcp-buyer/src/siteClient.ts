@@ -11,7 +11,6 @@ export interface SiteInfo {
   network: string;
   asset: string;
   basePath: string;
-  verified: boolean;
   manifest: unknown;
 }
 
@@ -137,7 +136,6 @@ export class SiteClient {
       network: String(health.network ?? "unknown"),
       asset: String(health.asset ?? "USDC"),
       basePath: this.basePath,
-      verified: false, // registry verification lands with the hosted plane (Phase 2)
       manifest,
     };
   }

@@ -184,7 +184,6 @@ export class BuyerService {
     const verdict = evaluateMandate(this.profile.mandate, {
       amount,
       siteHost: client.host,
-      siteVerified: info.verified,
       hasPhysicalItems: hasPhysical,
       spentInPeriod: this.spentInPeriod() as never,
       humanApproved: Boolean(approval?.approvedAt),

@@ -51,15 +51,19 @@ antes de cualquier firma, en cada compra.
 | --- | --- |
 | `maxPerTx` | Tope duro por pago individual, en USDC. |
 | `maxTotal` + `period` | Tope de todo lo gastado dentro de `day`, `week` o `month`. |
-| `allowedSellers` | `"any"` (por defecto), una lista de hostnames, o `"verified-only"`. |
+| `allowedSellers` | `"any"` (por defecto) o una lista de hostnames. |
 | `requireConfirmAboveUsdc` | Sobre ese monto el agente tiene que pedirte confirmación aparte. |
 | `allowPhysicalGoods` | Si el agente puede comprar cosas que se despachan. |
 | `shippingAddressLocked` | Si es verdadero, el agente no puede poner una dirección: se usa la del perfil. |
 
 `init` no pregunta por `allowedSellers`: edita el archivo JSON para restringirlo, por ejemplo
-`"allowedSellers": ["demo.agentposhq.com"]`. **`"verified-only"` está reservado** y rechaza todos
-los sitios hasta que exista el registro alojado, así que hoy conviene una lista explícita de
-hostnames.
+`"allowedSellers": ["demo.agentposhq.com"]`.
+
+Existía un tercer valor, `"verified-only"`. Consultaba un registro alojado de vendedores que
+nunca se construyó, así que rechazaba todos los sitios del mundo. Ya no existe. Un perfil que
+todavía lo tenga se carga como `"allowedSellers": []`, que rechaza todo igual, y el comprador
+imprime una advertencia `MANDATE_MODE_RETIRED` que te dice cómo cambiarlo: la lista de hostnames
+en los que confías, o `"any"`. Nada reescribe tu perfil por ti.
 
 La lista de tiendas por defecto se maneja aparte:
 
