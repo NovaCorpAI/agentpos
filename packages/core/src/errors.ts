@@ -13,6 +13,12 @@ export const ERROR_CODES = [
   "PAYMENT_REJECTED",
   "SETTLEMENT_FAILED",
   "SPEC_MISMATCH",
+  // payment rails (adapter/rails.ts)
+  "RAIL_ID_INVALID",
+  "RAIL_NOT_FOUND",
+  "RAIL_DUPLICATE",
+  "RAIL_UNSUPPORTED",
+  "RAIL_UNAVAILABLE",
   // catalog / checkout
   "ITEM_NOT_FOUND",
   "ITEM_NOT_PUBLISHED",

@@ -4,6 +4,35 @@
  */
 export const ADAPTER_VERSION = "0.2.0";
 
+/**
+ * Version of the `PaymentRail` interface itself (adapter/rails.ts), independent of any single
+ * rail's protocol version. Bump on every breaking change to the interface so a store can tell
+ * which shape of rail it is running.
+ */
+export const PAYMENT_RAIL_INTERFACE_VERSION = "1.0.0";
+
+/**
+ * Pinned rail identifiers (reverse-DNS). A rail id is part of our public surface: it appears in
+ * discovery, reconciliation and (later) the merchant's routing policy, so it NEVER changes once
+ * published. Declared here, implemented in adapter/rails/. Ids listed as reserved have no
+ * implementation yet and must not be registered.
+ */
+export const PAYMENT_RAIL_IDS = {
+  /** x402 + exact scheme over Stellar. The only rail implemented today. */
+  x402Stellar: "org.x402.stellar",
+} as const;
+
+/**
+ * Rails we expect to implement, kept here so the id is fixed before any code exists and two
+ * worktrees cannot invent two spellings for the same rail. NOT registrable.
+ */
+export const RESERVED_PAYMENT_RAIL_IDS = {
+  /** Amazon agentic payments (hackathon bridge; declared and simulated, never charged for real). */
+  amazonPayments: "com.amazon.payments",
+  /** The merchant's own fiat acquirer, executed by the merchant's sidecar (plan/RIELES.md). */
+  merchantFiat: "com.novacorplabs.agentpos.merchant-fiat",
+} as const;
+
 export const PROTOCOL_VERSIONS = {
   x402: {
     /** x402 wire protocol major version (V2 headers: PAYMENT-REQUIRED / PAYMENT-SIGNATURE / PAYMENT-RESPONSE). */
@@ -47,10 +76,21 @@ export const PROTOCOL_VERSIONS = {
     notes:
       "Product feed only (fiat prices in ISO 4217 minor units, as the schema requires). Checkout + delegated payment are Build-phase slots.",
   },
+  rails: {
+    /** Interface version of adapter/rails.ts (see PAYMENT_RAIL_INTERFACE_VERSION). */
+    interface: PAYMENT_RAIL_INTERFACE_VERSION,
+    /** Rail ids with an implementation behind them today. */
+    implemented: [PAYMENT_RAIL_IDS.x402Stellar],
+    checkedAt: "2026-09-17",
+    source: "plan/RIELES.md",
+    notes:
+      "One rail today (x402 on Stellar). Adding a rail is additive: it never changes the catalog or order surfaces. Routing between rails belongs to packages/policy, not here.",
+  },
   agentpos: {
     /** Our own namespaced identifiers inside UCP registries. */
     serviceName: "com.novacorplabs.agentpos",
-    paymentHandlerName: "org.x402.stellar",
+    /** Same string as the x402 rail id: the UCP payment handler IS that rail. */
+    paymentHandlerName: PAYMENT_RAIL_IDS.x402Stellar,
     paymentHandlerId: "x402-stellar",
     spec: "https://agentpos.novacorplabs.com/spec/agentpos-service",
     serviceSchema: "https://agentpos.novacorplabs.com/schemas/agentpos-service.openapi.json",
