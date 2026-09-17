@@ -38,6 +38,14 @@ export {
   mapPlatformStatus,
 } from "./checkout.js";
 export type { AlertEvent, AlertSink, SettledTerms } from "./checkout.js";
+export {
+  PROXY_LABELS,
+  PROXY_TARGETS,
+  agentposProxyPaths,
+  proxySnippet,
+  proxySnippets,
+} from "./proxy.js";
+export type { ProxyInput, ProxyTarget } from "./proxy.js";
 export { createAgentPOSApp, cartView, orderView } from "./app.js";
 export type { AgentPOSDeps, AgentPOSSite } from "./app.js";
 export { buildMcpServer, createMcpHandler } from "./mcp.js";

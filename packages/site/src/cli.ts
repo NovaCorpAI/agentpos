@@ -24,6 +24,14 @@ import { SITE_CONFIG_FILE, coreConfigFromEnv, loadSiteConfig, secretsFromEnv } f
 import type { SiteConfigInput } from "./config.js";
 import { generateAndStoreKeypair } from "./keys.js";
 import { CatalogService } from "./catalog.js";
+import {
+  PROXY_LABELS,
+  PROXY_TARGETS,
+  agentposProxyPaths,
+  proxySnippet,
+  proxySnippets,
+} from "./proxy.js";
+import type { ProxyTarget } from "./proxy.js";
 import { SiteStorage } from "./storage.js";
 
 function loadDotEnv(cwd: string): void {
@@ -644,15 +652,59 @@ program
   });
 
 // ---------------------------------------------------------------------------
+/**
+ * The reverse-proxy rules the merchant has to paste into their own web server, for every server
+ * we can write honestly. Printed after the sidecar starts, because the port is only certain then
+ * (`--port 0` picks one). `--proxy <server>` narrows it to a single block, which is what you
+ * want when you already know your stack and just want to copy it.
+ */
+function printProxyConfig(
+  siteUrl: string,
+  basePath: string,
+  host: string,
+  port: number,
+  only?: string,
+): void {
+  // 0.0.0.0 means "every interface"; the proxy reaches it over loopback.
+  const upstream = `http://${host === "0.0.0.0" || host === "::" ? "127.0.0.1" : host}:${port}`;
+  const input = { siteUrl, basePath, upstream };
+  console.log("");
+  console.log(
+    pc.dim(
+      `Reverse-proxy these paths from your domain to the sidecar: ${agentposProxyPaths(basePath).join(", ")}`,
+    ),
+  );
+  const blocks = only
+    ? [{ label: PROXY_LABELS[only as ProxyTarget], snippet: proxySnippet(only as ProxyTarget, input) }]
+    : proxySnippets(input);
+  for (const block of blocks) {
+    console.log("");
+    console.log(pc.bold(`--- ${block.label} ---`));
+    console.log(block.snippet);
+  }
+  if (!only)
+    console.log(pc.dim(`\nJust one of them: npx agentpos serve --proxy ${PROXY_TARGETS[0]}`));
+}
+
 program
   .command("serve")
   .description("Run the sidecar HTTP server")
   .option("-p, --port <port>", "port", "8402")
   .option("-H, --host <host>", "bind address", "0.0.0.0")
-  .action(async (opts: { port: string; host: string }) => {
+  .option(
+    "--proxy <server>",
+    `print only this proxy's configuration (${PROXY_TARGETS.join(" | ")})`,
+  )
+  .action(async (opts: { port: string; host: string; proxy?: string }) => {
     const cwd = program.opts<{ cwd: string }>().cwd;
     loadDotEnv(cwd);
     try {
+      // Validated before anything starts: a typo should not cost a server boot.
+      if (opts.proxy !== undefined && !PROXY_TARGETS.includes(opts.proxy as ProxyTarget)) {
+        throw new AgentPOSError("CONFIG_INVALID", `Unknown proxy '${opts.proxy}'`, {
+          hint: `Use one of: ${PROXY_TARGETS.join(", ")}.`,
+        });
+      }
       const format =
         process.env.AGENTPOS_LOG_FORMAT === "pretty" ||
         (process.stdout.isTTY && !process.env.AGENTPOS_LOG_FORMAT)
@@ -668,13 +720,7 @@ program
       console.log(
         `network ${gate.core.caip2}, asset ${gate.core.checkoutAsset}, payTo ${gate.site.payTo}`,
       );
-      console.log(
-        pc.dim(
-          "Reverse-proxy these paths from your domain: /.well-known/ucp and " +
-            gate.site.basePath +
-            "/*",
-        ),
-      );
+      printProxyConfig(gate.site.siteUrl, gate.site.basePath, opts.host, port, opts.proxy);
     } catch (err) {
       die(err);
     }

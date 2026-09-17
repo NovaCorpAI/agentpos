@@ -89,16 +89,29 @@ tuyo. Lo puedes cambiar cuando quieras con `confirm`.
 
 ## Paso 5 (5 min): una regla en tu proxy
 
-Tu dominio tiene que redirigir dos rutas al sidecar. Con nginx:
+Tu dominio tiene que redirigir cuatro rutas al sidecar: `/.well-known/ucp`, `/openapi.json`,
+`/llms.txt` y `/agentpos/*`. Las tres primeras van en la raíz porque ahí las buscan los
+directorios de agentes: si solo rediriges `/agentpos/*`, los agentes no encuentran la tienda.
 
-```nginx
-location /.well-known/ucp { proxy_pass http://127.0.0.1:8402; }
-location /agentpos/       { proxy_pass http://127.0.0.1:8402; }
-location = /openapi.json   { proxy_pass http://127.0.0.1:8402; }
-location = /llms.txt       { proxy_pass http://127.0.0.1:8402; }
+`agentpos serve` imprime la configuración exacta para nginx, Caddy, Apache y Cloudflare Tunnel,
+ya rellenada con tu dominio, tu base path y el puerto que acaba de tomar. Copias el bloque de tu
+servidor, lo pegas y recargas. Si ya sabes cuál usas, pide solo ese:
+
+```bash
+npx agentpos serve --proxy nginx     # o: caddy | apache | cloudflare
 ```
 
-(`agentpos serve` imprime el snippet exacto para nginx, Caddy, Apache y Cloudflare.)
+Con nginx se ve así:
+
+```nginx
+location = /.well-known/ucp { proxy_pass http://127.0.0.1:8402; proxy_set_header Host $host; proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; proxy_set_header X-Forwarded-Proto $scheme; }
+location = /openapi.json    { proxy_pass http://127.0.0.1:8402; proxy_set_header Host $host; proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; proxy_set_header X-Forwarded-Proto $scheme; }
+location = /llms.txt        { proxy_pass http://127.0.0.1:8402; proxy_set_header Host $host; proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; proxy_set_header X-Forwarded-Proto $scheme; }
+location /agentpos/         { proxy_pass http://127.0.0.1:8402; proxy_set_header Host $host; proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; proxy_set_header X-Forwarded-Proto $scheme; }
+```
+
+La cabecera con la IP del cliente no es adorno: sin ella todos los agentes comparten un mismo
+cupo de límite de tasa.
 
 ## Paso 6 (5 min): verificación, sin confiar en nadie
 

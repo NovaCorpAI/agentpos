@@ -7,7 +7,8 @@ npx @agentpos/site init      # config + wallet
 npx @agentpos/site scan      # read your own site -> draft (nothing published)
 npx @agentpos/site confirm   # you set every price
 npx @agentpos/site publish   # verify the payment rail, expose the catalog
-npx @agentpos/site serve     # sidecar on :8402 (reverse-proxy /.well-known/ucp and /agentpos/*)
+npx @agentpos/site serve     # sidecar on :8402; prints the proxy config for nginx | caddy |
+                             # apache | cloudflare (--proxy <one> for just one)
 npx @agentpos/site status    # orders, tx hashes, connector errors (--retry)
 npx @agentpos/site approvals # orders parked for your decision (M2)
 npx @agentpos/site agents    # who may buy: register | revoke (M3)

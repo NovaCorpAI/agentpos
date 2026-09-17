@@ -81,16 +81,28 @@ npx agentpos serve      # leaves the sidecar running on :8402
 
 ## Step 5 (5 min): one rule in your proxy
 
-Your domain must forward two paths to the sidecar. With nginx:
+Your domain must forward four paths to the sidecar: `/.well-known/ucp`, `/openapi.json`,
+`/llms.txt` and `/agentpos/*`. The first three live at the root because that is where the
+agent directories look for them; forward only `/agentpos/*` and agents will not find the store.
 
-```nginx
-location /.well-known/ucp { proxy_pass http://127.0.0.1:8402; }
-location /agentpos/       { proxy_pass http://127.0.0.1:8402; }
-location = /openapi.json   { proxy_pass http://127.0.0.1:8402; }
-location = /llms.txt       { proxy_pass http://127.0.0.1:8402; }
+`agentpos serve` prints the exact configuration for nginx, Caddy, Apache and Cloudflare Tunnel,
+already filled in with your domain, your base path and the port it just bound. Copy the block
+for your server, paste, reload. If you know your stack, ask for just that one:
+
+```bash
+npx agentpos serve --proxy nginx     # or: caddy | apache | cloudflare
 ```
 
-(`agentpos serve` prints the exact snippet for nginx, Caddy, Apache and Cloudflare.)
+With nginx it looks like this:
+
+```nginx
+location = /.well-known/ucp { proxy_pass http://127.0.0.1:8402; proxy_set_header Host $host; proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; proxy_set_header X-Forwarded-Proto $scheme; }
+location = /openapi.json    { proxy_pass http://127.0.0.1:8402; proxy_set_header Host $host; proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; proxy_set_header X-Forwarded-Proto $scheme; }
+location = /llms.txt        { proxy_pass http://127.0.0.1:8402; proxy_set_header Host $host; proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; proxy_set_header X-Forwarded-Proto $scheme; }
+location /agentpos/         { proxy_pass http://127.0.0.1:8402; proxy_set_header Host $host; proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; proxy_set_header X-Forwarded-Proto $scheme; }
+```
+
+The forwarded-for header is not decoration: without it every agent shares one rate-limit bucket.
 
 ## Step 6 (5 min): verify, trusting nobody
 
