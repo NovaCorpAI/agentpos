@@ -13,6 +13,7 @@ import type {
   Logger,
   Order,
   OrderConnector,
+  OrderStatus,
   PaymentRecord,
   Quote,
   QuoteLine,
@@ -82,6 +83,44 @@ export interface CheckoutOptions {
 
 function newId(prefix: string): string {
   return `${prefix}_${randomBytes(9).toString("base64url")}`;
+}
+
+/**
+ * Platform order status -> AgentPOS order status. THE table: every platform vocabulary we can
+ * read lives here and nowhere else, so a new platform adds rows instead of branches.
+ *
+ * WooCommerce (REST v3) speaks: pending, processing, on-hold, completed, cancelled, refunded,
+ * failed, trash. Only the endings are mapped. An order moving through the merchant's own
+ * workflow is not our business, and a status that is not in this table is deliberately absent:
+ * `mapPlatformStatus` returns undefined and the caller leaves the order exactly as it was.
+ * Guessing here would move an order (and the merchant's books) on a hunch.
+ */
+export const PLATFORM_ORDER_STATUS: Readonly<Record<string, OrderStatus>> = Object.freeze({
+  completed: "fulfilled",
+  cancelled: "cancelled",
+  refunded: "cancelled",
+  failed: "cancelled",
+});
+
+/** Once an order reaches one of these it never moves again, and nothing keeps polling it. */
+export const TERMINAL_ORDER_STATUSES: readonly OrderStatus[] = Object.freeze([
+  "fulfilled",
+  "cancelled",
+  "expired",
+]);
+
+/**
+ * Maps one platform status string, or undefined when we do not know it (a no-op for callers).
+ * WooCommerce stores its statuses internally with a `wc-` prefix and hands them out without it;
+ * both spellings mean the same thing, so the prefix is normalized away rather than duplicated.
+ */
+export function mapPlatformStatus(platformStatus: string): OrderStatus | undefined {
+  const key = platformStatus.trim().toLowerCase().replace(/^wc-/, "");
+  return PLATFORM_ORDER_STATUS[key];
+}
+
+export function isTerminalStatus(status: OrderStatus): boolean {
+  return TERMINAL_ORDER_STATUSES.includes(status);
 }
 
 export class CheckoutService {
@@ -820,6 +859,106 @@ export class CheckoutService {
       }
     }
     return retried;
+  }
+
+  // --- order lifecycle (pending_payment -> paid -> fulfilled | cancelled | expired) ----------
+
+  /**
+   * Writes one lifecycle transition: storage, log line, and the audit chain when one fits.
+   *
+   * Receipts (M4): `order.failed` is the chain's "this order did not complete" link, and a
+   * cancellation, a refund or an expiry is exactly that, with `discrepancy` saying which. There
+   * is no positive counterpart for fulfilment, and inventing a receipt event would fork the
+   * receipt format for every verifier that already reads it, so fulfilment is logged only.
+   */
+  private transition(order: Order, to: OrderStatus, reason: Record<string, unknown>): Order {
+    const at = new Date().toISOString();
+    const moved: Order = { ...order, status: to, updatedAt: at };
+    this.opts.storage.saveOrder(moved);
+    this.logger.info("order.status_changed", {
+      traceId: order.traceId,
+      orderId: order.id,
+      from: order.status,
+      to,
+      ...reason,
+    });
+    if (to === "cancelled" || to === "expired") {
+      this.receipts?.append({
+        ...this.receiptContext(moved),
+        event: "order.failed",
+        at,
+        discrepancy: { from: order.status, to, ...reason },
+      });
+    }
+    return moved;
+  }
+
+  /**
+   * Asks the merchant's platform what became of an order after we handed it over, and mirrors
+   * the answer into our own status. Only a `paid` order that already exists in the platform can
+   * move: before that there is nothing to ask about, and a terminal order is done.
+   *
+   * A connector without `getOrderStatus`, a platform status outside the mapping table, or a
+   * failing call all leave the order untouched. Nothing here ever creates or reverses a payment.
+   */
+  async syncOrderStatus(orderId: string): Promise<Order> {
+    const order = this.getOrder(orderId);
+    if (isTerminalStatus(order.status) || order.status !== "paid" || !order.externalOrderId) {
+      return order;
+    }
+    const connector = this.opts.connector;
+    if (!connector.getOrderStatus) return order;
+    const log = this.logger.child({ traceId: order.traceId, orderId: order.id });
+    let platformStatus: string;
+    try {
+      ({ status: platformStatus } = await connector.getOrderStatus(order.externalOrderId));
+    } catch (err) {
+      log.warn("order.status_sync_failed", {
+        externalOrderId: order.externalOrderId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return order;
+    }
+    const mapped = mapPlatformStatus(platformStatus);
+    if (mapped === undefined) {
+      // Unknown or still-in-flight status: say so and change nothing.
+      log.debug("order.status_unmapped", {
+        platform: connector.platform,
+        platformStatus,
+      });
+      return order;
+    }
+    if (mapped === order.status) return order;
+    return this.transition(order, mapped, {
+      reason: "platform_status",
+      platform: connector.platform,
+      platformStatus,
+    });
+  }
+
+  /**
+   * Periodic lifecycle sweep (called by the sidecar worker, like the connector retry loop):
+   *
+   *  1. `paid` orders that exist in the platform are re-read there, oldest first, at most
+   *     `batch` per pass so a large backlog cannot hammer the merchant's API.
+   *  2. `pending_payment` orders whose cart has expired become `expired`, so a quote nobody paid
+   *     stops looking like a sale in flight.
+   *
+   * An order with a payment record is NEVER expired here: a settled payment whose order is still
+   * pending is the stuck-settlement path, which has its own alerting, and quietly writing it off
+   * as expired would hide the one case a merchant must see.
+   */
+  async sweepOrderLifecycle(now: Date = new Date(), batch = 25): Promise<Order[]> {
+    const moved: Order[] = [];
+    for (const order of this.opts.storage.listOrdersToSync(batch)) {
+      const result = await this.syncOrderStatus(order.id);
+      if (result.status !== order.status) moved.push(result);
+    }
+    for (const order of this.opts.storage.listExpiredPendingOrders(now, batch)) {
+      if (order.payment || this.opts.storage.hasPaymentForOrder(order.id)) continue;
+      moved.push(this.transition(order, "expired", { reason: "cart_expired" }));
+    }
+    return moved;
   }
 
   getOrder(id: string): Order {

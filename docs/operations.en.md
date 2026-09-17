@@ -85,7 +85,16 @@ behalf.
 | --- | --- |
 | `pending_payment` | The order exists because a cart passed checkout, but nothing settled yet. Nobody was charged. |
 | `paid` | The payment settled on-chain. The WooCommerce order is created from here, never before. |
-| `fulfilled`, `cancelled`, `expired` | Defined in the schema and **not written by the sidecar today**. Fulfilment lives in your WooCommerce, not in AgentPOS. |
+| `fulfilled` | Your own platform reports the order as completed. Fulfilment still happens in WooCommerce; the sidecar only mirrors what it says. |
+| `cancelled` | Your platform reports the order as cancelled, refunded or failed. The payment record and its receipt are kept, always. |
+| `expired` | The cart expired and nothing was ever paid. Only orders with no payment reach this state. |
+
+Every few minutes the sidecar re-reads the platform status of paid orders and mirrors it,
+oldest first. The mapping is deliberately small: `completed` becomes `fulfilled`, and
+`cancelled`, `refunded` or `failed` become `cancelled`. Any other status (`processing`,
+`on-hold`, anything a plugin invents) leaves the order exactly as it is: the sidecar never
+guesses what a status it does not know means for your money. A paid order is never expired by
+a timer, whatever its cart says.
 
 Two fields matter as much as the state:
 

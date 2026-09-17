@@ -87,7 +87,16 @@ cuenta.
 | --- | --- |
 | `pending_payment` | La orden existe porque un carrito pasó el checkout, pero nada se ha liquidado. Nadie fue cobrado. |
 | `paid` | El pago se liquidó en la red. Recién desde aquí se crea la orden en WooCommerce, nunca antes. |
-| `fulfilled`, `cancelled`, `expired` | Están definidos en el esquema y **hoy el sidecar no los escribe**. El despacho vive en tu WooCommerce, no en AgentPOS. |
+| `fulfilled` | Tu plataforma reporta la orden como completada. El despacho sigue viviendo en WooCommerce; el sidecar solo refleja lo que ella dice. |
+| `cancelled` | Tu plataforma reporta la orden como cancelada, reembolsada o fallida. El registro del pago y su comprobante se conservan siempre. |
+| `expired` | El carrito venció y nunca se pagó nada. Solo llegan aquí las órdenes sin pago. |
+
+Cada pocos minutos el sidecar vuelve a leer el estado de las órdenes pagadas en tu plataforma y
+lo refleja, de la más antigua a la más nueva. El mapeo es corto a propósito: `completed` pasa a
+`fulfilled`, y `cancelled`, `refunded` o `failed` pasan a `cancelled`. Cualquier otro estado
+(`processing`, `on-hold`, lo que invente un plugin) deja la orden tal cual: el sidecar nunca
+adivina qué significa para tu plata un estado que no conoce. Una orden pagada jamás vence por
+tiempo, diga lo que diga su carrito.
 
 Dos campos importan tanto como el estado:
 

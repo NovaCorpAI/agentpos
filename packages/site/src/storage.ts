@@ -16,6 +16,7 @@ import type {
   PaymentRecord,
 } from "@agentpos/core";
 import {
+  ORDER_STATUSES,
   catalogItemFromJson,
   catalogItemToJson,
   draftFromJson,
@@ -34,6 +35,8 @@ export interface PublicMetrics {
   since: string;
   until: string;
   paidOrders: number;
+  /** Subset of `paidOrders` the merchant's own platform already reports as completed. */
+  fulfilledOrders: number;
   totalMinor: string;
   heldOrders: number;
   /** Paid orders whose platform order has not been created yet (connector retrying). */
@@ -135,6 +138,7 @@ export class SiteStorage {
     const agents = new Set<string>();
     const latencies: number[] = [];
     let paidOrders = 0;
+    let fulfilledOrders = 0;
     let totalMinor = 0n;
     let held = 0;
     let pendingPlatformOrders = 0;
@@ -153,6 +157,7 @@ export class SiteStorage {
       if (order.hold) held += 1;
       if (order.status !== "paid" && order.status !== "fulfilled") continue;
       paidOrders += 1;
+      if (order.status === "fulfilled") fulfilledOrders += 1;
       const amount = BigInt(order.quote.totalUsdc);
       totalMinor += amount;
       const day = order.createdAt.slice(0, 10);
@@ -180,6 +185,7 @@ export class SiteStorage {
       since: since.toISOString(),
       until: now.toISOString(),
       paidOrders,
+      fulfilledOrders,
       totalMinor: totalMinor.toString(),
       heldOrders: held,
       pendingPlatformOrders,
@@ -358,12 +364,57 @@ export class SiteStorage {
     return rows.map((r) => reviveOrder(r.json));
   }
 
-  /** Orders per status (merchant API summary). */
-  orderStatusCounts(): Record<string, number> {
+  /**
+   * Orders per status (merchant API summary). Every status in the lifecycle is present, zero
+   * included, so a reader never has to guess whether a missing key means "none" or "this store
+   * does not track that status".
+   */
+  orderStatusCounts(): Record<OrderStatus, number> {
+    const counts = Object.fromEntries(ORDER_STATUSES.map((s) => [s, 0])) as Record<
+      OrderStatus,
+      number
+    >;
     const rows = this.db
       .prepare("select status, count(*) as n from orders group by status")
       .all() as Array<{ status: string; n: number }>;
-    return Object.fromEntries(rows.map((r) => [r.status, Number(r.n)]));
+    for (const row of rows) counts[row.status as OrderStatus] = Number(row.n);
+    return counts;
+  }
+
+  /**
+   * Paid orders that already exist in the merchant's platform, oldest first (status sweep).
+   * These are the only ones worth asking the platform about: an order with no platform id has
+   * nothing to sync, and a terminal one never moves again.
+   */
+  listOrdersToSync(limit: number): Order[] {
+    const rows = this.db
+      .prepare(
+        "select json from orders where status = 'paid' and json_extract(json, '$.externalOrderId') is not null order by created_at asc limit ?",
+      )
+      .all(limit) as Row[];
+    return rows.map((r) => reviveOrder(r.json));
+  }
+
+  /**
+   * Orders still waiting for a payment whose cart has already expired, oldest first. The caller
+   * decides what to do with them; an order that has a payment is NOT excluded here, so the
+   * caller can (and must) apply that rule explicitly.
+   */
+  listExpiredPendingOrders(now: Date, limit: number): Order[] {
+    const rows = this.db
+      .prepare(
+        "select o.json as json from orders o join carts c on c.id = o.cart_id where o.status = 'pending_payment' and c.expires_at < ? order by o.created_at asc limit ?",
+      )
+      .all(now.toISOString(), limit) as Row[];
+    return rows.map((r) => reviveOrder(r.json));
+  }
+
+  /** True when any settlement was ever recorded for this order (idempotency table, guardrail 6). */
+  hasPaymentForOrder(orderId: string): boolean {
+    const row = this.db
+      .prepare("select count(*) as n from payments where order_id = ?")
+      .get(orderId) as { n: number };
+    return Number(row.n) > 0;
   }
 
   /** Published items only, without deserializing them (merchant API summary). */

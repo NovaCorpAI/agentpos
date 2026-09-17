@@ -45,6 +45,13 @@ Surfaces: `/.well-known/ucp`, `/agentpos/catalog`, `/agentpos/feed`, `/agentpos/
 `/agentpos/approvals/:id`, `/agentpos/orders/:id/receipt`, `/agentpos/receipts/:hash`,
 `/agentpos/health`.
 
+Order lifecycle: `pending_payment -> paid -> fulfilled | cancelled`, plus `expired` for a cart
+that was never paid. While the sidecar runs, a sweep re-reads the platform status of paid orders
+(`completed -> fulfilled`; `cancelled`, `refunded`, `failed -> cancelled`; anything else is left
+alone) and expires unpaid orders whose cart is gone. A paid order is never expired by a timer.
+`gate.sweepOrderLifecycle()` runs one pass by hand, `checkout.syncOrderStatus(orderId)` syncs one
+order, and `statusSyncIntervalMs` (default 5 min) sets the sweep's clock.
+
 Trust layer, all optional and off by default: `policy` (what may be sold and up to how much),
 `approvals` (park large orders for a human; the agent is never charged while you decide) and
 `identity` (require agents to sign their requests, and their owners to vouch for them), plus
