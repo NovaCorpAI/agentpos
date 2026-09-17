@@ -7,7 +7,13 @@ import { HTTPFacilitatorClient, x402ResourceServer } from "@x402/core/server";
 import type { FacilitatorClient, FacilitatorConfig, RouteConfig } from "@x402/core/server";
 import { x402Client, x402HTTPClient } from "@x402/core/client";
 import { wrapFetchWithPayment } from "@x402/fetch";
-import type { PaymentRequired, SettleResponse } from "@x402/core/types";
+import type {
+  PaymentPayload,
+  PaymentRequired,
+  PaymentRequirements,
+  SettleResponse,
+  VerifyResponse,
+} from "@x402/core/types";
 import { ExactStellarScheme as ExactStellarServerScheme } from "@x402/stellar/exact/server";
 import { ExactStellarScheme as ExactStellarClientScheme } from "@x402/stellar/exact/client";
 import { getNetworkPassphrase, getUsdcAddress } from "@x402/stellar";
@@ -18,7 +24,17 @@ import type { SignerProvider } from "../signer.js";
 import { AgentPOSError } from "../errors.js";
 import { ADAPTER_VERSION, PROTOCOL_VERSIONS } from "./versions.js";
 
-export type { RouteConfig, SettleResponse, PaymentRequired, FacilitatorClient };
+export type {
+  RouteConfig,
+  SettleResponse,
+  PaymentRequired,
+  FacilitatorClient,
+  // Re-exported so consumers (and the x402 rail) never import @x402/* themselves (guardrail 3).
+  PaymentPayload,
+  PaymentRequirements,
+  VerifyResponse,
+  x402ResourceServer,
+};
 
 export type CheckoutAsset = "USDC" | "XLM";
 
@@ -141,6 +157,49 @@ export function buildRouteConfig(config: CoreConfig, terms: PaymentTerms): Route
     ...(terms.description ? { description: terms.description } : {}),
     mimeType: "application/json",
   };
+}
+
+/**
+ * Compiles our integer terms into the wire `PaymentRequirements` a facilitator verifies and
+ * settles against. The object is produced by the SDK's own compiler from the same RouteConfig the
+ * HTTP middleware uses, never hand-built here: the wire format stays the SDK's business.
+ *
+ * The resource server must already know the facilitator's supported kinds (`server.initialize()`),
+ * exactly as it does when serving a 402 over HTTP.
+ */
+export async function buildPaymentRequirements(
+  config: CoreConfig,
+  server: x402ResourceServer,
+  terms: PaymentTerms,
+): Promise<PaymentRequirements> {
+  const route = buildRouteConfig(config, terms);
+  const accept = Array.isArray(route.accepts) ? route.accepts[0] : route.accepts;
+  if (!accept) {
+    throw new AgentPOSError("SPEC_MISMATCH", "Route config produced no payment option", {
+      hint: "This is an adapter bug; buildRouteConfig always emits exactly one accept entry.",
+    });
+  }
+  const [requirements] = await server.buildPaymentRequirements({
+    scheme: accept.scheme,
+    network: accept.network,
+    payTo: accept.payTo as string,
+    price: accept.price as { asset: string; amount: string },
+    ...(accept.maxTimeoutSeconds !== undefined
+      ? { maxTimeoutSeconds: accept.maxTimeoutSeconds }
+      : {}),
+    ...(accept.extra ? { extra: accept.extra } : {}),
+  });
+  if (!requirements) {
+    throw new AgentPOSError(
+      "SPEC_MISMATCH",
+      `Facilitator does not support scheme '${accept.scheme}' on ${config.caip2}`,
+      {
+        hint: "Check the facilitator URL and API key for this network; /supported must list the exact scheme.",
+        details: { network: config.caip2, scheme: accept.scheme },
+      },
+    );
+  }
+  return requirements;
 }
 
 /**
