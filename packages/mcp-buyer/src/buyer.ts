@@ -4,12 +4,16 @@
  */
 import {
   AgentPOSError,
+  compareUsdc,
   createBuyerFetch,
   createLocalKeypairSigner,
   formatUsdc,
+  isAgentPOSError,
   loadKeypair,
   receiptFromResponse,
   resolveConfig,
+  usdc,
+  usdcFromMinor,
 } from "@agentpos/core";
 import type {
   Address,
@@ -21,11 +25,54 @@ import type {
   SignerProvider,
 } from "@agentpos/core";
 import { evaluateMandate, periodStart, toMandateError } from "./mandate.js";
+import { mergeFacets, sortOffers, toOffer } from "./market.js";
+import type {
+  MandateContext,
+  MarketCallRequest,
+  MarketCallResult,
+  MarketOffer,
+  MarketStoreReport,
+} from "./market.js";
 import { clearApproval, getApproval, requestApproval } from "./profile.js";
 import type { Profile } from "./profile.js";
 import { SiteClient, cartTotalMinor } from "./siteClient.js";
-import type { SiteCart, SiteItem, SiteOrder } from "./siteClient.js";
+import type { CatalogQuery, SiteCart, SiteFacets, SiteItem, SiteOrder } from "./siteClient.js";
 import { SpendingLog } from "./spending.js";
+
+/** How long one store gets to answer a market call before it is reported as `timeout`. */
+export const MARKET_CALL_TIMEOUT_MS = 8_000;
+
+/** Marks the store that ran out of time, so the report can say `timeout` and not `error`. */
+class StoreTimeout extends AgentPOSError {}
+
+/**
+ * Runs `work` with a deadline. The store's own request timeouts still apply underneath; this
+ * one bounds the whole conversation with a store (its pages included), which is what keeps a
+ * single slow seller from holding up the market call.
+ */
+async function withDeadline<T>(work: Promise<T>, ms: number, url: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () =>
+            reject(
+              new StoreTimeout("SITE_UNREACHABLE", `${url} did not answer within ${ms} ms`, {
+                hint: "The store is slow or down; the other stores answered. Try again later, or raise the per-store timeout.",
+                retryable: true,
+                details: { timeoutMs: ms, url },
+              }),
+            ),
+          ms,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 export type PayFetchFactory = (
   core: CoreConfig,
@@ -122,6 +169,188 @@ export class BuyerService {
     return maxPriceMinor === undefined
       ? flat
       : flat.filter((o) => BigInt(o.price.minor) <= maxPriceMinor);
+  }
+
+  /**
+   * Market call: ONE structured request, asked of every store the mandate allows, answered
+   * with offers that can be compared side by side.
+   *
+   * The mandate decides the universe: a site it forbids is never queried, and says so in
+   * `stores`. Each store gets its own deadline and its own failure; whoever did not answer is
+   * named instead of silently dropped. Offers outside the mandate are listed and labelled
+   * `payable: false` with the reason, never hidden.
+   */
+  async marketCall(request: MarketCallRequest): Promise<MarketCallResult> {
+    const quantity = request.quantity ?? 1;
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 999) {
+      throw new AgentPOSError("CONFIG_INVALID", `Invalid quantity ${String(quantity)}`, {
+        hint: "Use an integer between 1 and 999.",
+        details: { quantity },
+      });
+    }
+    const minPriceUsdc =
+      request.minPriceUsdc === undefined ? undefined : usdc(request.minPriceUsdc);
+    const maxPriceUsdc =
+      request.maxPriceUsdc === undefined ? undefined : usdc(request.maxPriceUsdc);
+    if (
+      minPriceUsdc !== undefined &&
+      maxPriceUsdc !== undefined &&
+      compareUsdc(minPriceUsdc, maxPriceUsdc) > 0
+    ) {
+      throw new AgentPOSError("CONFIG_INVALID", "minPriceUsdc is greater than maxPriceUsdc", {
+        hint: "Use minPriceUsdc <= maxPriceUsdc, both decimal USDC amounts.",
+        details: { minPriceUsdc: request.minPriceUsdc, maxPriceUsdc: request.maxPriceUsdc },
+      });
+    }
+    const attributes = request.attributes ?? {};
+    const targets = [...new Set([...(request.sites ?? []), ...this.profile.sites])];
+    if (targets.length === 0) {
+      throw new AgentPOSError("CONFIG_INVALID", "No sites to call", {
+        hint: "Pass `sites: [url]` or add store URLs to the profile (`agentpos-buyer sites add <url>`).",
+      });
+    }
+    const query: CatalogQuery = {
+      ...(request.what ? { q: request.what } : {}),
+      ...(Object.keys(attributes).length > 0 ? { attributes } : {}),
+      ...(minPriceUsdc !== undefined ? { minPriceUsdc } : {}),
+      ...(maxPriceUsdc !== undefined ? { maxPriceUsdc } : {}),
+      ...(request.physical !== undefined ? { physical: request.physical } : {}),
+    };
+    const context: MandateContext = {
+      mandate: this.profile.mandate,
+      spentInPeriod: usdcFromMinor(this.spentInPeriod()),
+    };
+    const timeoutMs = request.timeoutMs ?? MARKET_CALL_TIMEOUT_MS;
+
+    const allowed: string[] = [];
+    const reports: MarketStoreReport[] = [];
+    for (const url of targets) {
+      const forbidden = this.forbiddenStore(url);
+      if (forbidden) reports.push(forbidden);
+      else allowed.push(url);
+    }
+    const answered = await Promise.all(
+      allowed.map((url) =>
+        this.callStore(url, query, { attributes, quantity }, context, timeoutMs),
+      ),
+    );
+    const offers: MarketOffer[] = [];
+    const facets: SiteFacets[] = [];
+    for (const answer of answered) {
+      reports.push(answer.report);
+      offers.push(...answer.offers);
+      facets.push(answer.facets);
+    }
+    reports.sort((a, b) => a.url.localeCompare(b.url));
+    return {
+      query: {
+        what: request.what,
+        attributes,
+        quantity,
+        ...(minPriceUsdc !== undefined ? { minPriceUsdc: formatUsdc(minPriceUsdc) } : {}),
+        ...(maxPriceUsdc !== undefined ? { maxPriceUsdc: formatUsdc(maxPriceUsdc) } : {}),
+        ...(request.physical !== undefined ? { physical: request.physical } : {}),
+      },
+      offers: sortOffers(offers),
+      stores: reports,
+      facets: mergeFacets(facets),
+    };
+  }
+
+  /** A store the mandate's allowlist rules out. Reported, never contacted. */
+  private forbiddenStore(url: string): MarketStoreReport | undefined {
+    const allowedSellers = this.profile.mandate.allowedSellers;
+    if (!Array.isArray(allowedSellers)) return undefined;
+    let host: string;
+    try {
+      host = new URL(url).host;
+    } catch {
+      return {
+        url,
+        name: url,
+        host: url,
+        state: "error",
+        offers: 0,
+        error: {
+          code: "CONFIG_INVALID",
+          message: `'${url}' is not a valid store URL`,
+          hint: "Use a full URL, e.g. https://shop.example.",
+        },
+      };
+    }
+    if (allowedSellers.includes(host)) return undefined;
+    return {
+      url,
+      name: host,
+      host,
+      state: "not-allowed",
+      offers: 0,
+      error: {
+        code: "SELLER_UNVERIFIED",
+        message: `${host} is not in the mandate allowlist, so it was not asked`,
+        hint:
+          allowedSellers.length === 0
+            ? 'The allowlist is empty, so no store can be called. Ask the human to add hosts to allowedSellers, or to set it to "any".'
+            : `Allowed: ${allowedSellers.join(", ")}. Ask the human to add ${host}.`,
+      },
+    };
+  }
+
+  /** One store's half of the market call. Never throws: a failure becomes a report. */
+  private async callStore(
+    url: string,
+    query: CatalogQuery,
+    request: { attributes: Record<string, string>; quantity: number },
+    context: MandateContext,
+    timeoutMs: number,
+  ): Promise<{ report: MarketStoreReport; offers: MarketOffer[]; facets: SiteFacets }> {
+    const client = this.site(url);
+    const base: Pick<MarketStoreReport, "url" | "host"> = { url: client.url, host: client.host };
+    try {
+      const page = await withDeadline(client.catalog(query), timeoutMs, client.url);
+      const store = { name: page.siteName ?? client.host, url: client.url, host: client.host };
+      const offers = page.items.map((item) => toOffer(item, store, request, context));
+      return {
+        report: {
+          ...base,
+          name: store.name,
+          state: page.degraded ? "unsupported-filters" : "ok",
+          offers: offers.length,
+          total: page.page.total,
+          ...(page.truncated ? { truncated: true } : {}),
+          ...(page.degraded
+            ? {
+                error: {
+                  code: "SPEC_MISMATCH",
+                  message:
+                    "The store refused the structured filters, so it was asked plainly and filtered here",
+                  hint: "Its counts and facets are computed by the buyer; update the store to get them from the source.",
+                },
+              }
+            : {}),
+        },
+        offers,
+        facets: page.facets,
+      };
+    } catch (err) {
+      this.log(`market call skipped ${url}: ${err instanceof Error ? err.message : String(err)}`);
+      const shaped = isAgentPOSError(err)
+        ? err
+        : new AgentPOSError("INTERNAL", err instanceof Error ? err.message : String(err), {
+            hint: "The store answered with something this buyer could not read.",
+          });
+      return {
+        report: {
+          ...base,
+          name: client.host,
+          state: err instanceof StoreTimeout ? "timeout" : "error",
+          offers: 0,
+          error: { code: shaped.code, message: shaped.message, hint: shaped.hint },
+        },
+        offers: [],
+        facets: {},
+      };
+    }
   }
 
   async createCart(

@@ -1,5 +1,26 @@
-export { BuyerService } from "./buyer.js";
+export { BuyerService, MARKET_CALL_TIMEOUT_MS } from "./buyer.js";
 export type { BuyerDeps, BuyResult, Offer, PayFetchFactory } from "./buyer.js";
+export {
+  annotateMandate,
+  formatMarketTable,
+  matchedAttributes,
+  mergeFacets,
+  payableLabel,
+  sortOffers,
+  toOffer,
+} from "./market.js";
+export type {
+  MandateBlock,
+  MandateContext,
+  MarketCallRequest,
+  MarketCallResult,
+  MarketFacets,
+  MarketFacetValue,
+  MarketOffer,
+  MarketOfferMandate,
+  MarketStoreReport,
+  MarketStoreState,
+} from "./market.js";
 export { buildBuyerServer } from "./server.js";
 export type { BuyerServerOptions } from "./server.js";
 export {
@@ -33,5 +54,20 @@ export type {
   SignerWatcherDeps,
   WatchOutcome,
 } from "./watch.js";
-export { SiteClient } from "./siteClient.js";
-export type { SiteCart, SiteInfo, SiteItem, SiteOrder } from "./siteClient.js";
+export {
+  CATALOG_MAX_PAGES,
+  CATALOG_PAGE_LIMIT,
+  SiteClient,
+  normalizeTerm,
+  stockSignal,
+} from "./siteClient.js";
+export type {
+  CatalogQuery,
+  SiteCart,
+  SiteCatalogPage,
+  SiteFacets,
+  SiteFacetValue,
+  SiteInfo,
+  SiteItem,
+  SiteOrder,
+} from "./siteClient.js";

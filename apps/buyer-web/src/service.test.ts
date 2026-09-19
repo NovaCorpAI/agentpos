@@ -9,11 +9,19 @@ import { describe, expect, it } from "vitest";
 import { Keypair } from "@stellar/stellar-sdk";
 import { createLogger, isAgentPOSError } from "@agentpos/core";
 import type { Logger } from "@agentpos/core";
-import { BuyerWebService } from "./service.js";
+import { BuyerWebService, parseAttributePairs } from "./service.js";
 import type { SaveProfileInput, ShippingInput } from "./service.js";
 import { BuyerWebStorage } from "./storage.js";
 import { buyerWebProfileSchema } from "./types.js";
-import { STORE_URL, inProcessStore } from "./test-utils.js";
+import {
+  MARKET_A,
+  MARKET_B,
+  MARKET_DOWN,
+  MARKET_LEGACY,
+  STORE_URL,
+  inProcessMarket,
+  inProcessStore,
+} from "./test-utils.js";
 
 function makeService(options: { file?: string; withStore?: boolean; logger?: Logger } = {}) {
   const storage = new BuyerWebStorage(options.file ?? ":memory:");
@@ -315,6 +323,98 @@ describe("offers", () => {
   it("refuses to act before a mandate exists", async () => {
     const { service } = makeService();
     expect(await codeAsync(() => service.searchOffers("mug"))).toBe("CONFIG_INVALID");
+  });
+});
+
+describe("market call", () => {
+  function makeMarket(profile: Partial<SaveProfileInput> = {}) {
+    const storage = new BuyerWebStorage(":memory:");
+    const service = new BuyerWebService({ storage, fetchImpl: inProcessMarket().fetchImpl });
+    service.saveProfile({
+      maxPerTx: "25",
+      maxTotal: "100",
+      period: "week",
+      stores: [MARKET_A, MARKET_B, MARKET_LEGACY, MARKET_DOWN],
+      ...profile,
+    });
+    return { storage, service };
+  }
+
+  it("asks every store at once and returns comparable offers, cheapest total first", async () => {
+    const { service } = makeMarket();
+    const result = await service.marketCall({
+      what: "lamina",
+      attributes: { Fondo: "blanco", Passepartout: "con" },
+      quantity: 2,
+    });
+    expect(result.offers.map((o) => o.itemId)).toEqual([
+      "vieja-blanco",
+      "dos-blanco",
+      "uno-blanco",
+    ]);
+    expect(result.offers.map((o) => o.totalUsdc)).toEqual(["24", "36", "40"]);
+    expect(result.offers.at(0)?.store.name).toBe("Galeria Vieja");
+    expect(result.query.quantity).toBe(2);
+  });
+
+  it("names the stores that did not answer and the ones it had to filter itself", async () => {
+    const { service } = makeMarket();
+    const result = await service.marketCall({ what: "lamina", attributes: { Fondo: "blanco" } });
+    const byHost = new Map(result.stores.map((s) => [s.host, s.state]));
+    expect(byHost.get("uno.test")).toBe("ok");
+    expect(byHost.get("dos.test")).toBe("ok");
+    expect(byHost.get("vieja.test")).toBe("unsupported-filters");
+    expect(byHost.get("rota.test")).toBe("error");
+    expect(result.offers.length).toBe(3);
+  });
+
+  it("merges the facets of every store", async () => {
+    const { service } = makeMarket();
+    const result = await service.marketCall({ what: "lamina" });
+    expect(result.facets.Fondo).toEqual([
+      { value: "blanco", count: 3 },
+      { value: "negro", count: 2 },
+    ]);
+  });
+
+  it("judges payability against what this platform approved, not a log it cannot see", async () => {
+    const { service } = makeMarket({ maxPerTx: "30", maxTotal: "30" });
+    const before = await service.marketCall({ what: "lamina", attributes: { Fondo: "blanco" } });
+    expect(before.offers.every((o) => o.mandate.payable)).toBe(true);
+    // Approving one proposal commits 18 USDC of the 30 allowed this period.
+    const proposal = await service.propose("dos-blanco", MARKET_B);
+    service.approve(proposal.id);
+    const after = await service.marketCall({ what: "lamina", attributes: { Fondo: "blanco" } });
+    const expensive = after.offers.find((o) => o.itemId === "uno-blanco");
+    expect(expensive?.mandate.payable).toBe(false);
+    expect(expensive?.mandate.blocks.map((b) => b.reason)).toEqual(["period_budget"]);
+    expect(expensive?.mandate.blocks[0]?.message).toContain("18 USDC already committed");
+    // Still listed, never hidden: the human decides what to do about their own limit.
+    expect(after.offers.map((o) => o.itemId)).toContain("uno-blanco");
+  });
+
+  it("records the call in the activity log", async () => {
+    const { service, storage } = makeMarket();
+    await service.marketCall({ what: "lamina" });
+    const entry = storage.listActivity().at(0);
+    expect(entry?.kind).toBe("search");
+    expect(entry?.data.query).toBe("lamina");
+    expect(entry?.data.stores).toBe(4);
+    expect(entry?.data.answered).toBe(3);
+  });
+
+  it("refuses to act before a mandate exists", async () => {
+    const { service } = makeService();
+    expect(await codeAsync(() => service.marketCall({ what: "lamina" }))).toBe("CONFIG_INVALID");
+  });
+
+  it("reads clave=valor rows and refuses a row that is not one", () => {
+    expect(parseAttributePairs([" Fondo=blanco ", "", "Passepartout = con "])).toEqual({
+      Fondo: "blanco",
+      Passepartout: "con",
+    });
+    expect(err(() => parseAttributePairs(["blanco"])).code).toBe("CONFIG_INVALID");
+    expect(err(() => parseAttributePairs(["=blanco"])).hint).toContain("clave=valor");
   });
 });
 

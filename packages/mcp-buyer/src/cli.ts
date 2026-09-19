@@ -5,15 +5,11 @@ import { Command } from "commander";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import {
-  AgentPOSError,
-  FRIENDBOT_URL,
-  formatUsdc,
-  generateAndStoreKeypair,
-} from "@agentpos/core";
+import { AgentPOSError, FRIENDBOT_URL, formatUsdc, generateAndStoreKeypair } from "@agentpos/core";
 import { approve, listPending, loadProfileWithWarnings, saveProfile } from "./profile.js";
 import type { Profile } from "./profile.js";
 import { mandateSchema } from "./mandate.js";
+import { formatMarketTable } from "./market.js";
 import { buildBuyerServer } from "./server.js";
 import { BuyerService } from "./buyer.js";
 import { runDemoPurchase } from "./demo.js";
@@ -269,9 +265,90 @@ program
           );
         } else if (opts.dryRun) {
           console.log(
-            pc.dim("Nothing was paid. Drop --dry-run (and run `agentpos-buyer init`) to buy for real."),
+            pc.dim(
+              "Nothing was paid. Drop --dry-run (and run `agentpos-buyer init`) to buy for real.",
+            ),
           );
         }
+      } catch (err) {
+        die(err);
+      }
+    },
+  );
+
+/** `--attr Fondo=blanco`, repeatable. A pair without `=` is refused with the accepted form. */
+function collectAttribute(raw: string, previous: Record<string, string>): Record<string, string> {
+  const index = raw.indexOf("=");
+  const name = index > 0 ? raw.slice(0, index).trim() : "";
+  const value = index > 0 ? raw.slice(index + 1).trim() : "";
+  if (name === "" || value === "") {
+    throw new AgentPOSError("CONFIG_INVALID", `Invalid --attr '${raw}'`, {
+      hint: "Use --attr <name>=<value>, e.g. --attr Fondo=blanco. Repeat the flag for another attribute.",
+    });
+  }
+  return { ...previous, [name]: value };
+}
+
+function collectSite(raw: string, previous: string[]): string[] {
+  return [...previous, raw];
+}
+
+program
+  .command("market")
+  .description(
+    "Market call: ask every store in the mandate for the same thing at once and compare the offers",
+  )
+  .argument("<what>", 'what you are looking for, e.g. "lamina 30x40"')
+  .option("--attr <name=value>", "exact attribute filter, repeatable", collectAttribute, {})
+  .option("--max <usdc>", "highest unit price to consider (decimal USDC)")
+  .option("--min <usdc>", "lowest unit price to consider (decimal USDC)")
+  .option("-q, --qty <n>", "how many units the totals are quoted for", "1")
+  .option("--physical", "only goods shipped to an address")
+  .option("--digital", "only digital items")
+  .option("--site <url>", "extra store for this call, repeatable", collectSite, [])
+  .option("--timeout <seconds>", "per-store timeout", "8")
+  .option("--json", "print the result as JSON instead of a table")
+  .action(
+    async (
+      what: string,
+      opts: {
+        attr: Record<string, string>;
+        max?: string;
+        min?: string;
+        qty: string;
+        physical?: boolean;
+        digital?: boolean;
+        site: string[];
+        timeout: string;
+        json?: boolean;
+      },
+    ) => {
+      const name = program.opts<{ profile: string }>().profile;
+      try {
+        if (opts.physical && opts.digital) {
+          throw new AgentPOSError("CONFIG_INVALID", "--physical and --digital exclude each other", {
+            hint: "Pass one of them, or neither to see both kinds of item.",
+          });
+        }
+        const timeout = Number(opts.timeout);
+        if (!Number.isFinite(timeout) || timeout <= 0) {
+          throw new AgentPOSError("CONFIG_INVALID", `Invalid --timeout '${opts.timeout}'`, {
+            hint: "Use a number of seconds greater than zero.",
+          });
+        }
+        const buyerService = new BuyerService({ profile: loadProfile(name) });
+        const result = await buyerService.marketCall({
+          what,
+          ...(Object.keys(opts.attr).length > 0 ? { attributes: opts.attr } : {}),
+          ...(opts.max !== undefined ? { maxPriceUsdc: opts.max } : {}),
+          ...(opts.min !== undefined ? { minPriceUsdc: opts.min } : {}),
+          ...(opts.physical ? { physical: true } : {}),
+          ...(opts.digital ? { physical: false } : {}),
+          quantity: Number(opts.qty),
+          ...(opts.site.length > 0 ? { sites: opts.site } : {}),
+          timeoutMs: Math.round(timeout * 1000),
+        });
+        console.log(opts.json ? JSON.stringify(result, null, 2) : formatMarketTable(result));
       } catch (err) {
         die(err);
       }
