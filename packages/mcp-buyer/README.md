@@ -29,9 +29,80 @@ Claude Desktop / Claude Code MCP config:
 }
 ```
 
+## The market call
+
+One structured request, asked of every store the mandate allows at the same time, answered with
+offers that can be compared side by side.
+
+```bash
+agentpos-buyer market "lamina 30x40" --attr Fondo=blanco --attr Passepartout=con --max 40 --qty 2
+agentpos-buyer market "lamina 30x40" --attr Fondo=blanco --json
+```
+
+`BuyerService.marketCall({ what, attributes?, minPriceUsdc?, maxPriceUsdc?, physical?, quantity?, sites?, timeoutMs? })`
+and the MCP tool `market_call` (same arguments) both answer:
+
+```jsonc
+{
+  "query": { "what": "lamina 30x40", "attributes": { "Fondo": "blanco" }, "quantity": 2 },
+  "offers": [
+    {
+      "store": { "name": "Galeria Dos", "url": "https://dos.example", "host": "dos.example" },
+      "itemId": "lamina-blanco",
+      "title": "Lamina 30x40 blanco",
+      "matchedAttributes": { "Fondo": "blanco" },
+      "attributes": { "Fondo": "blanco", "Passepartout": "con" },
+      "quantity": 2,
+      "unitPrice": "18",
+      "unitPriceMinor": "180000000",
+      "totalUsdc": "36",
+      "totalMinor": "360000000",
+      "physical": true,
+      "stock": "in_stock",
+      "mandate": {
+        "payable": false,
+        "needsApproval": false,
+        "blocks": [
+          {
+            "reason": "per_payment_cap",
+            "code": "MANDATE_EXCEEDED",
+            "message": "...",
+            "hint": "...",
+          },
+        ],
+      },
+    },
+  ],
+  "stores": [{ "url": "...", "name": "...", "state": "ok", "offers": 2, "total": 2 }],
+  "facets": {
+    "Fondo": [
+      { "value": "blanco", "count": 3 },
+      { "value": "negro", "count": 2 },
+    ],
+  },
+}
+```
+
+Three promises:
+
+- **Nobody disappears.** `stores[].state` is `ok`, `timeout`, `error` (with a typed code),
+  `unsupported-filters` (a store older than structured search: it answered 4xx to the filters, so
+  it was asked with the plain `q` call and filtered here) or `not-allowed` (the mandate forbids
+  it, so it was never contacted). Each store has its own deadline and its own failure.
+- **Nothing is hidden.** An offer the mandate cannot pay is listed with `payable: false` and
+  every reason why (`per_payment_cap`, `period_budget`, `physical_not_allowed`,
+  `seller_not_allowed`). Hiding the cheapest option because of a limit is how an agent becomes
+  confusing. `needsApproval` flags the ones above `requireConfirmAboveUsdc`. Nothing here pays:
+  the mandate is still enforced at `buy`.
+- **The next question is easy.** `facets` merges what every store can filter on, summing counts
+  per value, so "Fondo: blanco 3, negro 2" comes back ready to refine the call.
+
+Offers are sorted by total price ascending (ties by store name), and totals are the unit price
+multiplied by `quantity` in minor units, never in decimals.
+
 ## Agent tools
 
-`list_profiles`, `search_offers`, `get_site`, `create_cart`, `buy`, `get_order`, `get_spending_log`.
+`list_profiles`, `search_offers`, `market_call`, `get_site`, `create_cart`, `buy`, `get_order`, `get_spending_log`.
 `buy` never pays outside the mandate: `MANDATE_EXCEEDED`, `SELLER_UNVERIFIED` or
 `CONFIRMATION_REQUIRED` are returned instead. For the last one the human runs
 `agentpos-buyer approve <cartId>` (see `agentpos-buyer pending`) and the agent calls `buy` again.

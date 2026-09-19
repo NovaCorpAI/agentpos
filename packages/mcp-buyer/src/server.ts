@@ -122,6 +122,68 @@ export function buildBuyerServer(options: BuyerServerOptions): McpServer {
   );
 
   server.registerTool(
+    "market_call",
+    {
+      title: "Market call",
+      description:
+        "Ask EVERY store the buyer trusts for the same thing at once, and get comparable offers back. Use this for 'find me X with these characteristics across my stores': it takes free text plus exact attribute filters (`attributes: { Fondo: 'blanco' }`), price bounds and a quantity, and answers `offers` (normalized, cheapest total first, each marked payable or not with the mandate reason), `stores` (what each store did: ok, timeout, error, unsupported-filters, not-allowed, and how many offers it gave) and `facets` (the attribute values available across stores, to refine the next call). Nothing is bought: use create_cart and buy for that.",
+      inputSchema: {
+        what: z.string().describe("What the buyer is looking for, in their own words"),
+        attributes: z
+          .record(z.string(), z.string())
+          .optional()
+          .describe(
+            "Exact attribute filters, ANDed: { Fondo: 'blanco', Passepartout: 'con' }. Names and values are matched ignoring case and accents. Read `facets` to learn which ones a store understands.",
+          ),
+        maxPriceUsdc: z.string().optional().describe("Decimal USDC ceiling on the UNIT price"),
+        minPriceUsdc: z.string().optional().describe("Decimal USDC floor on the UNIT price"),
+        physical: z
+          .boolean()
+          .optional()
+          .describe("true for goods shipped to an address, false for digital ones"),
+        quantity: z
+          .number()
+          .int()
+          .min(1)
+          .max(999)
+          .optional()
+          .describe("Units wanted; totals are quoted for this quantity"),
+        sites: z
+          .array(z.url())
+          .optional()
+          .describe("Extra stores for this call; the mandate still decides which may be asked"),
+        ...profileArg,
+      },
+    },
+    async ({
+      what,
+      attributes,
+      maxPriceUsdc,
+      minPriceUsdc,
+      physical,
+      quantity,
+      sites,
+      profile,
+    }) => {
+      try {
+        return ok(
+          await buyer(profile).marketCall({
+            what,
+            ...(attributes ? { attributes } : {}),
+            ...(maxPriceUsdc !== undefined ? { maxPriceUsdc } : {}),
+            ...(minPriceUsdc !== undefined ? { minPriceUsdc } : {}),
+            ...(physical !== undefined ? { physical } : {}),
+            ...(quantity !== undefined ? { quantity } : {}),
+            ...(sites ? { sites } : {}),
+          }),
+        );
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  server.registerTool(
     "get_site",
     {
       title: "Get site",
