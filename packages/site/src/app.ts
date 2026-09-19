@@ -46,7 +46,7 @@ import {
 import { ReceiptChain, verifyChain, verifyReceipt } from "@agentpos/receipts";
 import { IdentityService } from "@agentpos/identity";
 import type { AgentIdentity } from "@agentpos/identity";
-import { CatalogService } from "./catalog.js";
+import { CatalogService, parseCatalogQuery } from "./catalog.js";
 import { buildDashboardHtml } from "./dashboard.js";
 import { CheckoutService } from "./checkout.js";
 import type { AlertSink } from "./checkout.js";
@@ -128,7 +128,6 @@ export interface AgentPOSSite {
 }
 
 const MAX_BODY_BYTES = 64 * 1024;
-const MAX_QUERY_CHARS = 200;
 
 const createCartSchema = z.object({
   items: z.array(cartLineSchema).min(1).max(50),
@@ -697,9 +696,12 @@ export function createAgentPOSApp(deps: AgentPOSDeps): AgentPOSSite {
     );
   });
 
+  // Structured, attribute-aware search. `q` still works on its own; `attr.<name>=<value>`,
+  // price bounds, `physical`, `inStock`, `limit` and `offset` combine with it and with each
+  // other. `facets` reports the options of everything matching the request EXCEPT its attribute
+  // filters, so an agent discovers that "Passepartout" can be "con" or "sin" without being told.
   app.get(`${base}/catalog`, (c) => {
-    const q = (c.req.query("q") ?? "").slice(0, MAX_QUERY_CHARS);
-    const items = q ? catalog.search(q) : catalog.published();
+    const result = catalog.query(parseCatalogQuery(new URL(c.req.url).searchParams));
     return c.json({
       adapterVersion: ADAPTER_VERSION,
       site: { name: site.displayName, url: siteUrl },
@@ -710,7 +712,14 @@ export function createAgentPOSApp(deps: AgentPOSDeps): AgentPOSSite {
         assetAddress: assetAddress(core),
         checkout: routes.checkout,
       },
-      items: items.map((i) => publicItem(i, core.checkoutAsset)),
+      items: result.items.map((i) => publicItem(i, core.checkoutAsset)),
+      facets: result.facets,
+      page: {
+        limit: result.limit,
+        offset: result.offset,
+        returned: result.items.length,
+        total: result.total,
+      },
     });
   });
 

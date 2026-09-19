@@ -46,6 +46,61 @@ Surfaces: `/.well-known/ucp`, `/agentpos/catalog`, `/agentpos/feed`, `/agentpos/
 `/agentpos/approvals/:id`, `/agentpos/orders/:id/receipt`, `/agentpos/receipts/:hash`,
 `/agentpos/health`.
 
+## Catalog search
+
+`GET /agentpos/catalog` answers the whole published catalog, and takes filters so a buying agent
+can ask for ONE variant instead of guessing from a text match. Variants are already separate
+catalog items (a WooCommerce variable product publishes one item per variation, its options in
+`attributes`), so the filters work on them directly. Everything is optional and everything
+combines:
+
+| Parameter                       | Form                         | Meaning                                                          |
+| ------------------------------- | ---------------------------- | ---------------------------------------------------------------- |
+| `q`                             | free text                    | title, description and attributes (accent- and case-insensitive) |
+| `attr.<name>=<value>`           | repeatable                   | exact attribute match, ANDed across names                        |
+| `minPriceUsdc` / `maxPriceUsdc` | decimal USDC, max 7 decimals | inclusive bounds, compared in minor units                        |
+| `physical`                      | `true` \| `false`            | goods that need a shipping address, or digital ones              |
+| `inStock`                       | `true` \| `false`            | stock as the catalog knows it; untracked items count as in stock |
+| `limit` / `offset`              | integers                     | page size (default 20, max 100) and its start                    |
+
+```
+curl "https://shop.example/agentpos/catalog?attr.Passepartout=con&attr.Fondo=blanco&maxPriceUsdc=40&physical=true"
+```
+
+Attribute matching is exact on the value but forgiving on spelling: both sides are compared with
+diacritics stripped and case folded, so `attr.tamano=30x40` finds `"Tamaño": "30x40"`. An unknown
+attribute name simply matches nothing. A malformed value (a price that is not a decimal, an
+inverted range, `physical=yes`, `limit=0`) answers `400 CONFIG_INVALID` with a hint naming the
+accepted form; unknown parameters are ignored.
+
+The answer keeps `items` unchanged and adds two blocks:
+
+```jsonc
+{
+  "items": [/* unchanged */],
+  "facets": {
+    // what the agent can filter on next
+    "Passepartout": [
+      { "value": "con", "count": 4 },
+      { "value": "sin", "count": 2 },
+    ],
+    "Fondo": [
+      { "value": "blanco", "count": 3 },
+      { "value": "Café", "count": 1 },
+    ],
+  },
+  "page": { "limit": 20, "offset": 0, "returned": 6, "total": 6 },
+}
+```
+
+`facets` counts the items matching everything in the request EXCEPT its attribute filters, which
+is what lets an agent see that `Passepartout` can also be `sin` while it is already filtering on
+`con`. Values are sorted by count descending then alphabetically, capped at 25 per attribute.
+
+The MCP tool `search_items` takes the same filters as arguments (`attributes` as an object,
+plus `minPriceUsdc`, `maxPriceUsdc`, `physical`, `inStock`, `limit`, `offset`) and returns the
+same `items`, `facets` and `page`.
+
 Order lifecycle: `pending_payment -> paid -> fulfilled | cancelled`, plus `expired` for a cart
 that was never paid. While the sidecar runs, a sweep re-reads the platform status of paid orders
 (`completed -> fulfilled`; `cancelled`, `refunded`, `failed -> cancelled`; anything else is left

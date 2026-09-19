@@ -29,7 +29,24 @@ export {
   SITE_CONFIG_FILE,
 } from "./config.js";
 export { SiteStorage } from "./storage.js";
-export { CatalogService } from "./catalog.js";
+export {
+  CatalogService,
+  CATALOG_ATTRIBUTE_PREFIX,
+  CATALOG_DEFAULT_LIMIT,
+  CATALOG_MAX_ATTRIBUTE_FILTERS,
+  CATALOG_MAX_FACET_VALUES,
+  CATALOG_MAX_LIMIT,
+  isInStock,
+  normalizeTerm,
+  parseCatalogQuery,
+  parsePriceBound,
+} from "./catalog.js";
+export type {
+  CatalogFacets,
+  CatalogFacetValue,
+  CatalogQuery,
+  CatalogSearchResult,
+} from "./catalog.js";
 export {
   CheckoutService,
   PLATFORM_ORDER_STATUS,
