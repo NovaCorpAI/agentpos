@@ -3,9 +3,18 @@
  * messaging channel will call) works against a real in-process store.
  */
 import { beforeEach, describe, expect, it } from "vitest";
+import type { MarketCallResult } from "@agentpos/mcp-buyer";
 import { createBuyerWebApp } from "./app.js";
 import { BuyerWebStorage } from "./storage.js";
-import { STORE_URL, inProcessStore } from "./test-utils.js";
+import {
+  MARKET_A,
+  MARKET_B,
+  MARKET_DOWN,
+  MARKET_LEGACY,
+  STORE_URL,
+  inProcessMarket,
+  inProcessStore,
+} from "./test-utils.js";
 import { buyerWebProfileSchema } from "./types.js";
 import type { ApprovalResult, Proposal, ServiceStatus } from "./types.js";
 
@@ -197,6 +206,132 @@ describe("pages", () => {
     expect(html).toContain("propuesta creada");
     expect(html).toContain("propuesta rechazada");
     expect(html).toContain("1 x Sticker");
+  });
+});
+
+describe("market call from the home page", () => {
+  function marketApp() {
+    const storage = new BuyerWebStorage(":memory:");
+    return {
+      ...createBuyerWebApp({ storage, fetchImpl: inProcessMarket().fetchImpl }),
+      storage,
+    };
+  }
+
+  async function withMandate() {
+    const app = marketApp().app;
+    await app.request("/profile", {
+      method: "POST",
+      body: new URLSearchParams({
+        maxPerTx: "25",
+        maxTotal: "100",
+        period: "week",
+        stores: [MARKET_A, MARKET_B, MARKET_LEGACY, MARKET_DOWN].join("\n"),
+        email: "buyer@example.com",
+      }),
+    });
+    return app;
+  }
+
+  it("renders the market call form with attributes, price, quantity and type", async () => {
+    const app = await withMandate();
+    const html = await (await app.request("/")).text();
+    expect(html).toContain("Llamado al mercado");
+    expect(html).toContain('name="attr"');
+    expect(html).toContain("Fondo=blanco");
+    expect(html).toContain('name="max"');
+    expect(html).toContain('name="qty"');
+    expect(html).toContain("Solo digitales");
+    expect(html).not.toContain("<script");
+  });
+
+  it("runs the call from the query string and shows the comparison", async () => {
+    const app = await withMandate();
+    const res = await app.request(
+      "/?q=lamina&attr=Fondo%3Dblanco&attr=Passepartout%3Dcon&qty=2&max=40",
+    );
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    // Cheapest first: 12 x 2 from the legacy store, then 18 x 2, then 20 x 2.
+    const order = ["Galeria Vieja", "Galeria Dos", "Galeria Uno"].map((n) => html.indexOf(n));
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    expect(html).toContain("24 USDC");
+    expect(html).toContain("36 USDC");
+    expect(html).toContain("Total x2");
+    // What the human typed comes back in the form.
+    expect(html).toContain('value="Fondo=blanco"');
+    expect(html).toContain('value="2"');
+    // And the action on each offer is still there.
+    expect(html).toContain("Proponer compra");
+  });
+
+  it("says who answered and who did not, on the page", async () => {
+    const app = await withMandate();
+    const html = await (await app.request("/?q=lamina")).text();
+    expect(html).toContain("Quien respondio");
+    expect(html).toContain("no entiende los filtros");
+    expect(html).toContain("error");
+    expect(html).toContain("la tienda esta caida");
+    expect(html).toContain("Galeria Vieja");
+  });
+
+  it("offers the merged facets as one-click refinements", async () => {
+    const app = await withMandate();
+    const html = await (await app.request("/?q=lamina")).text();
+    expect(html).toContain("Afinar el pedido");
+    expect(html).toContain("blanco (3)");
+    expect(html).toContain("negro (2)");
+    expect(html).toContain("attr=Fondo%3Dblanco");
+  });
+
+  it("shows an offer the mandate cannot pay instead of hiding it", async () => {
+    const app = await withMandate();
+    const html = await (await app.request("/?q=lamina&qty=2")).text();
+    // 20 x 2 = 40, over the 25 USDC per-payment limit. Listed, and labelled.
+    expect(html).toContain("40 USDC");
+    expect(html).toContain("supera tu maximo por compra");
+    expect(html).toContain("tag rejected");
+  });
+
+  it("keeps a malformed filter on the page instead of guessing", async () => {
+    const app = await withMandate();
+    const res = await app.request("/?q=lamina&attr=blanco");
+    expect(res.status).toBe(400);
+    const html = await res.text();
+    expect(html).toContain("CONFIG_INVALID");
+    expect(html).toContain("clave=valor");
+    expect(html).toContain('value="blanco"');
+  });
+
+  it("proposes a purchase straight from an offer", async () => {
+    const app = await withMandate();
+    const post = await app.request("/proposals", {
+      method: "POST",
+      body: new URLSearchParams({ storeUrl: MARKET_B, itemId: "dos-blanco", quantity: "1" }),
+    });
+    expect(post.status).toBe(303);
+    const html = await (await app.request("/proposals")).text();
+    expect(html).toContain("1 x Lamina 30x40 blanco");
+    expect(html).toContain("18 USDC");
+  });
+
+  it("answers the same call as JSON for a messaging channel", async () => {
+    const app = await withMandate();
+    const res = await app.request("/api/market?q=lamina&attr=Fondo%3Dblanco&qty=2");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as MarketCallResult;
+    expect(body.offers.map((o) => o.itemId)).toEqual(["vieja-blanco", "dos-blanco", "uno-blanco"]);
+    expect(body.stores).toHaveLength(4);
+    expect(body.facets.Fondo?.[0]).toEqual({ value: "blanco", count: 3 });
+  });
+
+  it("answers a typed error as JSON for a bad filter", async () => {
+    const app = await withMandate();
+    const res = await app.request("/api/market?q=lamina&attr=blanco");
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: { code: string; hint: string } };
+    expect(body.error.code).toBe("CONFIG_INVALID");
+    expect(body.error.hint).toContain("clave=valor");
   });
 });
 

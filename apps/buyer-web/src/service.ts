@@ -11,8 +11,8 @@
 import { randomUUID } from "node:crypto";
 import { AgentPOSError, addUsdc, formatUsdc, usdcFromMinor } from "@agentpos/core";
 import type { Address, Logger, UsdcMinor } from "@agentpos/core";
-import { BuyerService, evaluateMandate, periodStart } from "@agentpos/mcp-buyer";
-import type { Offer, Profile } from "@agentpos/mcp-buyer";
+import { annotateMandate, BuyerService, evaluateMandate, periodStart } from "@agentpos/mcp-buyer";
+import type { MarketCallResult, Offer, Profile } from "@agentpos/mcp-buyer";
 import type { BuyerWebStorage } from "./storage.js";
 import { buyerWebProfileSchema } from "./types.js";
 import type {
@@ -66,6 +66,43 @@ export interface SaveProfileInput {
   shipping?: ShippingInput;
   /** Public wallet address (G...). A secret (S...) is refused loudly. */
   walletAddress?: string;
+}
+
+/** A market call as the form (or a messaging channel) sends it. */
+export interface MarketCallInput {
+  /** What the human is looking for, in their own words. */
+  what: string;
+  /** Exact attribute filters, e.g. `{ Fondo: "blanco" }`. Names vary by store. */
+  attributes?: Record<string, string>;
+  /** Decimal USDC ceiling and floor on the UNIT price. Empty strings mean "no bound". */
+  maxPriceUsdc?: string;
+  minPriceUsdc?: string;
+  physical?: boolean;
+  quantity?: number;
+}
+
+/**
+ * `clave=valor` rows, as typed by a human, into attribute filters. Blank rows are ignored
+ * (the form always posts its empty rows); a row with something in it but no `=` is refused,
+ * because silently dropping it would answer a question nobody asked.
+ */
+export function parseAttributePairs(rows: string[]): Record<string, string> {
+  const attributes: Record<string, string> = {};
+  for (const row of rows) {
+    const text = row.trim();
+    if (text.length === 0) continue;
+    const index = text.indexOf("=");
+    const name = index > 0 ? text.slice(0, index).trim() : "";
+    const value = index > 0 ? text.slice(index + 1).trim() : "";
+    if (name.length === 0 || value.length === 0) {
+      throw new AgentPOSError("CONFIG_INVALID", `Filtro invalido: '${text.slice(0, 40)}'`, {
+        hint: "Escribe cada filtro como clave=valor, por ejemplo Fondo=blanco. Deja la fila vacia si no quieres filtrar.",
+        details: { pair: text.slice(0, 40) },
+      });
+    }
+    attributes[name] = value;
+  }
+  return attributes;
 }
 
 export interface BuyerWebServiceDeps {
@@ -236,6 +273,55 @@ export class BuyerWebService {
       this.now().toISOString(),
     );
     return offers;
+  }
+
+  /**
+   * Market call: the same request asked of every store in the mandate at once, answered with
+   * comparable offers, who did not answer, and the attribute values to refine with.
+   *
+   * The payability labels are recomputed here against what THIS platform can account for: the
+   * proposals the human already approved this period. The buyer's own machine keeps the
+   * payment log; buyer-web only knows what it was asked to approve, and says so honestly.
+   */
+  async marketCall(input: MarketCallInput): Promise<MarketCallResult> {
+    const profile = this.requireProfile();
+    const result = await this.buyerFor(profile).marketCall({
+      what: input.what,
+      ...(input.attributes && Object.keys(input.attributes).length > 0
+        ? { attributes: input.attributes }
+        : {}),
+      ...(input.maxPriceUsdc ? { maxPriceUsdc: input.maxPriceUsdc } : {}),
+      ...(input.minPriceUsdc ? { minPriceUsdc: input.minPriceUsdc } : {}),
+      ...(input.physical !== undefined ? { physical: input.physical } : {}),
+      ...(input.quantity !== undefined ? { quantity: input.quantity } : {}),
+    });
+    const context = {
+      mandate: profile.mandate,
+      spentInPeriod: this.approvedInPeriod(profile),
+    };
+    const answer: MarketCallResult = {
+      ...result,
+      offers: result.offers.map((offer) => ({
+        ...offer,
+        mandate: annotateMandate(context, {
+          totalMinor: usdcFromMinor(offer.totalMinor),
+          host: offer.store.host,
+          physical: offer.physical,
+        }),
+      })),
+    };
+    this.storage.appendActivity(
+      "search",
+      {
+        query: input.what,
+        results: answer.offers.length,
+        stores: answer.stores.length,
+        answered: answer.stores.filter((s) => s.state === "ok" || s.state === "unsupported-filters")
+          .length,
+      },
+      this.now().toISOString(),
+    );
+    return answer;
   }
 
   // --- proposals -------------------------------------------------------------
@@ -409,20 +495,18 @@ export class BuyerWebService {
    * trail once per distinct set of ids, so a 15-second poll does not flood the history.
    */
   signerQueue(): SignerQueueItem[] {
-    const items = this.storage.listProposals("approved").map(
-      (p): SignerQueueItem => ({
-        proposalId: p.id,
-        storeUrl: p.storeUrl,
-        itemId: p.itemId,
-        quantity: p.quantity,
-        title: p.title,
-        amount: p.amount,
-        amountMinor: p.amountMinor,
-        asset: p.asset,
-        network: p.network,
-        approvedAt: p.decidedAt ?? p.createdAt,
-      }),
-    );
+    const items = this.storage.listProposals("approved").map((p): SignerQueueItem => ({
+      proposalId: p.id,
+      storeUrl: p.storeUrl,
+      itemId: p.itemId,
+      quantity: p.quantity,
+      title: p.title,
+      amount: p.amount,
+      amountMinor: p.amountMinor,
+      asset: p.asset,
+      network: p.network,
+      approvedAt: p.decidedAt ?? p.createdAt,
+    }));
     const key = items
       .map((i) => i.proposalId)
       .sort()

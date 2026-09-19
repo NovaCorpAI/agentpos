@@ -3,8 +3,13 @@
  * HTTP app factory. A messaging channel (WhatsApp bridge) imports BuyerWebService and calls
  * searchOffers / propose / approve / reject / status; the web pages do exactly the same.
  */
-export { BuyerWebService } from "./service.js";
-export type { BuyerWebServiceDeps, SaveProfileInput, ShippingInput } from "./service.js";
+export { BuyerWebService, parseAttributePairs } from "./service.js";
+export type {
+  BuyerWebServiceDeps,
+  MarketCallInput,
+  SaveProfileInput,
+  ShippingInput,
+} from "./service.js";
 export { BuyerWebStorage } from "./storage.js";
 export { createBuyerWebApp } from "./app.js";
 export type { BuyerWebApp, BuyerWebAppDeps } from "./app.js";
@@ -17,7 +22,12 @@ export type {
 } from "./config.js";
 export { ConversationHandler } from "./whatsapp/conversation.js";
 export type { ConversationDeps } from "./whatsapp/conversation.js";
-export { MetaTransport, createMetaWebhook, parseMetaWebhook, verifyMetaSignature } from "./whatsapp/meta.js";
+export {
+  MetaTransport,
+  createMetaWebhook,
+  parseMetaWebhook,
+  verifyMetaSignature,
+} from "./whatsapp/meta.js";
 export { TwilioTransport, createTwilioWebhook, verifyTwilioSignature } from "./whatsapp/twilio.js";
 export { normalizeWhatsAppNumber, senderHash } from "./whatsapp/types.js";
 export type {

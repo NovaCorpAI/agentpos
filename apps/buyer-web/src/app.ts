@@ -9,10 +9,17 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { z } from "zod";
 import { AgentPOSError, isAgentPOSError } from "@agentpos/core";
 import type { ErrorCode, Logger } from "@agentpos/core";
-import { BuyerWebService } from "./service.js";
+import { BuyerWebService, parseAttributePairs } from "./service.js";
+import type { MarketCallInput } from "./service.js";
 import type { BuyerWebStorage } from "./storage.js";
-import { activityPage, errorPage, homePage, proposalsPage } from "./pages.js";
-import type { MandateFormValues, OfferSearch } from "./pages.js";
+import {
+  MARKET_ATTRIBUTE_ROWS,
+  activityPage,
+  errorPage,
+  homePage,
+  proposalsPage,
+} from "./pages.js";
+import type { MandateFormValues, MarketFormValues, MarketSearch } from "./pages.js";
 import type { BuyerWebProfile } from "./types.js";
 import type { WhatsAppConfig } from "./config.js";
 import { ConversationHandler } from "./whatsapp/conversation.js";
@@ -102,6 +109,45 @@ function asString(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
+/**
+ * The market call form as it arrives in the query string, kept verbatim so the page can render
+ * back exactly what the human typed. Attribute rows are padded to the number of inputs shown.
+ */
+function marketFormValues(c: Context): MarketFormValues {
+  const rows = c.req.queries("attr") ?? [];
+  const padded = [...rows];
+  while (padded.length < MARKET_ATTRIBUTE_ROWS) padded.push("");
+  return {
+    what: (c.req.query("q") ?? "").trim(),
+    attributes: padded,
+    maxPriceUsdc: (c.req.query("max") ?? "").trim(),
+    quantity: (c.req.query("qty") ?? "1").trim() || "1",
+    physical: (c.req.query("physical") ?? "").trim(),
+  };
+}
+
+/** Form values -> what the service takes. Throws a typed CONFIG_INVALID on anything malformed. */
+function marketCallInput(values: MarketFormValues): MarketCallInput {
+  const quantity = Number(values.quantity);
+  if (!Number.isInteger(quantity) || quantity < 1 || quantity > 999) {
+    throw new AgentPOSError("CONFIG_INVALID", `Cantidad invalida: '${values.quantity}'`, {
+      hint: "Usa un numero entero entre 1 y 999.",
+    });
+  }
+  if (values.physical !== "" && values.physical !== "true" && values.physical !== "false") {
+    throw new AgentPOSError("CONFIG_INVALID", `Tipo de producto invalido`, {
+      hint: "Elige cualquiera, solo fisicos o solo digitales.",
+    });
+  }
+  return {
+    what: values.what,
+    attributes: parseAttributePairs(values.attributes),
+    ...(values.maxPriceUsdc ? { maxPriceUsdc: values.maxPriceUsdc } : {}),
+    quantity,
+    ...(values.physical ? { physical: values.physical === "true" } : {}),
+  };
+}
+
 export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
   const network = deps.network ?? "testnet";
   if (deps.signerToken !== undefined && deps.signerToken.length < 24) {
@@ -127,26 +173,29 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
   // --- pages ---------------------------------------------------------------
 
   app.get("/", async (c) => {
-    const query = (c.req.query("q") ?? "").trim();
-    let search: OfferSearch | undefined;
-    if (query.length > 0) {
+    const values = marketFormValues(c);
+    const asked = values.what.length > 0 || values.attributes.some((a) => a.trim().length > 0);
+    let market: MarketSearch | undefined;
+    if (asked) {
       try {
-        search = { query, offers: await service.searchOffers(query) };
+        market = { values, result: await service.marketCall(marketCallInput(values)) };
       } catch (err) {
         if (!isAgentPOSError(err)) throw err;
-        search = { query, error: { code: err.code, message: err.message, hint: err.hint } };
+        market = { values, error: { code: err.code, message: err.message, hint: err.hint } };
       }
     }
-    return c.html(
-      homePage({
-        values: formValues(service.getProfile()),
-        network,
-        status: service.status(),
-        channels,
-        ...(search ? { search } : {}),
-        ...(c.req.query("saved") === "1" ? { saved: true } : {}),
-      }),
-    );
+    const page = homePage({
+      values: formValues(service.getProfile()),
+      network,
+      status: service.status(),
+      channels,
+      ...(market ? { market } : {}),
+      ...(c.req.query("saved") === "1" ? { saved: true } : {}),
+    });
+    // A refused market call answers with its own status, so a caller (or a crawler) is not
+    // told a malformed request went fine. The page still shows the form, filled as typed.
+    const failed = market?.error;
+    return failed ? c.html(page, STATUS_BY_CODE[failed.code as ErrorCode] ?? 500) : c.html(page);
   });
 
   app.post("/profile", async (c) => {
@@ -263,6 +312,12 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
     const offers = await service.searchOffers(c.req.query("q") ?? "");
     return c.json({ offers });
   });
+
+  // The market call, same parameters as the home form (`q`, repeatable `attr`, `max`, `qty`,
+  // `physical`), so a messaging channel asks exactly what the page asks.
+  app.get("/api/market", async (c) =>
+    c.json(await service.marketCall(marketCallInput(marketFormValues(c)))),
+  );
 
   app.post("/api/proposals", async (c) => {
     const parsed = proposeSchema.safeParse(await c.req.json().catch(() => ({})));

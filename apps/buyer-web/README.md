@@ -7,11 +7,11 @@ does. The agent proposes purchases with real quotes; the human approves or rejec
 Three server-rendered pages (Spanish-first UI, "Espacio del comprador"), zero frontend
 framework, zero CDN assets:
 
-| Page         | What it does                                                                                                                                                                                                    |
-| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/`          | Home: mandate state (limits, period, approved vs available with a budget bar, shipping city and country), an offer search (`?q=`) that can turn a result into a proposal, the mandate editor with its shipping section, and the channel status (WhatsApp, signing bridge). |
-| `/proposals` | Proposal cards by state: pendiente (Aprobar / Rechazar), aprobada **esperando firma** (with the exact payment instructions and any failed-attempt reason), pagada (transaction link + order id). A physical proposal says which city and country it ships to. |
-| `/activity`  | Proposal history plus the append-only activity log as a readable timeline.                                                                                                                                       |
+| Page         | What it does                                                                                                                                                                                                                                                                    |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/`          | Home: mandate state (limits, period, approved vs available with a budget bar, shipping city and country), the **market call** (below) that can turn any offer into a proposal, the mandate editor with its shipping section, and the channel status (WhatsApp, signing bridge). |
+| `/proposals` | Proposal cards by state: pendiente (Aprobar / Rechazar), aprobada **esperando firma** (with the exact payment instructions and any failed-attempt reason), pagada (transaction link + order id). A physical proposal says which city and country it ships to.                   |
+| `/activity`  | Proposal history plus the append-only activity log as a readable timeline.                                                                                                                                                                                                      |
 
 ## The custody rule, plainly
 
@@ -23,12 +23,42 @@ it marks the proposal approved and hands back the checkout URL, the amount and t
 "approved, awaiting signature" because that is exactly what is true. No completed purchase is
 ever faked.
 
+## The market call
+
+The home search box is a **llamado al mercado**: one request, asked of every store in the
+mandate at the same time, answered with offers that can be compared side by side.
+
+The form takes free text, up to three free `clave=valor` characteristics (attribute names
+differ from store to store, so they are typed, not picked from a fixed list), a maximum unit
+price, a quantity and a product type (any / physical / digital). It is a plain GET form, so
+the whole call lives in the URL and can be shared or bookmarked:
+`/?q=lamina&attr=Fondo%3Dblanco&attr=Passepartout%3Dcon&max=40&qty=2`. The same parameters
+answer JSON at `GET /api/market`.
+
+The result has three parts, and each one exists to avoid a specific kind of lie:
+
+- **The comparison.** One row per offer, cheapest total first: store, product with the
+  attributes that matched, unit price, total for the quantity, whether your mandate can pay
+  it, and the same **Proponer compra** action as before.
+- **Quien respondio.** Every store and what it did: respondio, no respondio a tiempo, error,
+  "no entiende los filtros" (a store older than structured search: it was asked plainly and
+  filtered here) or "fuera de tu mandato, no se consulto". A store that fails never fails the
+  call, and it is never dropped silently either.
+- **Afinar el pedido.** The attribute values every store offers, merged and counted
+  ("Fondo: blanco 3, negro 2"), each one a link that adds the filter and asks again.
+
+An offer your mandate cannot pay is **shown**, marked "no" with the reason (supera tu maximo
+por compra, supera lo que queda del periodo, es un producto fisico, la tienda no esta en tu
+lista). Hiding the cheapest option because of a limit would be the confusing thing to do.
+Payability here is judged against what this platform can honestly account for: the proposals
+you already approved this period. Nothing on this page pays anything.
+
 ## Service layer (channel-agnostic)
 
-`src/service.ts` exports `BuyerWebService` with `searchOffers(query)`,
+`src/service.ts` exports `BuyerWebService` with `marketCall(input)`, `searchOffers(query)`,
 `propose(itemId, storeUrl, quantity?)`, `approve(proposalId)`, `reject(proposalId)` and
 `status()`. The web pages call these functions and nothing else; the WhatsApp channel
-(`src/whatsapp/`, below) calls exactly the same five functions. The JSON API under `/api`
+(`src/whatsapp/`, below) calls exactly the same ones. The JSON API under `/api`
 mirrors them one-to-one.
 
 Mandate validation reuses `mandateSchema` from `@agentpos/mcp-buyer` verbatim, and
@@ -75,14 +105,14 @@ credentials below are messaging credentials; they cannot move money.
 
 ### Commands (Spanish-first, English aliases)
 
-| Command                                 | What it does                                                                      |
-| --------------------------------------- | --------------------------------------------------------------------------------- |
-| `buscar <texto>` / `search <text>`      | Search the mandated stores; numbered list (max 5) with title, price USDC, store.  |
-| `comprar <n> [cantidad]` / `buy <n>`    | Propose buying result `n`; replies the frozen quote and asks for `si` / `no`.     |
-| `si` / `yes`                            | Approve the pending proposal: "aprobada, en espera de firma" + payment command.   |
-| `no`                                    | Reject the pending proposal.                                                      |
-| `estado` / `status`                     | Status of your last proposal.                                                     |
-| `ayuda` / `help` (or anything else)     | The command list.                                                                 |
+| Command                              | What it does                                                                     |
+| ------------------------------------ | -------------------------------------------------------------------------------- |
+| `buscar <texto>` / `search <text>`   | Search the mandated stores; numbered list (max 5) with title, price USDC, store. |
+| `comprar <n> [cantidad]` / `buy <n>` | Propose buying result `n`; replies the frozen quote and asks for `si` / `no`.    |
+| `si` / `yes`                         | Approve the pending proposal: "aprobada, en espera de firma" + payment command.  |
+| `no`                                 | Reject the pending proposal.                                                     |
+| `estado` / `status`                  | Status of your last proposal.                                                    |
+| `ayuda` / `help` (or anything else)  | The command list.                                                                |
 
 Search result numbers and the pending proposal live in memory with a 30 minute TTL: a
 restart or an expired entry only means searching again (proposals themselves are in SQLite).

@@ -9,7 +9,7 @@
  * #7aa2ff, money/success #26d0a0. No emojis: this surface moves the user's money.
  */
 import { formatUsdc, usdc, usdcFromMinor } from "@agentpos/core";
-import type { Offer } from "@agentpos/mcp-buyer";
+import type { MandateBlock, MarketCallResult, MarketOffer } from "@agentpos/mcp-buyer";
 import type { ActivityEntry, Proposal, ServiceStatus } from "./types.js";
 
 const esc = (s: string): string =>
@@ -91,7 +91,10 @@ const CSS = `
   .chan .st.off { color: #6d7ea6; border: 1px solid rgba(120,150,220,0.25); }
   .chan strong { color: #f4f7ff; font-weight: 600; }
   table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid rgba(120,150,220,0.12); }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid rgba(120,150,220,0.12); vertical-align: top; }
+  td form { margin: 0; }
+  td button { margin-top: 0; white-space: nowrap; }
+  td .title { display: block; }
   th { color: #6d7ea6; font-weight: 500; font-size: 0.8rem; }
   td { color: #9fb0d0; }
   .timeline { list-style: none; margin: 0; padding: 0 0 0 8px; }
@@ -199,7 +202,10 @@ function proposalMeta(p: Proposal): string {
  * Where a physical purchase lands, for the human to double check before approving. City and
  * country only: the full address lives in the mandate and is never printed on a page.
  */
-function shippingLine(p: Proposal, shipping: { city: string; country: string } | undefined): string {
+function shippingLine(
+  p: Proposal,
+  shipping: { city: string; country: string } | undefined,
+): string {
   if (!p.physical) return "";
   return shipping
     ? `<div class="meta">Producto fisico: se despacha a ${esc(shipping.city)}, ${esc(shipping.country)}.</div>`
@@ -248,10 +254,34 @@ export interface ChannelsState {
   signer: boolean;
 }
 
-export interface OfferSearch {
-  query: string;
-  offers?: Offer[];
+/** Rows the market call form posts back, kept as typed so nothing is lost on a refusal. */
+export interface MarketFormValues {
+  what: string;
+  /** Free `clave=valor` rows: attribute names differ from store to store. */
+  attributes: string[];
+  maxPriceUsdc: string;
+  quantity: string;
+  /** "" (any), "true" (only physical) or "false" (only digital). */
+  physical: string;
+}
+
+export interface MarketSearch {
+  values: MarketFormValues;
+  result?: MarketCallResult;
   error?: PageError;
+}
+
+/** Attribute rows the form always shows. Enough for a real query, few enough to stay readable. */
+export const MARKET_ATTRIBUTE_ROWS = 3;
+
+export function emptyMarketForm(): MarketFormValues {
+  return {
+    what: "",
+    attributes: Array.from({ length: MARKET_ATTRIBUTE_ROWS }, () => ""),
+    maxPriceUsdc: "",
+    quantity: "1",
+    physical: "",
+  };
 }
 
 /**
@@ -298,50 +328,199 @@ function mandateState(status: ServiceStatus): string {
   </div>`;
 }
 
-function offerSearchSection(status: ServiceStatus, search: OfferSearch | undefined): string {
+/** Why an offer cannot be paid, said the way the person who wrote the mandate would say it. */
+const BLOCK_ES: Record<MandateBlock["reason"], string> = {
+  per_payment_cap: "supera tu maximo por compra",
+  period_budget: "supera lo que queda de tu limite del periodo",
+  physical_not_allowed: "es un producto fisico y tu mandato no los permite",
+  seller_not_allowed: "la tienda no esta en tu lista permitida",
+};
+
+const STORE_STATE_ES: Record<string, string> = {
+  ok: "respondio",
+  timeout: "no respondio a tiempo",
+  error: "error",
+  "unsupported-filters": "no entiende los filtros; se filtro aqui",
+  "not-allowed": "fuera de tu mandato, no se consulto",
+};
+
+const STORE_STATE_CLASS: Record<string, string> = {
+  ok: "on",
+  timeout: "off",
+  error: "off",
+  "unsupported-filters": "on",
+  "not-allowed": "off",
+};
+
+/** The market call as a query string, so a facet can be turned into a one-click refinement. */
+function marketHref(values: MarketFormValues, extraAttribute?: string): string {
+  const params = new URLSearchParams();
+  if (values.what) params.set("q", values.what);
+  const rows = values.attributes.map((a) => a.trim()).filter(Boolean);
+  if (extraAttribute && !rows.includes(extraAttribute)) rows.push(extraAttribute);
+  for (const row of rows) params.append("attr", row);
+  if (values.maxPriceUsdc) params.set("max", values.maxPriceUsdc);
+  if (values.quantity && values.quantity !== "1") params.set("qty", values.quantity);
+  if (values.physical) params.set("physical", values.physical);
+  return `/?${params.toString()}`;
+}
+
+function payableCell(offer: MarketOffer): string {
+  if (offer.mandate.payable) {
+    return offer.mandate.needsApproval
+      ? `<span class="tag approved">si, con tu aprobacion</span>`
+      : `<span class="tag paid">si</span>`;
+  }
+  const reasons = offer.mandate.blocks.map((b) => BLOCK_ES[b.reason]).join("; ");
+  return `<span class="tag rejected">no</span><div class="meta">${esc(reasons)}</div>`;
+}
+
+function offerRow(offer: MarketOffer, quantity: number): string {
+  const shown =
+    Object.keys(offer.matchedAttributes).length > 0 ? offer.matchedAttributes : offer.attributes;
+  const attributes = Object.entries(shown)
+    .map(([name, value]) => `${name}: ${value}`)
+    .join(" · ");
+  const outOfStock =
+    offer.stock === "out_of_stock"
+      ? `<div class="meta">Sin stock en la tienda</div>`
+      : offer.stock === "unknown"
+        ? `<div class="meta">Stock no informado</div>`
+        : "";
+  return `
+      <tr>
+        <td>${esc(offer.store.name)}<div class="meta mono">${esc(offer.store.host)}</div></td>
+        <td><span class="title">${esc(offer.title)}</span>${attributes ? `<div class="meta">${esc(attributes)}</div>` : ""}${offer.physical ? `<div class="meta">Producto fisico</div>` : ""}${outOfStock}</td>
+        <td class="money">${esc(offer.unitPrice)}</td>
+        <td class="money">${esc(offer.totalUsdc)} ${esc(offer.asset)}</td>
+        <td>${payableCell(offer)}</td>
+        <td>
+          <form method="post" action="/proposals">
+            <input type="hidden" name="storeUrl" value="${esc(offer.store.url)}">
+            <input type="hidden" name="itemId" value="${esc(offer.itemId)}">
+            <input type="hidden" name="quantity" value="${esc(String(quantity))}">
+            <button type="submit" class="ghost">Proponer compra</button>
+          </form>
+        </td>
+      </tr>`;
+}
+
+function storesSection(result: MarketCallResult): string {
+  const rows = result.stores
+    .map((store) => {
+      const label = STORE_STATE_ES[store.state] ?? store.state;
+      const detail = store.error
+        ? `<div class="meta">${esc(store.error.message)}</div>`
+        : store.truncated
+          ? `<div class="meta">Se leyeron ${String(store.offers)} de ${String(store.total ?? store.offers)} resultados.</div>`
+          : "";
+      return `
+    <div class="chan">
+      <span class="st ${STORE_STATE_CLASS[store.state] ?? "off"}">${esc(label)}</span>
+      <div><strong>${esc(store.name)}</strong> · ${String(store.offers)} oferta(s) · <span class="mono">${esc(store.url)}</span>${detail}</div>
+    </div>`;
+    })
+    .join("");
+  return `
+  <h2>Quien respondio</h2>
+  <div class="card">${rows || '<div class="meta">Ninguna tienda fue consultada.</div>'}</div>`;
+}
+
+function facetsSection(values: MarketFormValues, result: MarketCallResult): string {
+  const groups = Object.entries(result.facets);
+  if (groups.length === 0) return "";
+  const rows = groups
+    .map(([name, entries]) => {
+      const links = entries
+        .map(
+          (v) =>
+            `<a href="${esc(marketHref(values, `${name}=${v.value}`))}">${esc(v.value)} (${String(v.count)})</a>`,
+        )
+        .join(" · ");
+      return `<div class="meta" style="margin:6px 0"><strong style="color:#f4f7ff">${esc(name)}</strong>: ${links}</div>`;
+    })
+    .join("");
+  return `
+  <h2>Afinar el pedido</h2>
+  <div class="card">
+    ${rows}
+    <p class="meta" style="margin:10px 0 0">Un clic agrega el filtro a tu pedido y vuelve a preguntar a todas tus tiendas.</p>
+  </div>`;
+}
+
+function marketSection(status: ServiceStatus, search: MarketSearch | undefined): string {
   if (!status.profileConfigured) {
     return `
-  <h2>Buscador de ofertas</h2>
-  <div class="card"><div class="meta">Guarda primero tu mandato: la busqueda usa tus tiendas permitidas y tus limites.</div></div>`;
+  <h2>Llamado al mercado</h2>
+  <div class="card"><div class="meta">Guarda primero tu mandato: el llamado usa tus tiendas permitidas y tus limites.</div></div>`;
   }
+  const values = search?.values ?? emptyMarketForm();
+  const attributeRows = values.attributes
+    .map(
+      (row, i) =>
+        `<input type="text" id="attr${String(i)}" name="attr" value="${esc(row)}" placeholder="${i === 0 ? "Fondo=blanco" : i === 1 ? "Passepartout=con" : "clave=valor"}" aria-label="Filtro ${String(i + 1)}">`,
+    )
+    .join("\n      ");
+  const physicalOption = (value: string, label: string) =>
+    `<option value="${value}"${values.physical === value ? " selected" : ""}>${label}</option>`;
   const form = `
   <form method="get" action="/" class="card">
     <div class="searchrow">
-      <input type="text" name="q" value="${esc(search?.query ?? "")}" placeholder="Que quieres comprar, por ejemplo: taza" aria-label="Buscar ofertas">
-      <button type="submit">Buscar</button>
+      <input type="text" name="q" value="${esc(values.what)}" placeholder="Que quieres comprar, por ejemplo: lamina 30x40" aria-label="Que buscas">
+      <button type="submit">Preguntar a mis tiendas</button>
     </div>
-    <p class="meta" style="margin:10px 0 0">Busca solo en tus tiendas permitidas. Proponer no compra nada: toda compra pasa por tu aprobacion y se firma en tu maquina.</p>
+    <label for="attr0">Caracteristicas (clave=valor, una por campo; los nombres los pone cada tienda)</label>
+    <div class="row">
+      ${attributeRows}
+    </div>
+    <div class="row">
+      <div>
+        <label for="max">Precio maximo por unidad (USDC, opcional)</label>
+        <input type="text" id="max" name="max" value="${esc(values.maxPriceUsdc)}" inputmode="decimal" placeholder="40">
+      </div>
+      <div>
+        <label for="qty">Cantidad</label>
+        <input type="text" id="qty" name="qty" value="${esc(values.quantity)}" inputmode="numeric">
+      </div>
+      <div>
+        <label for="physical">Tipo de producto</label>
+        <select id="physical" name="physical">
+          ${physicalOption("", "Cualquiera")}${physicalOption("true", "Solo fisicos")}${physicalOption("false", "Solo digitales")}
+        </select>
+      </div>
+    </div>
+    <p class="meta" style="margin:10px 0 0">Se pregunta lo mismo a todas tus tiendas permitidas, al mismo tiempo. Proponer no compra nada: toda compra pasa por tu aprobacion y se firma en tu maquina.</p>
   </form>`;
-  let results = "";
   if (search?.error) {
-    results = errBanner(search.error);
-  } else if (search?.offers) {
-    results =
-      search.offers.length === 0
-        ? `<div class="empty">Sin resultados para "${esc(search.query)}" en tus tiendas.</div>`
-        : search.offers
-            .map(
-              (o) => `
-  <div class="card offer">
-    <div>
-      <div class="title">${esc(o.title)}</div>
-      <div class="meta">${esc(o.siteName)} · <span class="mono">${esc(o.site)}</span></div>
-    </div>
-    <div class="amount">${esc(o.price.amount)} ${esc(o.price.asset)}</div>
-    <form method="post" action="/proposals">
-      <input type="hidden" name="storeUrl" value="${esc(o.site)}">
-      <input type="hidden" name="itemId" value="${esc(o.id)}">
-      <input type="text" name="quantity" value="1" inputmode="numeric" aria-label="Cantidad">
-      <button type="submit" class="ghost">Proponer compra</button>
-    </form>
-  </div>`,
-            )
-            .join("");
-  }
-  return `
-  <h2>Buscador de ofertas</h2>
+    return `
+  <h2>Llamado al mercado</h2>
   ${form}
-  ${results}`;
+  ${errBanner(search.error)}`;
+  }
+  const result = search?.result;
+  if (!result) {
+    return `
+  <h2>Llamado al mercado</h2>
+  ${form}`;
+  }
+  const quantity = result.query.quantity;
+  const table =
+    result.offers.length === 0
+      ? `<div class="empty">Ninguna tienda tiene algo para "${esc(result.query.what)}" con esas caracteristicas.</div>`
+      : `
+  <div class="card">
+    <table>
+      <tr><th>Tienda</th><th>Producto</th><th>Unitario</th><th>Total x${String(quantity)}</th><th>Pagable</th><th></th></tr>
+      ${result.offers.map((o) => offerRow(o, quantity)).join("")}
+    </table>
+    <p class="meta" style="margin:12px 0 0">${String(result.offers.length)} oferta(s), de la mas barata a la mas cara, para ${String(quantity)} unidad(es). Una oferta marcada "no" se muestra igual: es tu limite el que la frena, no la tienda.</p>
+  </div>`;
+  return `
+  <h2>Llamado al mercado</h2>
+  ${form}
+  ${table}
+  ${storesSection(result)}
+  ${facetsSection(values, result)}`;
 }
 
 function channelsSection(channels: ChannelsState): string {
@@ -383,7 +562,7 @@ export function homePage(options: {
   channels: ChannelsState;
   saved?: boolean;
   error?: PageError;
-  search?: OfferSearch;
+  market?: MarketSearch;
 }): string {
   const v = options.values;
   const banner = options.error
@@ -411,7 +590,7 @@ export function homePage(options: {
   ${banner}
   ${shippingWarning}
   ${mandateState(options.status)}
-  ${offerSearchSection(options.status, options.search)}
+  ${marketSection(options.status, options.market)}
   <h2>Mandato</h2>
   <p class="sub" style="margin-bottom:12px">Lo que tu agente tiene permitido hacer. El agente no puede editar esta pagina; solo tu.</p>
   <form method="post" action="/profile" class="card">
