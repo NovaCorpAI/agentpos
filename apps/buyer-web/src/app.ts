@@ -27,6 +27,7 @@ import {
   csrfTokenFrom,
   isMutating,
   isPublicPath,
+  isRecoverySessionPath,
   isSelfAuthenticated,
   originOf,
   safeNext,
@@ -38,11 +39,16 @@ import type { MarketCallInput } from "./service.js";
 import type { BuyerWebStorage } from "./storage.js";
 import {
   MARKET_ATTRIBUTE_ROWS,
+  accountPage,
   activityPage,
   errorPage,
   homePage,
   loginPage,
+  newPasswordPage,
+  operatorRecoveryPage,
   proposalsPage,
+  recoverPage,
+  recoveryCodesPage,
   setupPage,
 } from "./pages.js";
 import type {
@@ -55,6 +61,7 @@ import type { BuyerWebProfile, Proposal } from "./types.js";
 import type { WhatsAppConfig } from "./config.js";
 import { ConversationHandler } from "./whatsapp/conversation.js";
 import { MetaTransport, createMetaWebhook } from "./whatsapp/meta.js";
+import { createOwnerNotifier } from "./whatsapp/notify.js";
 import { TwilioTransport, createTwilioWebhook } from "./whatsapp/twilio.js";
 import { timingSafeEqualStrings } from "./whatsapp/types.js";
 import type { WhatsAppLogger, WhatsAppTransport } from "./whatsapp/types.js";
@@ -213,11 +220,35 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
     ...(deps.logger ? { logger: deps.logger } : {}),
     ...(deps.now ? { now: deps.now } : {}),
   });
+  // The WhatsApp transports are built once, here, because two things send through them:
+  // the bot's replies and the recovery code. There is deliberately no second send path.
+  const log: WhatsAppLogger =
+    deps.log ??
+    ((event, data) =>
+      console.log(JSON.stringify({ at: new Date().toISOString(), event, ...data })));
+  const whatsappTransports: { meta?: WhatsAppTransport; twilio?: WhatsAppTransport } =
+    deps.whatsapp
+      ? {
+          ...(deps.whatsapp.meta
+            ? { meta: deps.whatsappTransports?.meta ?? new MetaTransport(deps.whatsapp.meta) }
+            : {}),
+          ...(deps.whatsapp.twilio
+            ? {
+                twilio:
+                  deps.whatsappTransports?.twilio ?? new TwilioTransport(deps.whatsapp.twilio),
+              }
+            : {}),
+        }
+      : {};
+  const notifier = deps.whatsapp
+    ? createOwnerNotifier({ config: deps.whatsapp, transports: whatsappTransports, log })
+    : undefined;
   const auth = new AuthService({
     storage: deps.storage,
     ...(deps.logger ? { logger: deps.logger } : {}),
     ...(deps.sessionTtlMs !== undefined ? { sessionTtlMs: deps.sessionTtlMs } : {}),
     ...(deps.now ? { now: deps.now } : {}),
+    ...(notifier ? { notifier } : {}),
   });
   if (deps.owner) auth.bootstrapOwner(deps.owner);
   const app = new Hono<BuyerWebEnv>();
@@ -253,6 +284,23 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
   const originIn = (c: Context<BuyerWebEnv>): RequestOrigin => c.get("origin") ?? originOf(c);
 
   /**
+   * The nudge for an owner whose account predates recovery codes: this space already
+   * exists in production without a set, and the day the password is lost is a bad day to
+   * find that out. It offers to generate one, can be put away for the session, and comes
+   * back on the next one until codes exist.
+   */
+  const reminderFor = (
+    c: Context<BuyerWebEnv>,
+    next: string,
+  ): { csrf: string; next: string } | undefined => {
+    const authed = c.get("auth");
+    if (!authed || authed.session.scope !== "full") return undefined;
+    if (!auth.needsRecoveryCodes()) return undefined;
+    if (auth.reminderDismissed(authed.session.id)) return undefined;
+    return { csrf: authed.session.csrfToken, next };
+  };
+
+  /**
    * One gate for the whole app. It resolves the session (sliding its expiry), sends an
    * anonymous visitor to /login or /setup, answers 401 on the JSON API instead of
    * redirecting a program into an HTML page, and checks the CSRF token on anything that
@@ -267,6 +315,21 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
     if (authed) {
       c.set("auth", authed);
       writeSessionCookie(c, authed.session.id, auth.sessionMaxAgeSeconds);
+    }
+    /**
+     * A recovery session is not a login. It proved a code, which buys exactly one thing:
+     * setting a new password. Every other route on this site refuses it, before the
+     * public-path shortcut below, so /login cannot be used to walk around the limit
+     * either. This is the check that keeps a recovery from being a back door.
+     */
+    if (authed?.session.scope === "recovery" && !isRecoverySessionPath(path)) {
+      throw new AuthError(
+        "RECOVERY_SCOPE_LIMITED",
+        "Estas en una recuperacion: lo unico que puedes hacer es fijar una contrasena nueva",
+        {
+          hint: "Termina en /recuperar/nueva-clave y despues entra normalmente en /login.",
+        },
+      );
     }
     // /login and /setup decide for themselves what an anonymous visitor sees.
     if (isPublicPath(path)) return next();
@@ -284,6 +347,9 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
         );
       }
       if (!auth.hasOwner()) return c.redirect("/setup", 302);
+      // Landing on the set-a-new-password page with no recovery in flight (an expired
+      // one, a bookmark) belongs back at the start of the recovery, not at the login.
+      if (path.startsWith("/recuperar")) return c.redirect("/recuperar", 302);
       const back = `${path}${c.req.url.includes("?") ? `?${c.req.url.split("?").slice(1).join("?")}` : ""}`;
       return c.redirect(`/login?next=${encodeURIComponent(back)}`, 302);
     }
@@ -326,8 +392,20 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
 
   app.get("/login", (c) => {
     if (!auth.hasOwner()) return c.redirect("/setup", 302);
-    if (c.get("auth")) return c.redirect("/", 302);
-    return c.html(loginPage({ network, next: safeNext(c.req.query("next")) }));
+    // A recovery session is not signed in, so it gets the form, not the redirect.
+    if (c.get("auth")?.session.scope === "full") return c.redirect("/", 302);
+    return c.html(
+      loginPage({
+        network,
+        next: safeNext(c.req.query("next")),
+        ...(c.req.query("recuperada") === "1"
+          ? {
+              notice:
+                "Contrasena cambiada. Todas las sesiones se cerraron: entra con la nueva. Si generaste codigos de recuperacion, el que usaste ya no sirve.",
+            }
+          : {}),
+      }),
+    );
   });
 
   // No CSRF token here, and none is possible: there is no session yet. The risk a token
@@ -340,6 +418,9 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
         { email: asString(body.email), password: asString(body.password) },
         originIn(c),
       );
+      // Knowing the password settles it: an abandoned recovery row is dropped rather than
+      // left alive for its fifteen minutes next to a real session.
+      auth.discardRecoverySession(sessionIdFrom(c));
       writeSessionCookie(c, session.id, auth.sessionMaxAgeSeconds);
       return c.redirect(next, 303);
     } catch (err) {
@@ -360,6 +441,191 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
     return c.redirect("/login", 303);
   });
 
+  // --- the way back in: recovery ---------------------------------------------
+  // Three paths, in the order the pages offer them: a printable code (always there, needs
+  // no infrastructure), a code over the WhatsApp channel the owner already configured, and
+  // a one-time URL printed on the server by whoever can already run commands on it. There
+  // is no email reset on purpose: a self-hosted box has no mail server, and a reset that
+  // silently needs SMTP is a reset that fails the day it is needed.
+
+  const recoveryError = (err: unknown): { page: string; status: ContentfulStatusCode } | undefined => {
+    if (!isAuthError(err)) return undefined;
+    return {
+      page: recoverPage({
+        network,
+        whatsapp: auth.whatsappRecoveryAvailable,
+        error: { code: err.code, message: err.message, hint: err.hint },
+      }),
+      status: err.status as ContentfulStatusCode,
+    };
+  };
+
+  app.get("/recuperar", (c) => {
+    if (!auth.hasOwner()) return c.redirect("/setup", 302);
+    const authed = c.get("auth");
+    if (authed?.session.scope === "recovery") return c.redirect("/recuperar/nueva-clave", 302);
+    if (authed) return c.redirect("/cuenta", 302);
+    return c.html(recoverPage({ network, whatsapp: auth.whatsappRecoveryAvailable }));
+  });
+
+  // No CSRF token here, and none is possible: there is no session yet. Same reasoning as
+  // /login, plus a rate limit per address and per account that escalates exactly as the
+  // login one does.
+  app.post("/recuperar", async (c) => {
+    const body = await c.req.parseBody();
+    try {
+      const session = await auth.startRecovery(
+        { email: asString(body.email), code: asString(body.code) },
+        originIn(c),
+      );
+      writeSessionCookie(c, session.id, auth.sessionMaxAgeSeconds);
+      return c.redirect("/recuperar/nueva-clave", 303);
+    } catch (err) {
+      const shaped = recoveryError(err);
+      if (!shaped) throw err;
+      const headers =
+        isAuthError(err) && err.retryAfter ? { "retry-after": String(err.retryAfter) } : {};
+      return c.html(shaped.page, shaped.status, headers);
+    }
+  });
+
+  /**
+   * "Send me a code on WhatsApp". The answer is the same page whatever happened: whether
+   * the email matched, whether a message went out, whether the last one was 20 seconds
+   * ago. Nothing here tells a stranger that this address has an account.
+   */
+  app.post("/recuperar/whatsapp", async (c) => {
+    const body = await c.req.parseBody();
+    const email = asString(body.email);
+    await auth.requestWhatsAppCode(email, originIn(c));
+    return c.html(
+      recoverPage({
+        network,
+        whatsapp: auth.whatsappRecoveryAvailable,
+        email,
+        notice:
+          "Si la cuenta existe, enviamos el codigo al WhatsApp del dueno. Vale 10 minutos y se escribe en el campo de arriba.",
+      }),
+    );
+  });
+
+  // The operator's one-time URL. The GET only shows a confirmation, so a link preview or
+  // a crawler cannot burn the token; the POST spends it.
+  app.get("/recuperar/operador", (c) => {
+    const token = c.req.query("t") ?? "";
+    return c.html(operatorRecoveryPage({ network, token }));
+  });
+
+  app.post("/recuperar/operador", async (c) => {
+    const body = await c.req.parseBody();
+    try {
+      const session = await auth.startRecoveryWithOperatorToken(
+        asString(body.token),
+        originIn(c),
+      );
+      writeSessionCookie(c, session.id, auth.sessionMaxAgeSeconds);
+      return c.redirect("/recuperar/nueva-clave", 303);
+    } catch (err) {
+      const shaped = recoveryError(err);
+      if (!shaped) throw err;
+      const headers =
+        isAuthError(err) && err.retryAfter ? { "retry-after": String(err.retryAfter) } : {};
+      return c.html(shaped.page, shaped.status, headers);
+    }
+  });
+
+  app.get("/recuperar/nueva-clave", (c) => {
+    const { session } = sessionOf(c);
+    return c.html(newPasswordPage({ network, csrf: session.csrfToken }));
+  });
+
+  app.post("/recuperar/nueva-clave", async (c) => {
+    const { session } = sessionOf(c);
+    const body = await c.req.parseBody();
+    try {
+      await auth.completeRecovery(
+        { password: asString(body.password), confirm: asString(body.confirm) },
+        session,
+        originIn(c),
+      );
+    } catch (err) {
+      if (!isAuthError(err)) throw err;
+      return c.html(
+        newPasswordPage({
+          network,
+          csrf: session.csrfToken,
+          error: { code: err.code, message: err.message, hint: err.hint },
+        }),
+        err.status as ContentfulStatusCode,
+      );
+    }
+    // Every session died with the password, this one included: the cookie is worthless.
+    clearSessionCookie(c);
+    return c.redirect("/login?recuperada=1", 303);
+  });
+
+  // --- the account page ------------------------------------------------------
+
+  app.get("/cuenta", (c) => {
+    const session = viewOf(c);
+    return c.html(
+      accountPage({
+        network,
+        session,
+        pendingCount: pendingCount(),
+        codes: auth.recoveryCodes(),
+        whatsapp: auth.whatsappRecoveryAvailable,
+        ...(c.req.query("saved") === "1" ? { saved: true } : {}),
+      }),
+    );
+  });
+
+  app.post("/cuenta/clave", async (c) => {
+    const { session } = sessionOf(c);
+    const body = await c.req.parseBody();
+    try {
+      await auth.changePassword(
+        {
+          current: asString(body.current),
+          password: asString(body.password),
+          confirm: asString(body.confirm),
+        },
+        session,
+        originIn(c),
+      );
+    } catch (err) {
+      if (!isAuthError(err)) throw err;
+      return c.html(
+        accountPage({
+          network,
+          session: viewOf(c),
+          pendingCount: pendingCount(),
+          codes: auth.recoveryCodes(),
+          whatsapp: auth.whatsappRecoveryAvailable,
+          error: { code: err.code, message: err.message, hint: err.hint },
+        }),
+        err.status as ContentfulStatusCode,
+      );
+    }
+    return c.redirect("/cuenta?saved=1", 303);
+  });
+
+  app.post("/cuenta/codigos", async (c) => {
+    const session = viewOf(c);
+    const codes = await auth.generateRecoveryCodes(originIn(c));
+    // The only time these strings exist outside the owner's hands. Storage has hashes.
+    return c.html(
+      recoveryCodesPage({ network, codes, session, pendingCount: pendingCount() }),
+    );
+  });
+
+  app.post("/cuenta/recordatorio", async (c) => {
+    const { session } = sessionOf(c);
+    auth.dismissCodeReminder(session.id);
+    const body = await c.req.parseBody();
+    return c.redirect(safeNext(asString(body.next)), 303);
+  });
+
   // --- pages ---------------------------------------------------------------
 
   app.get("/", async (c) => {
@@ -374,6 +640,7 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
         market = { values, error: { code: err.code, message: err.message, hint: err.hint } };
       }
     }
+    const reminder = reminderFor(c, "/");
     const page = homePage({
       values: formValues(service.getProfile()),
       network,
@@ -382,6 +649,7 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
       session: viewOf(c),
       ...(market ? { market } : {}),
       ...(c.req.query("saved") === "1" ? { saved: true } : {}),
+      ...(reminder ? { reminder } : {}),
     });
     // A refused market call answers with its own status, so a caller (or a crawler) is not
     // told a malformed request went fine. The page still shows the form, filled as typed.
@@ -456,6 +724,7 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
     extra: { highlight?: string; reauthError?: { proposalId: string; message: string } } = {},
   ): string => {
     const shipping = service.status().shipping;
+    const reminder = reminderFor(c, "/proposals");
     return proposalsPage({
       pending: service.pendingProposals(),
       approved: service.approvedProposals(),
@@ -469,6 +738,7 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
       needsReauth,
       ...(extra.highlight ? { highlight: extra.highlight } : {}),
       ...(extra.reauthError ? { reauthError: extra.reauthError } : {}),
+      ...(reminder ? { reminder } : {}),
     });
   };
 
@@ -549,6 +819,7 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
   });
 
   app.get("/activity", (c) => {
+    const reminder = reminderFor(c, "/activity");
     return c.html(
       activityPage({
         activity: service.activity(),
@@ -557,6 +828,7 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
         network,
         session: viewOf(c),
         access: auth.access(),
+        ...(reminder ? { reminder } : {}),
       }),
     );
   });
@@ -688,30 +960,26 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
   // --- WhatsApp channel (mounted only when configured) ----------------------
 
   if (deps.whatsapp) {
-    const log: WhatsAppLogger =
-      deps.log ??
-      ((event, data) =>
-        console.log(JSON.stringify({ at: new Date().toISOString(), event, ...data })));
     const conversation = new ConversationHandler({
       service,
       allowedNumbers: deps.whatsapp.allowedNumbers,
       log,
     });
-    if (deps.whatsapp.meta) {
+    if (deps.whatsapp.meta && whatsappTransports.meta) {
       const hooks = createMetaWebhook({
         config: deps.whatsapp.meta,
         conversation,
-        transport: deps.whatsappTransports?.meta ?? new MetaTransport(deps.whatsapp.meta),
+        transport: whatsappTransports.meta,
         log,
       });
       app.get("/whatsapp/meta", hooks.get);
       app.post("/whatsapp/meta", hooks.post);
     }
-    if (deps.whatsapp.twilio) {
+    if (deps.whatsapp.twilio && whatsappTransports.twilio) {
       const hooks = createTwilioWebhook({
         config: deps.whatsapp.twilio,
         conversation,
-        transport: deps.whatsappTransports?.twilio ?? new TwilioTransport(deps.whatsapp.twilio),
+        transport: whatsappTransports.twilio,
         log,
       });
       app.post("/whatsapp/twilio", hooks.post);
@@ -733,7 +1001,10 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
           headers,
         );
       }
-      const authed = c.get("auth");
+      // A recovery session is not a login, so the error page must not paint the chrome of
+      // one: no tabs, no email, no logout form. It gets pointed back at its one page.
+      const recovering = c.get("auth")?.session.scope === "recovery";
+      const authed = recovering ? undefined : c.get("auth");
       return c.html(
         errorPage({
           network,
@@ -741,8 +1012,12 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
           code: err.code,
           message: err.message,
           hint: err.hint,
-          backHref: authed ? "/proposals" : "/login",
-          backLabel: authed ? "Volver a propuestas" : "Volver a entrar",
+          backHref: recovering ? "/recuperar/nueva-clave" : authed ? "/proposals" : "/login",
+          backLabel: recovering
+            ? "Volver a elegir tu contrasena"
+            : authed
+              ? "Volver a propuestas"
+              : "Volver a entrar",
           ...(authed
             ? { session: { email: authed.account.email, csrf: authed.session.csrfToken } }
             : {}),
@@ -764,7 +1039,8 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
         status,
       );
     }
-    const authed = c.get("auth");
+    const full = c.get("auth");
+    const authed = full?.session.scope === "recovery" ? undefined : full;
     return c.html(
       errorPage({
         network,

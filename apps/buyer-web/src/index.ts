@@ -13,10 +13,31 @@ export type {
 export { BuyerWebStorage } from "./storage.js";
 export { createBuyerWebApp } from "./app.js";
 export type { BuyerWebApp, BuyerWebAppDeps, BuyerWebEnv } from "./app.js";
-export { AuthService, MIN_PASSWORD_LENGTH, SESSION_TTL_MS } from "./auth/service.js";
-export type { AuthenticatedSession, AuthServiceDeps, OwnerBootstrap } from "./auth/service.js";
+export {
+  AuthService,
+  MAX_RECOVERY_ATTEMPTS,
+  MIN_PASSWORD_LENGTH,
+  OPERATOR_TOKEN_TTL_MS,
+  RECOVERY_SESSION_TTL_MS,
+  SESSION_TTL_MS,
+  WHATSAPP_CODE_RESEND_MS,
+  WHATSAPP_CODE_TTL_MS,
+} from "./auth/service.js";
+export type {
+  AuthenticatedSession,
+  AuthServiceDeps,
+  OwnerBootstrap,
+  OwnerNotifier,
+  WhatsAppCodeRequest,
+} from "./auth/service.js";
 export { AuthError, isAuthError } from "./auth/errors.js";
 export type { AuthErrorCode } from "./auth/errors.js";
+export {
+  RECOVERY_CODE_COUNT,
+  generateRecoveryCode,
+  generateRecoveryCodes,
+  normalizeRecoveryCode,
+} from "./auth/codes.js";
 export { hashPassword, SCRYPT_HASH_RE, verifyPassword } from "./auth/scrypt.js";
 export { emailHash, ipHash, sha8, uaFamily } from "./auth/fingerprint.js";
 export type { RequestOrigin } from "./auth/fingerprint.js";
@@ -37,6 +58,8 @@ export {
   verifyMetaSignature,
 } from "./whatsapp/meta.js";
 export { TwilioTransport, createTwilioWebhook, verifyTwilioSignature } from "./whatsapp/twilio.js";
+export { createOwnerNotifier } from "./whatsapp/notify.js";
+export type { OwnerNotifierDeps, OwnerWhatsAppNotifier } from "./whatsapp/notify.js";
 export { normalizeWhatsAppNumber, senderHash } from "./whatsapp/types.js";
 export type {
   InboundMessage,
@@ -55,7 +78,11 @@ export type {
   PaymentInstructions,
   Proposal,
   ProposalStatus,
+  RecoveryChallenge,
+  RecoveryChallengeKind,
+  RecoveryCodeRecord,
   ServiceStatus,
   SessionRecord,
+  SessionScope,
   SignerQueueItem,
 } from "./types.js";

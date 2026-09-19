@@ -21,13 +21,37 @@ export const CSRF_HEADER = "x-csrf-token";
  * Routes that answer without a session, and why:
  *  - /health: a liveness probe says nothing about the owner.
  *  - /login, /setup: the way in.
+ *  - /recuperar and its two siblings: the way back in when the password is gone. They
+ *    carry their own proof (a code, or the operator's one-time token) and, like /login,
+ *    they cannot carry a CSRF token because there is no session yet.
  *  - /whatsapp/*: Twilio and Meta authenticate every POST with their own signature.
  *  - /api/signer/*: the owner's signer daemon authenticates with its bearer token.
  * The last two are exempt from the CSRF check too: they are not browsers, they carry no
  * cookie, and they prove who they are on every single request.
  */
 export const SELF_AUTHENTICATED_PREFIXES = ["/whatsapp/", "/api/signer/"] as const;
-const PUBLIC_PATHS = ["/health", "/login", "/setup"] as const;
+const PUBLIC_PATHS = [
+  "/health",
+  "/login",
+  "/setup",
+  "/recuperar",
+  "/recuperar/whatsapp",
+  "/recuperar/operador",
+] as const;
+
+/**
+ * The only paths a recovery session reaches. Everything else on this site answers it with
+ * RECOVERY_SCOPE_LIMITED: proving a code buys one new password, not the mandate, not the
+ * proposals and certainly not an approval.
+ */
+export const RECOVERY_SESSION_PATHS = [
+  "/recuperar/nueva-clave",
+  "/recuperar",
+  "/logout",
+  // Abandoning a recovery must not lock out someone who knows the password after all:
+  // logging in normally replaces the recovery session with a real one.
+  "/login",
+] as const;
 
 export function isSelfAuthenticated(path: string): boolean {
   return SELF_AUTHENTICATED_PREFIXES.some((p) => path.startsWith(p));
@@ -35,6 +59,10 @@ export function isSelfAuthenticated(path: string): boolean {
 
 export function isPublicPath(path: string): boolean {
   return PUBLIC_PATHS.includes(path as (typeof PUBLIC_PATHS)[number]);
+}
+
+export function isRecoverySessionPath(path: string): boolean {
+  return RECOVERY_SESSION_PATHS.includes(path as (typeof RECOVERY_SESSION_PATHS)[number]);
 }
 
 /** True for the methods that change something and therefore need a CSRF token. */

@@ -138,8 +138,8 @@ puede lograr un agente es que lo rechacen.
 
 `@agentpos/buyer-web` es una página autoalojada donde una persona mira y decide lo que hace el
 agente: estado del mandato con barra de presupuesto, búsqueda de ofertas y propuestas para aprobar
-o rechazar. Tres páginas detrás de tu acceso: `/` (inicio y editor del mandato),
-`/proposals`, `/activity`, más `/login` y `/setup`.
+o rechazar. Cuatro páginas detrás de tu acceso: `/` (inicio y editor del mandato),
+`/proposals`, `/activity`, `/cuenta`, más `/login`, `/setup` y `/recuperar`.
 
 ```bash
 pnpm --filter @agentpos/buyer-web dev     # http://localhost:8788
@@ -152,6 +152,7 @@ pnpm --filter @agentpos/buyer-web dev     # http://localhost:8788
 | `AGENTPOS_NETWORK` | `testnet` (por defecto) o `mainnet`. |
 | `SIGNER_TOKEN` | Activa el puente de firma en `/api/signer/*`. Mínimo 24 caracteres (`openssl rand -hex 24`). Sin él esas rutas no existen. |
 | `BUYER_WEB_OWNER_EMAIL` + `BUYER_WEB_OWNER_PASSWORD_HASH` | Cuenta del dueño para despliegues automatizados. Las dos o ninguna, y siempre un hash scrypt, nunca la contraseña. |
+| `BUYER_WEB_PUBLIC_URL` | La lee solo `recover-cli.js`, para imprimir la URL de recuperación con el host correcto. Un argumento en la línea de comandos manda sobre ella. |
 
 En esta aplicación no hay, a propósito, ninguna variable para una llave de wallet ni para una
 frase de paso. Pegar un secreto (`S...`) en el campo de wallet se rechaza con `SECRET_IN_CONFIG`.
@@ -175,8 +176,11 @@ mientras no exista la cuenta, la crea quien llegue primero.
 - **Aprobar pide la contraseña de nuevo** (sobre `requireConfirmAboveUsdc`, y en cualquier monto
   si no fijaste ese umbral), con el monto y la tienda escritos al lado del campo. La sesión
   sigue abierta para lo demás.
-- En `/activity` hay un panel **Accesos**: entradas, intentos fallidos y aprobaciones, con la
-  fecha, un hash corto de la IP y el navegador. Sirve para responder "¿estuvo alguien más aquí?".
+- **Cambiar tu contraseña** está en `/cuenta`: la actual y después la nueva dos veces. Se
+  cierran todas las demás sesiones; la que estás usando sigue abierta.
+- En `/activity` hay un panel **Accesos**: entradas, intentos fallidos, aprobaciones y cada
+  paso de una recuperación, con la fecha, un hash corto de la IP y el navegador. Sirve para
+  responder "¿estuvo alguien más aquí?".
 - Las rutas de WhatsApp y `/api/signer/*` no cambian: se autentican solas en cada petición (la
   firma del proveedor y el token del firmador), así que Twilio y tu vigilante siguen igual.
 
@@ -189,8 +193,52 @@ pnpm --filter @agentpos/buyer-web hash-password    # escribe la contraseña, cop
 
 y pon el resultado en `BUYER_WEB_OWNER_PASSWORD_HASH` junto con `BUYER_WEB_OWNER_EMAIL`. El par
 manda en cada arranque: crea la cuenta si no existe y la reemplaza si cambia, cerrando todas las
-sesiones abiertas. Así se recupera el acceso si pierdes la contraseña. Poner la contraseña en
-claro en `BUYER_WEB_OWNER_PASSWORD` se rechaza con `SECRET_IN_CONFIG`.
+sesiones abiertas. Úsalo para reemplazar la cuenta entera, por ejemplo para mover el espacio a
+otro correo; si lo que perdiste es la contraseña, usa una de las tres vías de abajo. Poner la
+contraseña en claro en `BUYER_WEB_OWNER_PASSWORD` se rechaza con `SECRET_IN_CONFIG`.
+
+### Si pierdes la contraseña
+
+**No hay "te enviamos un enlace por correo", y es a propósito.** Esto corre en tu propia
+máquina, y tu máquina no tiene servidor de correo. Un botón que promete un correo que nadie
+puede enviar es peor que no tenerlo, así que AgentPOS no trae cliente SMTP ni te pide
+credenciales de correo. Tres vías que sí funcionan, en el orden en que la página las ofrece:
+
+**1. Códigos de recuperación. Créalos ahora, en `/cuenta`.** "Generar codigos nuevos" te
+entrega diez códigos como `ABCD-EFGH-JKLM`, mostrados **una sola vez**, en una página que te lo
+advierte. Imprímelos o guárdalos donde guardas lo que no puedes perder. No necesitan correo, ni
+teléfono, ni acceso al servidor. Mientras no tengas un juego, un aviso en cada página te ofrece
+crearlo (puedes posponerlo por esta sesión; vuelve en la siguiente).
+
+- Cada código sirve una sola vez. Al usarlo en `/recuperar`, con tu correo, lo único que puedes
+  hacer es fijar una contraseña nueva: esa sesión corta no ve tu mandato, ni tus propuestas, ni
+  puede aprobar un pago.
+- Terminar una recuperación **cierra todas las sesiones**, incluidas las que no eran tuyas. Ese
+  es el punto: si estás recuperando porque algo se veía raro, esto los saca.
+- Generar un juego nuevo anula el anterior al instante. Hazlo si dudas de quién los vio.
+
+**2. Un código por WhatsApp, si tienes el canal configurado.** `/recuperar` ofrece además
+"Enviar codigo a mi WhatsApp": seis dígitos, válidos diez minutos, tres intentos, un envío por
+minuto como máximo, entregado por el mismo proveedor que ya usa el bot y **solo** a un número de
+`WHATSAPP_ALLOWED_NUMBERS`. La página siempre responde "si la cuenta existe, enviamos el
+codigo", coincida o no el correo: nada en esta superficie le cuenta a un desconocido quién
+existe.
+
+**3. Un enlace de un solo uso, desde la máquina misma.** Para quien ya puede correr comandos en
+el servidor:
+
+```bash
+node dist/auth/recover-cli.js https://tu-buyer-web.example
+pnpm --filter @agentpos/buyer-web recover-url      # desde el repo, para una instalación local
+```
+
+Imprime una URL que sirve una vez, vence a los 15 minutos y se guarda solo como hash. Su propia
+salida dice lo que es: un enlace que salta la contraseña. Emitirlo y usarlo quedan los dos en el
+panel **Accesos**, con la hora y el origen, así que una recuperación que no hiciste tú es algo
+que puedes ver.
+
+Una recuperación no toca tu mandato, ni tus propuestas, ni tu historial, ni tu wallet. No
+podría: la llave nunca estuvo aquí.
 
 Si marcas "Permitir bienes físicos" en el mandato, el editor abre la sección "Dirección de
 despacho" y el servidor la exige completa: nombre de quien recibe, dirección (línea 1), ciudad,
