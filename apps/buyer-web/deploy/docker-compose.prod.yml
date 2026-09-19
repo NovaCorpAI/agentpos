@@ -34,6 +34,16 @@ services:
       # Signing bridge (/api/signer/*). Min 24 chars; without it the routes are not mounted and
       # `agentpos-buyer watch` cannot pay anything the owner approved. Not a wallet secret.
       SIGNER_TOKEN: ${SIGNER_TOKEN:?}
+      # Owner account, optional. Leave both empty to create it once at /setup in the browser.
+      # BUYER_WEB_OWNER_PASSWORD_HASH is a scrypt hash (`scrypt$16384$8$1$...`), never a
+      # password: generate it with `docker compose ... run --rm --no-deps buyer-web
+      # node dist/auth/hash-cli.js`. The pair is authoritative on every start, so changing it
+      # here and restarting is how a lost password is replaced; open sessions are closed.
+      # Gotcha: compose interpolates $ in values, so the hash MUST be written with doubled
+      # dollars in the env file (scrypt$$16384$$8$$1$$...) or it arrives truncated and every
+      # login fails. The container refuses to start on a hash that is not well formed.
+      BUYER_WEB_OWNER_EMAIL: ${BUYER_WEB_OWNER_EMAIL:-}
+      BUYER_WEB_OWNER_PASSWORD_HASH: ${BUYER_WEB_OWNER_PASSWORD_HASH:-}
       # Owner allowlist, comma-separated E.164. Required whenever a WhatsApp provider is set.
       WHATSAPP_ALLOWED_NUMBERS: ${WHATSAPP_ALLOWED_NUMBERS:?}
       # Twilio WhatsApp (POST /whatsapp/twilio). All four or none; this deployment exists so

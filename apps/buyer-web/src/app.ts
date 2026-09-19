@@ -1,14 +1,38 @@
 /**
- * HTTP surface: three server-rendered pages for the human (/, /proposals, /activity) and a
- * JSON API under /api that mirrors the service one-to-one, so tests and future channels
- * (WhatsApp bridge, mobile) exercise exactly what the pages use.
+ * HTTP surface: the server-rendered pages for the human (/, /proposals, /activity, plus
+ * /login and /setup) and a JSON API under /api that mirrors the service one-to-one, so
+ * tests and other channels (WhatsApp bridge, mobile) exercise exactly what the pages use.
+ *
+ * Access model, in one paragraph. This surface can raise a spending limit and approve a
+ * payment that the owner's own machine will then sign, so everything here is behind the
+ * owner's login except four things: /health (a liveness probe), /login and /setup (the way
+ * in), the WhatsApp webhooks and /api/signer/* (which authenticate themselves on every
+ * single request, with a provider signature and a bearer token respectively, and therefore
+ * carry no cookie and need no CSRF token). Everything else answers a redirect to /login
+ * (pages) or a typed 401 (JSON) without a session, and every state-changing request needs
+ * the per-session CSRF token. Approving a payment asks for the password again.
  */
 import { Hono } from "hono";
 import type { Context } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { z } from "zod";
-import { AgentPOSError, isAgentPOSError } from "@agentpos/core";
+import { AgentPOSError, compareUsdc, isAgentPOSError, usdc, usdcFromMinor } from "@agentpos/core";
 import type { ErrorCode, Logger } from "@agentpos/core";
+import { AuthService, setupDone } from "./auth/service.js";
+import type { AuthenticatedSession, OwnerBootstrap } from "./auth/service.js";
+import { AuthError, isAuthError } from "./auth/errors.js";
+import type { RequestOrigin } from "./auth/fingerprint.js";
+import {
+  clearSessionCookie,
+  csrfTokenFrom,
+  isMutating,
+  isPublicPath,
+  isSelfAuthenticated,
+  originOf,
+  safeNext,
+  sessionIdFrom,
+  writeSessionCookie,
+} from "./auth/http.js";
 import { BuyerWebService, parseAttributePairs } from "./service.js";
 import type { MarketCallInput } from "./service.js";
 import type { BuyerWebStorage } from "./storage.js";
@@ -17,10 +41,17 @@ import {
   activityPage,
   errorPage,
   homePage,
+  loginPage,
   proposalsPage,
+  setupPage,
 } from "./pages.js";
-import type { MandateFormValues, MarketFormValues, MarketSearch } from "./pages.js";
-import type { BuyerWebProfile } from "./types.js";
+import type {
+  MandateFormValues,
+  MarketFormValues,
+  MarketSearch,
+  SessionView,
+} from "./pages.js";
+import type { BuyerWebProfile, Proposal } from "./types.js";
 import type { WhatsAppConfig } from "./config.js";
 import { ConversationHandler } from "./whatsapp/conversation.js";
 import { MetaTransport, createMetaWebhook } from "./whatsapp/meta.js";
@@ -48,12 +79,32 @@ export interface BuyerWebAppDeps {
   log?: WhatsAppLogger;
   /** Structured event log for the buyer service. Never carries a full postal address. */
   logger?: Logger;
+  /**
+   * Owner account from the environment, for a deploy that cannot stop at the setup form.
+   * Email plus a scrypt HASH; it is authoritative on every start and replacing it closes
+   * every open session. Absent means the account is created once at /setup.
+   */
+  owner?: OwnerBootstrap;
+  /** Session lifetime; it slides forward on use. Tests shorten it. Default 12 h. */
+  sessionTtlMs?: number;
+  /** Clock, injected by tests that need to watch a session expire. */
+  now?: () => Date;
+}
+
+/** Per-request state the access layer puts on the context. */
+export interface BuyerWebEnv {
+  Variables: {
+    origin: RequestOrigin;
+    auth?: AuthenticatedSession;
+  };
 }
 
 export interface BuyerWebApp {
-  app: Hono;
+  app: Hono<BuyerWebEnv>;
   fetch: (request: Request) => Response | Promise<Response>;
   service: BuyerWebService;
+  /** The access layer, for the server entrypoint and for tests. */
+  auth: AuthService;
 }
 
 const STATUS_BY_CODE: Partial<Record<ErrorCode, ContentfulStatusCode>> = {
@@ -160,8 +211,16 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
     network,
     ...(deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {}),
     ...(deps.logger ? { logger: deps.logger } : {}),
+    ...(deps.now ? { now: deps.now } : {}),
   });
-  const app = new Hono();
+  const auth = new AuthService({
+    storage: deps.storage,
+    ...(deps.logger ? { logger: deps.logger } : {}),
+    ...(deps.sessionTtlMs !== undefined ? { sessionTtlMs: deps.sessionTtlMs } : {}),
+    ...(deps.now ? { now: deps.now } : {}),
+  });
+  if (deps.owner) auth.bootstrapOwner(deps.owner);
+  const app = new Hono<BuyerWebEnv>();
 
   const pendingCount = () => service.pendingProposals().length;
   // Read-only channel state for the pages: whether each optional channel is mounted.
@@ -169,6 +228,137 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
     whatsapp: deps.whatsapp !== undefined,
     signer: deps.signerToken !== undefined,
   };
+
+  // --- access layer ----------------------------------------------------------
+
+  const wantsJson = (c: Context) =>
+    c.req.path.startsWith("/api/") || (c.req.header("accept") ?? "").includes("application/json");
+
+  /** The signed-in owner on a guarded route. The guard guarantees it is there. */
+  const sessionOf = (c: Context<BuyerWebEnv>): AuthenticatedSession => {
+    const authed = c.get("auth");
+    if (!authed) {
+      throw new AuthError("AUTH_REQUIRED", "Tu sesion no esta activa", {
+        hint: "Entra de nuevo en /login.",
+      });
+    }
+    return authed;
+  };
+
+  const viewOf = (c: Context<BuyerWebEnv>): SessionView => {
+    const { account, session } = sessionOf(c);
+    return { email: account.email, csrf: session.csrfToken };
+  };
+
+  const originIn = (c: Context<BuyerWebEnv>): RequestOrigin => c.get("origin") ?? originOf(c);
+
+  /**
+   * One gate for the whole app. It resolves the session (sliding its expiry), sends an
+   * anonymous visitor to /login or /setup, answers 401 on the JSON API instead of
+   * redirecting a program into an HTML page, and checks the CSRF token on anything that
+   * changes state. The self-authenticating routes never reach any of it.
+   */
+  app.use("*", async (c, next) => {
+    const path = c.req.path;
+    if (path === "/health" || isSelfAuthenticated(path)) return next();
+    const origin = originOf(c);
+    c.set("origin", origin);
+    const authed = auth.validateSession(sessionIdFrom(c), origin);
+    if (authed) {
+      c.set("auth", authed);
+      writeSessionCookie(c, authed.session.id, auth.sessionMaxAgeSeconds);
+    }
+    // /login and /setup decide for themselves what an anonymous visitor sees.
+    if (isPublicPath(path)) return next();
+    if (!authed) {
+      if (wantsJson(c)) {
+        return c.json(
+          {
+            error: {
+              code: "AUTH_REQUIRED",
+              message: "Esta ruta necesita la sesion del dueno",
+              hint: "Entra en /login con la cuenta del dueno; el navegador guarda la cookie de sesion.",
+            },
+          },
+          401,
+        );
+      }
+      if (!auth.hasOwner()) return c.redirect("/setup", 302);
+      const back = `${path}${c.req.url.includes("?") ? `?${c.req.url.split("?").slice(1).join("?")}` : ""}`;
+      return c.redirect(`/login?next=${encodeURIComponent(back)}`, 302);
+    }
+    if (isMutating(c.req.method)) {
+      auth.requireCsrf(authed.session, await csrfTokenFrom(c), origin);
+    }
+    return next();
+  });
+
+  // --- the way in: setup, login, logout --------------------------------------
+
+  app.get("/setup", (c) => {
+    if (auth.hasOwner()) throw setupDone();
+    return c.html(setupPage({ network }));
+  });
+
+  app.post("/setup", async (c) => {
+    if (auth.hasOwner()) throw setupDone();
+    const body = await c.req.parseBody();
+    const email = asString(body.email);
+    try {
+      const session = await auth.setup(
+        { email, password: asString(body.password), confirm: asString(body.confirm) },
+        originIn(c),
+      );
+      writeSessionCookie(c, session.id, auth.sessionMaxAgeSeconds);
+      return c.redirect("/", 303);
+    } catch (err) {
+      if (!isAuthError(err)) throw err;
+      return c.html(
+        setupPage({
+          network,
+          email,
+          error: { code: err.code, message: err.message, hint: err.hint },
+        }),
+        err.status as ContentfulStatusCode,
+      );
+    }
+  });
+
+  app.get("/login", (c) => {
+    if (!auth.hasOwner()) return c.redirect("/setup", 302);
+    if (c.get("auth")) return c.redirect("/", 302);
+    return c.html(loginPage({ network, next: safeNext(c.req.query("next")) }));
+  });
+
+  // No CSRF token here, and none is possible: there is no session yet. The risk a token
+  // would cover (someone forcing a login) is empty on a surface with a single account.
+  app.post("/login", async (c) => {
+    const body = await c.req.parseBody();
+    const next = safeNext(asString(body.next));
+    try {
+      const session = await auth.login(
+        { email: asString(body.email), password: asString(body.password) },
+        originIn(c),
+      );
+      writeSessionCookie(c, session.id, auth.sessionMaxAgeSeconds);
+      return c.redirect(next, 303);
+    } catch (err) {
+      if (!isAuthError(err)) throw err;
+      const page = loginPage({
+        network,
+        next,
+        error: { code: err.code, message: err.message, hint: err.hint },
+      });
+      const headers = err.retryAfter ? { "retry-after": String(err.retryAfter) } : {};
+      return c.html(page, err.status as ContentfulStatusCode, headers);
+    }
+  });
+
+  app.post("/logout", (c) => {
+    auth.logout(sessionIdFrom(c), originIn(c));
+    clearSessionCookie(c);
+    return c.redirect("/login", 303);
+  });
 
   // --- pages ---------------------------------------------------------------
 
@@ -189,6 +379,7 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
       network,
       status: service.status(),
       channels,
+      session: viewOf(c),
       ...(market ? { market } : {}),
       ...(c.req.query("saved") === "1" ? { saved: true } : {}),
     });
@@ -237,6 +428,7 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
             network,
             status: service.status(),
             channels,
+            session: viewOf(c),
             error: { code: err.code, message: err.message, hint: err.hint },
           }),
           STATUS_BY_CODE[err.code] ?? 500,
@@ -247,22 +439,42 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
     return c.redirect("/?saved=1", 303);
   });
 
+  /**
+   * Does approving this proposal ask for the password again? Above the mandate's
+   * `requireConfirmAboveUsdc`, yes; and when no threshold is set, every amount does. A
+   * mandate that never asks is a decision the owner has to make on purpose, not a default.
+   */
+  const needsReauth = (p: Proposal): boolean => {
+    const threshold = service.getProfile()?.mandate.requireConfirmAboveUsdc;
+    if (threshold === undefined) return true;
+    return compareUsdc(usdcFromMinor(p.amountMinor), usdc(threshold)) >= 0;
+  };
+
+  /** Renders /proposals, optionally with a refused re-authentication on one card. */
+  const proposalsHtml = (
+    c: Context<BuyerWebEnv>,
+    extra: { highlight?: string; reauthError?: { proposalId: string; message: string } } = {},
+  ): string => {
+    const shipping = service.status().shipping;
+    return proposalsPage({
+      pending: service.pendingProposals(),
+      approved: service.approvedProposals(),
+      paid: service.paidProposals(),
+      stores: service.getProfile()?.stores ?? [],
+      network,
+      ...(shipping ? { shipping } : {}),
+      signerConfigured: channels.signer,
+      instructionsFor: (p) => service.instructionsFor(p),
+      session: viewOf(c),
+      needsReauth,
+      ...(extra.highlight ? { highlight: extra.highlight } : {}),
+      ...(extra.reauthError ? { reauthError: extra.reauthError } : {}),
+    });
+  };
+
   app.get("/proposals", (c) => {
     const highlight = c.req.query("approved");
-    const shipping = service.status().shipping;
-    return c.html(
-      proposalsPage({
-        pending: service.pendingProposals(),
-        approved: service.approvedProposals(),
-        paid: service.paidProposals(),
-        stores: service.getProfile()?.stores ?? [],
-        network,
-        ...(shipping ? { shipping } : {}),
-        signerConfigured: channels.signer,
-        instructionsFor: (p) => service.instructionsFor(p),
-        ...(highlight ? { highlight } : {}),
-      }),
-    );
+    return c.html(proposalsHtml(c, highlight ? { highlight } : {}));
   });
 
   app.post("/proposals", async (c) => {
@@ -281,8 +493,53 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
     return c.redirect("/proposals", 303);
   });
 
-  app.post("/proposals/:id/approve", (c) => {
-    const { proposal } = service.approve(c.req.param("id"));
+  /**
+   * The password check that stands between a pending proposal and the payment queue.
+   * Returns the typed refusal instead of throwing, so the page can put it on the card the
+   * owner was looking at. `undefined` means the approval may go ahead.
+   */
+  const checkReauth = async (
+    c: Context<BuyerWebEnv>,
+    proposal: Proposal,
+    password: string,
+  ): Promise<AuthError | undefined> => {
+    if (!needsReauth(proposal)) return undefined;
+    if (password.length === 0) {
+      return new AuthError(
+        "REAUTH_REQUIRED",
+        `Escribe tu contrasena para aprobar ${proposal.amount} ${proposal.asset} en ${proposal.storeName}.`,
+        { hint: "Aprobar un pago pide la contrasena de nuevo, aunque la sesion siga abierta." },
+      );
+    }
+    if (await auth.verifyOwnerPassword(password)) return undefined;
+    auth.noteReauthFailed(
+      originIn(c),
+      `${proposal.amount} ${proposal.asset} en ${proposal.storeName}`,
+    );
+    return new AuthError("REAUTH_FAILED", "Contrasena incorrecta: la propuesta sigue pendiente.", {
+      hint: "Vuelve a escribirla. Nada se aprobo y nada se cobro.",
+    });
+  };
+
+  app.post("/proposals/:id/approve", async (c) => {
+    const id = c.req.param("id");
+    const body = await c.req.parseBody();
+    // An unknown id falls through to service.approve, which answers the typed 404.
+    const pending = service.getProposal(id);
+    if (pending) {
+      const refusal = await checkReauth(c, pending, asString(body.password));
+      if (refusal) {
+        return c.html(
+          proposalsHtml(c, { reauthError: { proposalId: id, message: refusal.message } }),
+          refusal.status as ContentfulStatusCode,
+        );
+      }
+    }
+    const { proposal } = service.approve(id);
+    auth.noteApproval(
+      originIn(c),
+      `${proposal.amount} ${proposal.asset} en ${proposal.storeName}`,
+    );
     return c.redirect(`/proposals?approved=${encodeURIComponent(proposal.id)}`, 303);
   });
 
@@ -298,6 +555,8 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
         proposals: service.proposalHistory(),
         status: service.status(),
         network,
+        session: viewOf(c),
+        access: auth.access(),
       }),
     );
   });
@@ -337,7 +596,27 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
 
   app.get("/api/proposals", (c) => c.json({ proposals: service.proposalHistory() }));
 
-  app.post("/api/proposals/:id/approve", (c) => c.json(service.approve(c.req.param("id"))));
+  // Same rule as the page: the session is not enough to approve a payment, the password is
+  // asked again. The API takes it as `password` in the JSON body.
+  app.post("/api/proposals/:id/approve", async (c) => {
+    const id = c.req.param("id");
+    const body = (await c.req.json().catch(() => ({}))) as { password?: unknown };
+    const pending = service.getProposal(id);
+    if (pending) {
+      const refusal = await checkReauth(
+        c,
+        pending,
+        typeof body.password === "string" ? body.password : "",
+      );
+      if (refusal) throw refusal;
+    }
+    const result = service.approve(id);
+    auth.noteApproval(
+      originIn(c),
+      `${result.proposal.amount} ${result.proposal.asset} en ${result.proposal.storeName}`,
+    );
+    return c.json(result);
+  });
 
   app.post("/api/proposals/:id/reject", (c) =>
     c.json({ proposal: service.reject(c.req.param("id")) }),
@@ -441,10 +720,37 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
 
   // --- errors ----------------------------------------------------------------
 
-  const wantsJson = (c: Context) =>
-    c.req.path.startsWith("/api/") || c.req.header("accept")?.includes("application/json");
-
   app.onError((err, c) => {
+    // Access refusals answer with their own codes: they are not commerce errors and an
+    // agent (or a human) should be able to tell "you are not allowed" from "the cart died".
+    if (isAuthError(err)) {
+      const headers = err.retryAfter ? { "retry-after": String(err.retryAfter) } : {};
+      const status = err.status as ContentfulStatusCode;
+      if (wantsJson(c)) {
+        return c.json(
+          { error: { code: err.code, message: err.message, hint: err.hint } },
+          status,
+          headers,
+        );
+      }
+      const authed = c.get("auth");
+      return c.html(
+        errorPage({
+          network,
+          pendingCount: authed ? pendingCount() : 0,
+          code: err.code,
+          message: err.message,
+          hint: err.hint,
+          backHref: authed ? "/proposals" : "/login",
+          backLabel: authed ? "Volver a propuestas" : "Volver a entrar",
+          ...(authed
+            ? { session: { email: authed.account.email, csrf: authed.session.csrfToken } }
+            : {}),
+        }),
+        status,
+        headers,
+      );
+    }
     const shaped = isAgentPOSError(err)
       ? err
       : new AgentPOSError("INTERNAL", "Unexpected error", {
@@ -458,6 +764,7 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
         status,
       );
     }
+    const authed = c.get("auth");
     return c.html(
       errorPage({
         network,
@@ -466,10 +773,13 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
         message: shaped.message,
         hint: shaped.hint,
         backHref: "/proposals",
+        ...(authed
+          ? { session: { email: authed.account.email, csrf: authed.session.csrfToken } }
+          : {}),
       }),
       status,
     );
   });
 
-  return { app, fetch: (request: Request) => app.fetch(request), service };
+  return { app, fetch: (request: Request) => app.fetch(request), service, auth };
 }

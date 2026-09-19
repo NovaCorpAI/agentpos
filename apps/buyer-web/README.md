@@ -4,14 +4,16 @@ The buyer-side web platform: a human configures their buying agent's **mandate**
 limits, allowed stores, physical goods or not) and then watches and decides what the agent
 does. The agent proposes purchases with real quotes; the human approves or rejects them.
 
-Three server-rendered pages (Spanish-first UI, "Espacio del comprador"), zero frontend
-framework, zero CDN assets:
+Server-rendered pages (Spanish-first UI, "Espacio del comprador"), zero frontend framework,
+zero CDN assets, no client JavaScript:
 
 | Page         | What it does                                                                                                                                                                                                                                                                    |
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `/`          | Home: mandate state (limits, period, approved vs available with a budget bar, shipping city and country), the **market call** (below) that can turn any offer into a proposal, the mandate editor with its shipping section, and the channel status (WhatsApp, signing bridge). |
 | `/proposals` | Proposal cards by state: pendiente (Aprobar / Rechazar), aprobada **esperando firma** (with the exact payment instructions and any failed-attempt reason), pagada (transaction link + order id). A physical proposal says which city and country it ships to.                   |
-| `/activity`  | Proposal history plus the append-only activity log as a readable timeline.                                                                                                                                                                                                      |
+| `/activity`  | Proposal history, the append-only activity log as a readable timeline, and the **Accesos** panel (logins, refusals and approvals).                                                                                                                                              |
+| `/setup`     | First run only: creates the one owner account. Answers 404 forever after that.                                                                                                                                                                                                  |
+| `/login`     | The way in. `/logout` (POST) destroys the session row.                                                                                                                                                                                                                          |
 
 ## The custody rule, plainly
 
@@ -22,6 +24,89 @@ it marks the proposal approved and hands back the checkout URL, the amount and t
 `agentpos-buyer` command to run **on the machine that holds the key**. The UI says
 "approved, awaiting signature" because that is exactly what is true. No completed purchase is
 ever faked.
+
+## Who gets in
+
+This surface can raise a spending limit and approve a payment that the owner's own machine
+then signs, so it has a real login of its own. No reverse proxy gate is required in front of
+it, and none should be relied on.
+
+**One owner, one account.** The first visit to a fresh installation sends every page to
+`/setup`, which creates the single owner account (email + password, minimum 12 characters,
+typed twice) and logs it in. After that `/setup` answers `404 SETUP_DONE` forever: a second
+account here would be a second person who can spend the first one's money.
+
+**Passwords** are stored as `node:crypto` scrypt hashes (`scrypt$N$r$p$<salt>$<hash>`, a
+fresh 16-byte salt per account, constant-time compare) in the `owner_account` table. A login
+against an unknown email verifies against a throwaway hash, so timing says nothing about
+which accounts exist, and an unknown email and a wrong password get the same sentence:
+"Correo o contrasena incorrectos".
+
+**Sessions** are rows in `sessions`. The cookie (`agentpos_buyer_session`, `HttpOnly`,
+`SameSite=Strict`, `Secure` whenever the request arrives over https, `Path=/`) carries a
+random 32-byte id and nothing else: no signed payload, no claim the server has to trust.
+Default lifetime 12 hours, sliding on every authenticated request; `POST /logout` deletes the
+row, which ends the session everywhere at once.
+
+**CSRF.** Every session carries its own random token, rendered as a hidden `_csrf` field in
+every form and accepted as the `x-csrf-token` header (or a `_csrf` member of a JSON body) on
+the API. Every state-changing request compares it in constant time and answers a typed
+`403 CSRF_INVALID` when it does not match.
+
+**Login throttle.** Failures are counted per client address and per account; from the sixth
+the login is locked out with an escalating delay (30 s, doubling, capped at 15 minutes) and
+answers `429 LOGIN_RATE_LIMITED` with `Retry-After`. A correct password clears both counters,
+and a quarter of an hour without failures forgets them.
+
+**Approving asks for the password again.** Above the mandate's `requireConfirmAboveUsdc` (and
+for any amount when that is unset) the approval form carries a password field, with the
+amount and the store written next to it; the rest of the session stays signed in. A wrong
+password answers `403 REAUTH_FAILED` and the proposal stays pending.
+
+### The route matrix
+
+| Route                                                                             | Anonymous                | CSRF token |
+| --------------------------------------------------------------------------------- | ------------------------ | ---------- |
+| `GET /health`                                                                     | 200                      | n/a        |
+| `GET /setup`, `POST /setup`                                                       | 200 (404 once it exists) | no         |
+| `GET /login`, `POST /login`                                                       | 200                      | no         |
+| `GET /`, `/proposals`, `/activity`                                                | `302 /login?next=...`    | n/a        |
+| `POST /profile`, `/proposals`, `/proposals/:id/approve`, `/:id/reject`, `/logout` | `302 /login`             | **yes**    |
+| `GET /api/status`, `/api/offers`, `/api/market`, `/api/proposals`                 | `401 AUTH_REQUIRED`      | n/a        |
+| `POST /api/proposals`, `/api/proposals/:id/approve`, `/:id/reject`                | `401 AUTH_REQUIRED`      | **yes**    |
+| `/whatsapp/*` (GET, POST)                                                         | unchanged (signature)    | exempt     |
+| `/api/signer/*` (GET, POST)                                                       | unchanged (bearer)       | exempt     |
+
+The last two rows are exempt because they authenticate themselves on every single request,
+with Meta's `X-Hub-Signature-256` / Twilio's `X-Twilio-Signature` and with the signer bearer
+token. They are not browsers, they carry no cookie, and a CSRF token would be meaningless to
+them. Nothing else on this server is exempt.
+
+### Bootstrapping the owner from the environment
+
+A deploy that cannot stop at a form sets `BUYER_WEB_OWNER_EMAIL` and
+`BUYER_WEB_OWNER_PASSWORD_HASH` (a scrypt hash, never a password). The pair is applied on
+every start: it creates the account when there is none, and replaces it (closing every open
+session) when it differs, which is also how an owner who lost the password gets back in.
+`BUYER_WEB_OWNER_PASSWORD` is refused outright with `SECRET_IN_CONFIG`.
+
+Generate the hash with this package's own code, reading the password from stdin so it never
+lands in `ps` or in shell history:
+
+```sh
+pnpm --filter @agentpos/buyer-web hash-password       # type the password, get the hash
+# in the deployed container, where only dist/ exists:
+docker compose -f apps/buyer-web/deploy/docker-compose.prod.yml run --rm --no-deps \
+  buyer-web node dist/auth/hash-cli.js
+```
+
+### What the logs may say
+
+`auth.login_ok`, `auth.login_failed`, `auth.login_rate_limited`, `auth.logout`,
+`auth.setup`, `auth.session_expired`, `auth.csrf_invalid`, `auth.reauth_failed`, each with an
+8-char sha256 of the email, an 8-char sha256 of the client address and a coarse browser
+family. Never the email, never the password, never the session id or the CSRF token. A test
+asserts exactly that against a spy logger.
 
 ## The market call
 
@@ -87,9 +172,12 @@ shown as a warning banner on `/`, and makes physical proposals fail immediately 
 ## Storage
 
 `node:sqlite` (no native dependencies) behind `BuyerWebStorage`: `profiles` (mandate,
-shipping address, public wallet address), `proposals` (pending / approved / rejected / expired) and
-`activity`, which is append-only by construction: the class exposes insert and select for it
-and nothing else.
+shipping address, public wallet address), `proposals` (pending / approved / rejected /
+expired), `activity`, `owner_account` (email + scrypt hash), `sessions` (id, CSRF token,
+sliding expiry, origin hashes) and `access_log`. `activity` and `access_log` are append-only
+by construction: the class exposes insert and select for them and nothing else. The tables
+are created on open (`create table if not exists`), so an existing database gains the three
+new ones on the next start with nothing to migrate by hand.
 
 ## WhatsApp channel
 
@@ -203,6 +291,9 @@ Environment (all optional):
 - `BUYER_WEB_DB` - SQLite file, default `~/.agentpos/buyer-web.sqlite`
 - `AGENTPOS_NETWORK` - `testnet` (default) or `mainnet`
 - `SIGNER_TOKEN` - enables the signing bridge (`/api/signer/*`, see above); min 24 chars
+- `BUYER_WEB_OWNER_EMAIL` + `BUYER_WEB_OWNER_PASSWORD_HASH` - optional owner bootstrap, both
+  or neither (see "Who gets in"). The hash comes from the `hash-password` script above; a
+  plaintext `BUYER_WEB_OWNER_PASSWORD` is refused
 - WhatsApp (optional, see above): `WHATSAPP_ALLOWED_NUMBERS`, `META_VERIFY_TOKEN`,
   `META_APP_SECRET`, `META_ACCESS_TOKEN`, `META_PHONE_NUMBER_ID`, `TWILIO_ACCOUNT_SID`,
   `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`, `TWILIO_WEBHOOK_URL`
@@ -221,11 +312,13 @@ external `edge` network):
   host, `/root/.agentpos/buyer-web:/data`, env passthrough for exactly what `src/config.ts`
   reads.
 - `deploy/Caddyfile.snippet` - the `agente.agentposhq.com` vhost to append to the facilitator
-  Caddyfile on the VPS.
+  Caddyfile on the VPS. A plain reverse proxy: the login lives in the app, so the temporary
+  `basic_auth` gate that stood in for it can be removed from the Caddyfile.
 - `deploy/README.md` - the operator's command sequence and the post-deploy checks.
 
-The host serves a **private** surface (the owner's mandate, proposals and activity, with no
-login), so it is never linked publicly.
+The host serves a **private** surface (the owner's mandate, proposals and activity) behind
+the owner's login. It is still not linked publicly: fewer people knowing it exists is one
+more layer, not the layer.
 
 ## Test
 
@@ -234,4 +327,9 @@ pnpm --filter @agentpos/buyer-web test
 ```
 
 The tests spin a real AgentPOS store in-process (the `packages/mcp-buyer` demo-test
-pattern), so proposals carry genuine quotes from genuine carts.
+pattern), so proposals carry genuine quotes from genuine carts. Every test that touches a
+guarded route signs in through the real `/setup` or `/login` form and carries the real
+cookie and CSRF token (`setUpOwner` / `logIn` in `src/test-utils.ts`): nothing reaches past
+the access layer by a back door, because then nothing would be testing it. `src/auth.test.ts`
+covers the route matrix, sessions, CSRF, the throttle, the approval re-authentication and
+the no-secrets-in-logs rule.

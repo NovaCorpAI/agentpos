@@ -134,7 +134,8 @@ worst an agent can do is get refused.
 
 `@agentpos/buyer-web` is a self-hosted page where a human watches and decides what the agent
 does: mandate state with a budget bar, offer search, and proposals to approve or reject. Three
-pages: `/` (home and mandate editor), `/proposals`, `/activity`.
+pages behind your login: `/` (home and mandate editor), `/proposals`, `/activity`, plus
+`/login` and `/setup`.
 
 ```bash
 pnpm --filter @agentpos/buyer-web dev     # http://localhost:8788
@@ -146,9 +147,47 @@ pnpm --filter @agentpos/buyer-web dev     # http://localhost:8788
 | `BUYER_WEB_DB` | SQLite file. Default `~/.agentpos/buyer-web.sqlite`. |
 | `AGENTPOS_NETWORK` | `testnet` (default) or `mainnet`. |
 | `SIGNER_TOKEN` | Enables the signing bridge under `/api/signer/*`. Min 24 chars (`openssl rand -hex 24`). Without it those routes do not exist. |
+| `BUYER_WEB_OWNER_EMAIL` + `BUYER_WEB_OWNER_PASSWORD_HASH` | Owner account for an unattended deploy. Both or neither, and always a scrypt hash, never the password. |
 
 There is deliberately **no** environment slot for a wallet key or passphrase in this app. Pasting
 a secret (`S...`) into the wallet field is refused with `SECRET_IN_CONFIG`.
+
+### Getting in: one account, yours
+
+This page can raise your spending limits and approve payments your own machine then signs, so
+it has a login of its own. On a fresh installation every page sends you to `/setup`, where you
+create the single owner account (email plus a password of 12 characters or more, typed twice)
+and are signed in. From then on `/setup` answers 404 forever. Do it the minute the service is
+up: until the account exists, whoever gets there first becomes the owner.
+
+- The password is stored only as a scrypt hash (own salt per account, constant-time compare).
+  Nobody, you included, can read it back out of the database.
+- The session is a row on the server and the cookie carries only its id (`HttpOnly`,
+  `SameSite=Strict`, `Secure` over https). It lasts 12 hours of inactivity and slides while you
+  work; `Salir` deletes the row, which ends the session everywhere.
+- An unknown email and a wrong password get the same answer ("correo o contrasena
+  incorrectos"): nothing reveals which accounts exist. After a few failures the login locks out
+  for a while and answers 429 with `Retry-After`.
+- **Approving asks for the password again** (above `requireConfirmAboveUsdc`, and for any
+  amount when you have not set that threshold), with the amount and the store written next to
+  the field. The rest of the session stays signed in.
+- `/activity` has an **Accesos** panel: logins, failed attempts and approvals, with the date, a
+  short hash of the IP and the browser family. It answers "has anyone else been here?".
+- The WhatsApp routes and `/api/signer/*` are unchanged: they authenticate themselves on every
+  request (the provider signature, the signer bearer token), so Twilio and your watcher keep
+  working exactly as before.
+
+For an unattended deploy, generate the hash with the package's own code (the password is read
+from stdin, never as an argument, so it stays out of `ps` and shell history):
+
+```bash
+pnpm --filter @agentpos/buyer-web hash-password    # type the password, copy the scrypt$... line
+```
+
+and set it as `BUYER_WEB_OWNER_PASSWORD_HASH` together with `BUYER_WEB_OWNER_EMAIL`. The pair is
+authoritative on every start: it creates the account when there is none and replaces it, closing
+every open session, when it changes. That is also how you get back in if you lose the password.
+A plaintext `BUYER_WEB_OWNER_PASSWORD` is refused with `SECRET_IN_CONFIG`.
 
 Ticking "allow physical goods" in the mandate reveals the shipping section, and the server
 requires it in full: recipient name, address line 1, city, postal code, country (two-letter ISO)

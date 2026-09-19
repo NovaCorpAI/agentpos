@@ -1,6 +1,11 @@
 /**
  * The HTTP surface end to end: pages render, forms post, and the JSON API (what a future
  * messaging channel will call) works against a real in-process store.
+ *
+ * Everything here goes through the access layer the way a browser does: the owner account
+ * is created at /setup, the session cookie travels on every request and each form carries
+ * its CSRF token (see `setUpOwner` in test-utils). Access control itself is tested in
+ * auth.test.ts.
  */
 import { beforeEach, describe, expect, it } from "vitest";
 import type { MarketCallResult } from "@agentpos/mcp-buyer";
@@ -14,13 +19,21 @@ import {
   STORE_URL,
   inProcessMarket,
   inProcessStore,
+  setUpOwner,
 } from "./test-utils.js";
+import type { BuyerWebClient } from "./test-utils.js";
 import { buyerWebProfileSchema } from "./types.js";
 import type { ApprovalResult, Proposal, ServiceStatus } from "./types.js";
 
 function makeApp() {
   const storage = new BuyerWebStorage(":memory:");
   return { ...createBuyerWebApp({ storage, fetchImpl: inProcessStore().fetchImpl }), storage };
+}
+
+/** The app plus a signed-in owner, which is the only way any of these routes answer. */
+async function signedIn() {
+  const built = makeApp();
+  return { ...built, client: await setUpOwner(built.app) };
 }
 
 function profileForm(overrides: Record<string, string> = {}): RequestInit {
@@ -49,11 +62,8 @@ const SHIPPING_FIELDS: Record<string, string> = {
   shipPhone: "+56911111111",
 };
 
-async function proposeViaApi(
-  app: ReturnType<typeof makeApp>["app"],
-  itemId = "sticker",
-): Promise<Proposal> {
-  const res = await app.request("/api/proposals", {
+async function proposeViaApi(client: BuyerWebClient, itemId = "sticker"): Promise<Proposal> {
+  const res = await client.request("/api/proposals", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ storeUrl: STORE_URL, itemId }),
@@ -63,13 +73,13 @@ async function proposeViaApi(
 }
 
 describe("pages", () => {
-  let app: ReturnType<typeof makeApp>["app"];
-  beforeEach(() => {
-    app = makeApp().app;
+  let client: BuyerWebClient;
+  beforeEach(async () => {
+    client = (await signedIn()).client;
   });
 
   it("renders the mandate editor with the custody rule spelled out", async () => {
-    const res = await app.request("/");
+    const res = await client.request("/");
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain("Maximo por compra");
@@ -77,17 +87,17 @@ describe("pages", () => {
   });
 
   it("saves the mandate through the form and shows it back", async () => {
-    const post = await app.request("/profile", profileForm());
+    const post = await client.request("/profile", profileForm());
     expect(post.status).toBe(303);
     expect(post.headers.get("location")).toBe("/?saved=1");
-    const html = await (await app.request("/?saved=1")).text();
+    const html = await (await client.request("/?saved=1")).text();
     expect(html).toContain("Mandato guardado");
     expect(html).toContain('value="25"');
     expect(html).toContain("https://shop.test");
   });
 
   it("refuses a pasted secret key loudly and loses nothing the user typed", async () => {
-    const res = await app.request(
+    const res = await client.request(
       "/profile",
       profileForm({ walletAddress: "S".concat("B".repeat(55)) }),
     );
@@ -98,17 +108,17 @@ describe("pages", () => {
   });
 
   it("renders proposals with Approve and Reject, then the awaiting-signature card", async () => {
-    await app.request("/profile", profileForm());
-    const proposal = await proposeViaApi(app);
+    await client.request("/profile", profileForm());
+    const proposal = await proposeViaApi(client);
 
-    let html = await (await app.request("/proposals")).text();
+    let html = await (await client.request("/proposals")).text();
     expect(html).toContain("1 x Sticker");
     expect(html).toContain("Aprobar");
     expect(html).toContain("Rechazar");
 
-    const approve = await app.request(`/proposals/${proposal.id}/approve`, { method: "POST" });
+    const approve = await client.approve(proposal.id);
     expect(approve.status).toBe(303);
-    html = await (await app.request("/proposals")).text();
+    html = await (await client.request("/proposals")).text();
     expect(html).toContain("esperando firma");
     expect(html).toContain("agentpos-buyer demo");
     // The page never pretends the purchase happened: no paid tag, no paid section.
@@ -117,7 +127,7 @@ describe("pages", () => {
   });
 
   it("asks for the shipping address, revealed by the physical goods checkbox alone", async () => {
-    const html = await (await app.request("/")).text();
+    const html = await (await client.request("/")).text();
     expect(html).toContain("Direccion de despacho");
     expect(html).toContain('name="shipName"');
     expect(html).toContain('name="shipLine1"');
@@ -130,7 +140,7 @@ describe("pages", () => {
   });
 
   it("refuses physical goods without an address and says which field is missing", async () => {
-    const res = await app.request("/profile", profileForm({ allowPhysicalGoods: "on" }));
+    const res = await client.request("/profile", profileForm({ allowPhysicalGoods: "on" }));
     expect(res.status).toBe(422);
     const html = await res.text();
     expect(html).toContain("SHIPPING_REQUIRED");
@@ -141,12 +151,12 @@ describe("pages", () => {
   });
 
   it("saves the address and reports only the city and the country", async () => {
-    const post = await app.request(
+    const post = await client.request(
       "/profile",
       profileForm({ allowPhysicalGoods: "on", ...SHIPPING_FIELDS }),
     );
     expect(post.status).toBe(303);
-    const html = await (await app.request("/")).text();
+    const html = await (await client.request("/")).text();
     expect(html).toContain("Despacho a Santiago, CL");
     expect(html).not.toContain("Sin direccion de despacho guardada");
     // The summary line says where, never the street.
@@ -154,7 +164,8 @@ describe("pages", () => {
   });
 
   it("warns when a saved mandate allows physical goods with nowhere to ship", async () => {
-    const { app: broken, storage } = makeApp();
+    const { app, storage } = makeApp();
+    const broken = await setUpOwner(app);
     storage.saveProfile(
       buyerWebProfileSchema.parse({
         id: "default",
@@ -189,19 +200,19 @@ describe("pages", () => {
   });
 
   it("tells the human where a physical proposal will ship", async () => {
-    await app.request("/profile", profileForm({ allowPhysicalGoods: "on", ...SHIPPING_FIELDS }));
-    await proposeViaApi(app, "poster");
-    const html = await (await app.request("/proposals")).text();
+    await client.request("/profile", profileForm({ allowPhysicalGoods: "on", ...SHIPPING_FIELDS }));
+    await proposeViaApi(client, "poster");
+    const html = await (await client.request("/proposals")).text();
     expect(html).toContain("1 x Printed Poster");
     expect(html).toContain("se despacha a Santiago, CL");
     expect(html).not.toContain("Avenida Siempre Viva");
   });
 
   it("renders the activity page with the history", async () => {
-    await app.request("/profile", profileForm());
-    const proposal = await proposeViaApi(app);
-    await app.request(`/proposals/${proposal.id}/reject`, { method: "POST" });
-    const html = await (await app.request("/activity")).text();
+    await client.request("/profile", profileForm());
+    const proposal = await proposeViaApi(client);
+    await client.request(`/proposals/${proposal.id}/reject`, { method: "POST" });
+    const html = await (await client.request("/activity")).text();
     expect(html).toContain("mandato guardado");
     expect(html).toContain("propuesta creada");
     expect(html).toContain("propuesta rechazada");
@@ -218,9 +229,9 @@ describe("market call from the home page", () => {
     };
   }
 
-  async function withMandate() {
-    const app = marketApp().app;
-    await app.request("/profile", {
+  async function withMandate(): Promise<BuyerWebClient> {
+    const client = await setUpOwner(marketApp().app);
+    await client.request("/profile", {
       method: "POST",
       body: new URLSearchParams({
         maxPerTx: "25",
@@ -230,12 +241,12 @@ describe("market call from the home page", () => {
         email: "buyer@example.com",
       }),
     });
-    return app;
+    return client;
   }
 
   it("renders the market call form with attributes, price, quantity and type", async () => {
-    const app = await withMandate();
-    const html = await (await app.request("/")).text();
+    const client = await withMandate();
+    const html = await (await client.request("/")).text();
     expect(html).toContain("Llamado al mercado");
     expect(html).toContain('name="attr"');
     expect(html).toContain("Fondo=blanco");
@@ -246,8 +257,8 @@ describe("market call from the home page", () => {
   });
 
   it("runs the call from the query string and shows the comparison", async () => {
-    const app = await withMandate();
-    const res = await app.request(
+    const client = await withMandate();
+    const res = await client.request(
       "/?q=lamina&attr=Fondo%3Dblanco&attr=Passepartout%3Dcon&qty=2&max=40",
     );
     expect(res.status).toBe(200);
@@ -266,8 +277,8 @@ describe("market call from the home page", () => {
   });
 
   it("says who answered and who did not, on the page", async () => {
-    const app = await withMandate();
-    const html = await (await app.request("/?q=lamina")).text();
+    const client = await withMandate();
+    const html = await (await client.request("/?q=lamina")).text();
     expect(html).toContain("Quien respondio");
     expect(html).toContain("no entiende los filtros");
     expect(html).toContain("error");
@@ -276,8 +287,8 @@ describe("market call from the home page", () => {
   });
 
   it("offers the merged facets as one-click refinements", async () => {
-    const app = await withMandate();
-    const html = await (await app.request("/?q=lamina")).text();
+    const client = await withMandate();
+    const html = await (await client.request("/?q=lamina")).text();
     expect(html).toContain("Afinar el pedido");
     expect(html).toContain("blanco (3)");
     expect(html).toContain("negro (2)");
@@ -285,8 +296,8 @@ describe("market call from the home page", () => {
   });
 
   it("shows an offer the mandate cannot pay instead of hiding it", async () => {
-    const app = await withMandate();
-    const html = await (await app.request("/?q=lamina&qty=2")).text();
+    const client = await withMandate();
+    const html = await (await client.request("/?q=lamina&qty=2")).text();
     // 20 x 2 = 40, over the 25 USDC per-payment limit. Listed, and labelled.
     expect(html).toContain("40 USDC");
     expect(html).toContain("supera tu maximo por compra");
@@ -294,8 +305,8 @@ describe("market call from the home page", () => {
   });
 
   it("keeps a malformed filter on the page instead of guessing", async () => {
-    const app = await withMandate();
-    const res = await app.request("/?q=lamina&attr=blanco");
+    const client = await withMandate();
+    const res = await client.request("/?q=lamina&attr=blanco");
     expect(res.status).toBe(400);
     const html = await res.text();
     expect(html).toContain("CONFIG_INVALID");
@@ -304,20 +315,20 @@ describe("market call from the home page", () => {
   });
 
   it("proposes a purchase straight from an offer", async () => {
-    const app = await withMandate();
-    const post = await app.request("/proposals", {
+    const client = await withMandate();
+    const post = await client.request("/proposals", {
       method: "POST",
       body: new URLSearchParams({ storeUrl: MARKET_B, itemId: "dos-blanco", quantity: "1" }),
     });
     expect(post.status).toBe(303);
-    const html = await (await app.request("/proposals")).text();
+    const html = await (await client.request("/proposals")).text();
     expect(html).toContain("1 x Lamina 30x40 blanco");
     expect(html).toContain("18 USDC");
   });
 
   it("answers the same call as JSON for a messaging channel", async () => {
-    const app = await withMandate();
-    const res = await app.request("/api/market?q=lamina&attr=Fondo%3Dblanco&qty=2");
+    const client = await withMandate();
+    const res = await client.request("/api/market?q=lamina&attr=Fondo%3Dblanco&qty=2");
     expect(res.status).toBe(200);
     const body = (await res.json()) as MarketCallResult;
     expect(body.offers.map((o) => o.itemId)).toEqual(["vieja-blanco", "dos-blanco", "uno-blanco"]);
@@ -326,8 +337,8 @@ describe("market call from the home page", () => {
   });
 
   it("answers a typed error as JSON for a bad filter", async () => {
-    const app = await withMandate();
-    const res = await app.request("/api/market?q=lamina&attr=blanco");
+    const client = await withMandate();
+    const res = await client.request("/api/market?q=lamina&attr=blanco");
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: { code: string; hint: string } };
     expect(body.error.code).toBe("CONFIG_INVALID");
@@ -336,14 +347,14 @@ describe("market call from the home page", () => {
 });
 
 describe("JSON API (the future messaging channel)", () => {
-  let app: ReturnType<typeof makeApp>["app"];
+  let client: BuyerWebClient;
   beforeEach(async () => {
-    app = makeApp().app;
-    await app.request("/profile", profileForm());
+    client = (await signedIn()).client;
+    await client.request("/profile", profileForm());
   });
 
   it("reports status", async () => {
-    const res = await app.request("/api/status");
+    const res = await client.request("/api/status");
     expect(res.status).toBe(200);
     const status = (await res.json()) as ServiceStatus;
     expect(status.profileConfigured).toBe(true);
@@ -352,7 +363,7 @@ describe("JSON API (the future messaging channel)", () => {
   });
 
   it("searches offers", async () => {
-    const res = await app.request("/api/offers?q=mug");
+    const res = await client.request("/api/offers?q=mug");
     expect(res.status).toBe(200);
     const body = (await res.json()) as { offers: Array<{ id: string }> };
     expect(body.offers).toHaveLength(1);
@@ -360,8 +371,8 @@ describe("JSON API (the future messaging channel)", () => {
   });
 
   it("runs propose -> approve over HTTP and returns honest instructions", async () => {
-    const proposal = await proposeViaApi(app);
-    const res = await app.request(`/api/proposals/${proposal.id}/approve`, { method: "POST" });
+    const proposal = await proposeViaApi(client);
+    const res = await client.approve(proposal.id, { api: true });
     expect(res.status).toBe(200);
     const result = (await res.json()) as ApprovalResult;
     expect(result.proposal.status).toBe("approved");
@@ -370,15 +381,15 @@ describe("JSON API (the future messaging channel)", () => {
   });
 
   it("runs propose -> reject over HTTP", async () => {
-    const proposal = await proposeViaApi(app);
-    const res = await app.request(`/api/proposals/${proposal.id}/reject`, { method: "POST" });
+    const proposal = await proposeViaApi(client);
+    const res = await client.request(`/api/proposals/${proposal.id}/reject`, { method: "POST" });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { proposal: Proposal };
     expect(body.proposal.status).toBe("rejected");
   });
 
   it("answers a typed 404 for an unknown item", async () => {
-    const res = await app.request("/api/proposals", {
+    const res = await client.request("/api/proposals", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ storeUrl: STORE_URL, itemId: "nope" }),
@@ -390,7 +401,7 @@ describe("JSON API (the future messaging channel)", () => {
   });
 
   it("answers a typed 404 for an unknown proposal", async () => {
-    const res = await app.request("/api/proposals/nope/approve", { method: "POST" });
+    const res = await client.approve("nope", { api: true });
     expect(res.status).toBe(404);
     const body = (await res.json()) as { error: { code: string } };
     expect(body.error.code).toBe("APPROVAL_NOT_FOUND");

@@ -1,12 +1,15 @@
 /**
- * Environment configuration. Deliberately tiny: a port, a database file, a network, and an
- * optional WhatsApp channel (Meta Cloud API and/or Twilio). There is still no slot for a
- * wallet secret because this service must never hold one; the WhatsApp credentials below
- * are messaging credentials, they cannot move money.
+ * Environment configuration. Deliberately tiny: a port, a database file, a network, an
+ * optional WhatsApp channel (Meta Cloud API and/or Twilio) and an optional owner bootstrap.
+ * There is still no slot for a wallet secret because this service must never hold one; the
+ * WhatsApp credentials below are messaging credentials, they cannot move money, and the
+ * owner bootstrap takes a scrypt HASH, never a password.
  */
 import { join } from "node:path";
 import { AgentPOSError } from "@agentpos/core";
 import { agentposHome } from "@agentpos/mcp-buyer";
+import { SCRYPT_HASH_RE } from "./auth/scrypt.js";
+import type { OwnerBootstrap } from "./auth/service.js";
 
 export interface MetaWhatsAppConfig {
   /** Shared secret echoed back during Meta's GET webhook handshake. */
@@ -48,6 +51,50 @@ export interface BuyerWebConfig {
    * this process still cannot sign or move money.
    */
   signerToken?: string;
+  /**
+   * The owner account, for a deploy that cannot stop at the setup form. Only ever an email
+   * and a scrypt HASH; a plaintext password in the environment is refused outright.
+   */
+  owner?: OwnerBootstrap;
+}
+
+/**
+ * Reads the optional owner bootstrap. Both variables or neither, a real hash or nothing:
+ * a half-configured account would silently leave the space open at /setup.
+ */
+function ownerFromEnv(env: NodeJS.ProcessEnv): OwnerBootstrap | undefined {
+  if ((env.BUYER_WEB_OWNER_PASSWORD ?? "").trim().length > 0) {
+    throw new AgentPOSError(
+      "SECRET_IN_CONFIG",
+      "BUYER_WEB_OWNER_PASSWORD is a plaintext password",
+      {
+        hint: "Never put the password in the environment. Generate a hash with `pnpm --filter @agentpos/buyer-web hash-password` (or `node dist/auth/hash-cli.js`) and set BUYER_WEB_OWNER_PASSWORD_HASH instead.",
+      },
+    );
+  }
+  const email = (env.BUYER_WEB_OWNER_EMAIL ?? "").trim().toLowerCase();
+  const passwordHash = (env.BUYER_WEB_OWNER_PASSWORD_HASH ?? "").trim();
+  if (email.length === 0 && passwordHash.length === 0) return undefined;
+  if (email.length === 0 || passwordHash.length === 0) {
+    throw new AgentPOSError("CONFIG_INVALID", "Incomplete owner bootstrap", {
+      hint: "Set BUYER_WEB_OWNER_EMAIL and BUYER_WEB_OWNER_PASSWORD_HASH together, or neither and create the account at /setup.",
+    });
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new AgentPOSError("CONFIG_INVALID", `Invalid BUYER_WEB_OWNER_EMAIL '${email}'`, {
+      hint: "Use a full address, e.g. owner@example.com.",
+    });
+  }
+  if (!SCRYPT_HASH_RE.test(passwordHash)) {
+    throw new AgentPOSError(
+      "CONFIG_INVALID",
+      "BUYER_WEB_OWNER_PASSWORD_HASH is not a scrypt hash",
+      {
+        hint: "It must look like `scrypt$16384$8$1$<salt>$<hash>`. Generate it with `pnpm --filter @agentpos/buyer-web hash-password`; never put the password itself here.",
+      },
+    );
+  }
+  return { email, passwordHash };
 }
 
 function requireAll(
@@ -158,11 +205,13 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): BuyerWebCon
       hint: "Use at least 24 characters, e.g. `openssl rand -hex 24`. A guessable token would let anyone mark proposals paid.",
     });
   }
+  const owner = ownerFromEnv(env);
   return {
     port,
     network,
     dbFile: env.BUYER_WEB_DB ?? join(agentposHome(), "buyer-web.sqlite"),
     ...(whatsapp ? { whatsapp } : {}),
     ...(signerToken.length > 0 ? { signerToken } : {}),
+    ...(owner ? { owner } : {}),
   };
 }
