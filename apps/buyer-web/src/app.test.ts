@@ -6,11 +6,12 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { createBuyerWebApp } from "./app.js";
 import { BuyerWebStorage } from "./storage.js";
 import { STORE_URL, inProcessStore } from "./test-utils.js";
+import { buyerWebProfileSchema } from "./types.js";
 import type { ApprovalResult, Proposal, ServiceStatus } from "./types.js";
 
 function makeApp() {
   const storage = new BuyerWebStorage(":memory:");
-  return createBuyerWebApp({ storage, fetchImpl: inProcessStore().fetchImpl });
+  return { ...createBuyerWebApp({ storage, fetchImpl: inProcessStore().fetchImpl }), storage };
 }
 
 function profileForm(overrides: Record<string, string> = {}): RequestInit {
@@ -27,11 +28,26 @@ function profileForm(overrides: Record<string, string> = {}): RequestInit {
   };
 }
 
-async function proposeViaApi(app: ReturnType<typeof makeApp>["app"]): Promise<Proposal> {
+/** The shipping section as the browser posts it: every field, filled. */
+const SHIPPING_FIELDS: Record<string, string> = {
+  shipName: "Ana Perez",
+  shipLine1: "Avenida Siempre Viva 742",
+  shipLine2: "Depto 31",
+  shipCity: "Santiago",
+  shipRegion: "Region Metropolitana",
+  shipPostalCode: "8320000",
+  shipCountry: "cl",
+  shipPhone: "+56911111111",
+};
+
+async function proposeViaApi(
+  app: ReturnType<typeof makeApp>["app"],
+  itemId = "sticker",
+): Promise<Proposal> {
   const res = await app.request("/api/proposals", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ storeUrl: STORE_URL, itemId: "sticker" }),
+    body: JSON.stringify({ storeUrl: STORE_URL, itemId }),
   });
   expect(res.status).toBe(201);
   return ((await res.json()) as { proposal: Proposal }).proposal;
@@ -89,6 +105,87 @@ describe("pages", () => {
     // The page never pretends the purchase happened: no paid tag, no paid section.
     expect(html).not.toContain("tag paid");
     expect(html).not.toContain("Pagadas");
+  });
+
+  it("asks for the shipping address, revealed by the physical goods checkbox alone", async () => {
+    const html = await (await app.request("/")).text();
+    expect(html).toContain("Direccion de despacho");
+    expect(html).toContain('name="shipName"');
+    expect(html).toContain('name="shipLine1"');
+    expect(html).toContain('name="shipCity"');
+    expect(html).toContain('name="shipPostalCode"');
+    expect(html).toContain('name="shipCountry"');
+    // Revealed with CSS only: no script, no external resource, and hidden fields still post.
+    expect(html).toContain("input.toggle:checked ~ .ship");
+    expect(html).not.toContain("<script");
+  });
+
+  it("refuses physical goods without an address and says which field is missing", async () => {
+    const res = await app.request("/profile", profileForm({ allowPhysicalGoods: "on" }));
+    expect(res.status).toBe(422);
+    const html = await res.text();
+    expect(html).toContain("SHIPPING_REQUIRED");
+    expect(html).toContain("Falta la direccion de despacho");
+    // Nothing the human typed is lost on the way back.
+    expect(html).toContain('value="25"');
+    expect(html).toContain('value="buyer@example.com"');
+  });
+
+  it("saves the address and reports only the city and the country", async () => {
+    const post = await app.request(
+      "/profile",
+      profileForm({ allowPhysicalGoods: "on", ...SHIPPING_FIELDS }),
+    );
+    expect(post.status).toBe(303);
+    const html = await (await app.request("/")).text();
+    expect(html).toContain("Despacho a Santiago, CL");
+    expect(html).not.toContain("Sin direccion de despacho guardada");
+    // The summary line says where, never the street.
+    expect(html).not.toContain("Despacho a Santiago, CL · Avenida");
+  });
+
+  it("warns when a saved mandate allows physical goods with nowhere to ship", async () => {
+    const { app: broken, storage } = makeApp();
+    storage.saveProfile(
+      buyerWebProfileSchema.parse({
+        id: "default",
+        network: "testnet",
+        stores: [STORE_URL],
+        email: "buyer@example.com",
+        mandate: {
+          maxPerTx: "25",
+          maxTotal: "100",
+          period: "week",
+          allowedSellers: ["shop.test"],
+          allowPhysicalGoods: true,
+          shippingAddressLocked: true,
+        },
+        updatedAt: new Date().toISOString(),
+      }),
+    );
+    const html = await (await broken.request("/")).text();
+    expect(html).toContain("banner warn");
+    expect(html).toContain("no hay a donde despachar");
+    expect(html).toContain("Agrega tu direccion de despacho abajo o desactiva bienes fisicos");
+    // And the physical purchase is refused early, with the same reason.
+    const res = await broken.request("/api/proposals", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ storeUrl: STORE_URL, itemId: "poster" }),
+    });
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as { error: { code: string; message: string } };
+    expect(body.error.code).toBe("SHIPPING_REQUIRED");
+    expect(body.error.message).toContain("No hay direccion de despacho guardada");
+  });
+
+  it("tells the human where a physical proposal will ship", async () => {
+    await app.request("/profile", profileForm({ allowPhysicalGoods: "on", ...SHIPPING_FIELDS }));
+    await proposeViaApi(app, "poster");
+    const html = await (await app.request("/proposals")).text();
+    expect(html).toContain("1 x Printed Poster");
+    expect(html).toContain("se despacha a Santiago, CL");
+    expect(html).not.toContain("Avenida Siempre Viva");
   });
 
   it("renders the activity page with the history", async () => {

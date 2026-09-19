@@ -3,7 +3,7 @@
  * custody rule out loud on every start so nobody forgets what this process is and is not.
  */
 import { serve } from "@hono/node-server";
-import { AgentPOSError } from "@agentpos/core";
+import { AgentPOSError, createLogger } from "@agentpos/core";
 import { createBuyerWebApp } from "./app.js";
 import { configFromEnv } from "./config.js";
 import { BuyerWebStorage } from "./storage.js";
@@ -14,6 +14,8 @@ try {
   const { app } = createBuyerWebApp({
     storage,
     network: config.network,
+    // City and country are the most a line here may say about where a parcel goes.
+    logger: createLogger({ base: { app: "buyer-web", network: config.network } }),
     ...(config.whatsapp ? { whatsapp: config.whatsapp } : {}),
     ...(config.signerToken ? { signerToken: config.signerToken } : {}),
   });

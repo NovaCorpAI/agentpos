@@ -7,17 +7,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { Keypair } from "@stellar/stellar-sdk";
-import { isAgentPOSError } from "@agentpos/core";
+import { createLogger, isAgentPOSError } from "@agentpos/core";
+import type { Logger } from "@agentpos/core";
 import { BuyerWebService } from "./service.js";
-import type { SaveProfileInput } from "./service.js";
+import type { SaveProfileInput, ShippingInput } from "./service.js";
 import { BuyerWebStorage } from "./storage.js";
+import { buyerWebProfileSchema } from "./types.js";
 import { STORE_URL, inProcessStore } from "./test-utils.js";
 
-function makeService(options: { file?: string; withStore?: boolean } = {}) {
+function makeService(options: { file?: string; withStore?: boolean; logger?: Logger } = {}) {
   const storage = new BuyerWebStorage(options.file ?? ":memory:");
   const service = new BuyerWebService({
     storage,
     ...(options.withStore === false ? {} : { fetchImpl: inProcessStore().fetchImpl }),
+    ...(options.logger ? { logger: options.logger } : {}),
   });
   return { storage, service };
 }
@@ -28,6 +31,52 @@ const baseProfile: SaveProfileInput = {
   period: "week",
   stores: [STORE_URL],
 };
+
+/** A complete address, with the country in lowercase so normalization is exercised. */
+const SHIPPING: ShippingInput = {
+  name: "Ana Perez",
+  line1: "Avenida Siempre Viva 742",
+  line2: "Depto 31",
+  city: "Santiago",
+  region: "Region Metropolitana",
+  postalCode: "8320000",
+  country: "cl",
+  phone: "+56911111111",
+};
+
+/** Mandate that allows physical goods and can actually receive a parcel. */
+const physicalProfile: SaveProfileInput = {
+  ...baseProfile,
+  allowPhysicalGoods: true,
+  email: "ana@example.com",
+  shipping: SHIPPING,
+};
+
+interface ShapedError {
+  code: string;
+  message: string;
+  hint: string;
+}
+
+function err(fn: () => unknown): ShapedError {
+  try {
+    fn();
+  } catch (e) {
+    if (isAgentPOSError(e)) return { code: e.code, message: e.message, hint: e.hint };
+    throw e;
+  }
+  throw new Error("expected an AgentPOSError");
+}
+
+async function err2(fn: () => Promise<unknown>): Promise<ShapedError> {
+  try {
+    await fn();
+  } catch (e) {
+    if (isAgentPOSError(e)) return { code: e.code, message: e.message, hint: e.hint };
+    throw e;
+  }
+  throw new Error("expected an AgentPOSError");
+}
 
 function code(fn: () => unknown): string {
   try {
@@ -54,8 +103,7 @@ describe("mandate and profile", () => {
     const { service } = makeService();
     const wallet = Keypair.random().publicKey();
     service.saveProfile({
-      ...baseProfile,
-      allowPhysicalGoods: true,
+      ...physicalProfile,
       email: "buyer@example.com",
       walletAddress: wallet,
     });
@@ -93,6 +141,164 @@ describe("mandate and profile", () => {
     const second = makeService({ file, withStore: false });
     expect(second.service.getProfile()?.mandate.maxPerTx).toBe("25");
     second.storage.close();
+  });
+});
+
+describe("shipping address (server side, authoritative)", () => {
+  it("saves a complete address with physical goods on, and normalizes the country to ISO-2", () => {
+    const { service } = makeService();
+    service.saveProfile(physicalProfile);
+    const profile = service.getProfile();
+    expect(profile?.shipping).toEqual({
+      name: "Ana Perez",
+      line1: "Avenida Siempre Viva 742",
+      line2: "Depto 31",
+      city: "Santiago",
+      region: "Region Metropolitana",
+      postalCode: "8320000",
+      country: "CL",
+      phone: "+56911111111",
+    });
+    expect(service.status().shipping).toEqual({ city: "Santiago", country: "CL" });
+    expect(service.status().physicalWithoutShipping).toBe(false);
+  });
+
+  const required: Array<{ field: keyof ShippingInput; says: string }> = [
+    { field: "name", says: "el nombre de quien recibe" },
+    { field: "line1", says: "la direccion (linea 1)" },
+    { field: "city", says: "la ciudad" },
+    { field: "postalCode", says: "el codigo postal" },
+    { field: "country", says: "el pais" },
+  ];
+  for (const { field, says } of required) {
+    it(`refuses physical goods without ${field}, naming that field and why`, () => {
+      const { service, storage } = makeService();
+      const problem = err(() =>
+        service.saveProfile({
+          ...physicalProfile,
+          shipping: { ...SHIPPING, [field]: "" },
+        }),
+      );
+      expect(problem.code).toBe("SHIPPING_REQUIRED");
+      expect(problem.message).toContain(says);
+      expect(problem.message).toContain("la tienda no puede despachar sin");
+      expect(problem.hint).toContain("Permitir bienes fisicos");
+      // Nothing half-saved: a mandate that could never ship is never stored.
+      expect(storage.getProfile()).toBeUndefined();
+    });
+  }
+
+  it("refuses physical goods with no address at all", () => {
+    const { service } = makeService();
+    const problem = err(() =>
+      service.saveProfile({ ...baseProfile, allowPhysicalGoods: true, email: "ana@example.com" }),
+    );
+    expect(problem.code).toBe("SHIPPING_REQUIRED");
+    expect(problem.message).toContain("Falta la direccion de despacho");
+  });
+
+  it("refuses physical goods without a contact email", () => {
+    const { service } = makeService();
+    const problem = err(() => service.saveProfile({ ...physicalProfile, email: "" }));
+    expect(problem.code).toBe("SHIPPING_REQUIRED");
+    expect(problem.message).toContain("correo de contacto");
+    expect(problem.message).toContain("la tienda no puede despachar sin");
+  });
+
+  it("refuses a country that is not a two-letter code", () => {
+    const { service } = makeService();
+    const problem = err(() =>
+      service.saveProfile({ ...physicalProfile, shipping: { ...SHIPPING, country: "Chile" } }),
+    );
+    expect(problem.code).toBe("SHIPPING_REQUIRED");
+    expect(problem.message).toContain("codigo ISO de dos letras");
+  });
+
+  it("saves with physical goods off and no address at all", () => {
+    const { service } = makeService();
+    service.saveProfile(baseProfile);
+    expect(service.getProfile()?.shipping).toBeUndefined();
+    expect(service.status().shipping).toBeUndefined();
+    expect(service.status().physicalWithoutShipping).toBe(false);
+  });
+
+  it("keeps an address already on file when the section comes back empty", () => {
+    const { service } = makeService();
+    service.saveProfile(physicalProfile);
+    service.saveProfile({ ...baseProfile, email: "ana@example.com", allowPhysicalGoods: false });
+    expect(service.getProfile()?.shipping?.city).toBe("Santiago");
+  });
+
+  it("names the missing field even with physical goods off, instead of dropping what was typed", () => {
+    const { service } = makeService();
+    const problem = err(() =>
+      service.saveProfile({ ...baseProfile, shipping: { city: "Santiago" } }),
+    );
+    expect(problem.code).toBe("CONFIG_INVALID");
+    expect(problem.message).toContain("el nombre de quien recibe");
+    expect(problem.hint).toContain("vacia");
+  });
+
+  it("hands the address and the contact to the store, so a physical purchase is quotable", async () => {
+    const { service } = makeService();
+    service.saveProfile(physicalProfile);
+    const proposal = await service.propose("poster", STORE_URL);
+    expect(proposal.physical).toBe(true);
+    expect(proposal.amount).toBe("12");
+    expect(proposal.cartId).toBeTruthy();
+  });
+
+  it("refuses a physical proposal early when the saved mandate has no address", async () => {
+    const { service, storage } = makeService();
+    // The broken state this fix is about: an older profile with physical goods and nowhere
+    // to ship. saveProfile cannot create it any more, so it is written directly.
+    storage.saveProfile(
+      buyerWebProfileSchema.parse({
+        id: "default",
+        network: "testnet",
+        stores: [STORE_URL],
+        email: "ana@example.com",
+        mandate: {
+          maxPerTx: "25",
+          maxTotal: "100",
+          period: "week",
+          allowedSellers: ["shop.test"],
+          allowPhysicalGoods: true,
+          shippingAddressLocked: true,
+        },
+        updatedAt: new Date().toISOString(),
+      }),
+    );
+    expect(service.status().physicalWithoutShipping).toBe(true);
+    const problem = await err2(() => service.propose("poster", STORE_URL));
+    expect(problem.code).toBe("SHIPPING_REQUIRED");
+    expect(problem.message).toContain("No hay direccion de despacho guardada");
+    expect(problem.hint).toContain("Permitir bienes fisicos");
+    // Refused before the cart existed: nothing to approve, nothing to fail at payment time.
+    expect(service.proposalHistory()).toHaveLength(0);
+    // A digital item on the same broken profile still works.
+    const ok = await service.propose("sticker", STORE_URL);
+    expect(ok.physical).toBe(false);
+  });
+
+  it("never writes a full address to a log line or to the activity history", async () => {
+    const lines: string[] = [];
+    const { service, storage } = makeService({
+      logger: createLogger({ sink: (line) => lines.push(line) }),
+    });
+    service.saveProfile(physicalProfile);
+    await service.propose("poster", STORE_URL);
+    const logged = lines.join("\n");
+    expect(logged).toContain("buyer_web.profile_saved");
+    expect(logged).toContain("Santiago");
+    expect(logged).not.toContain("Avenida Siempre Viva");
+    expect(logged).not.toContain("Depto 31");
+    expect(logged).not.toContain("8320000");
+    expect(logged).not.toContain("+56911111111");
+    const history = JSON.stringify(storage.listActivity());
+    expect(history).not.toContain("Avenida Siempre Viva");
+    expect(history).not.toContain("8320000");
+    expect(history).toContain("shippingOnFile");
   });
 });
 

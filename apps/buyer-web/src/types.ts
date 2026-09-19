@@ -7,6 +7,7 @@
  * own machine (agentpos-buyer CLI or a future signing bridge).
  */
 import { z } from "zod";
+import { addressSchema } from "@agentpos/core";
 import { mandateSchema } from "@agentpos/mcp-buyer";
 
 /** Stellar PUBLIC key: starts with G. A secret starts with S and must never reach storage. */
@@ -18,6 +19,12 @@ export const buyerWebProfileSchema = z.object({
   walletAddress: z.string().regex(STELLAR_PUBLIC_KEY_RE).optional(),
   /** Contact email the agent passes to stores as the buyer contact. */
   email: z.email().optional(),
+  /**
+   * Where physical orders are shipped. Same shape the CLI profile stores, so the address
+   * travels to the store through the existing mcp-buyer profile path. Pages and logs only
+   * ever show its city and country: the full address stays in this record.
+   */
+  shipping: addressSchema.optional(),
   /** Store URLs the agent may search and buy from. Doubles as the mandate seller allowlist. */
   stores: z.array(z.url()).default([]),
   network: z.enum(["testnet", "mainnet"]).default("testnet"),
@@ -139,6 +146,13 @@ export interface ServiceStatus {
     period: string;
     allowPhysicalGoods: boolean;
   };
+  /** City and country of the shipping address on file. Never the full address. */
+  shipping?: { city: string; country: string };
+  /**
+   * The broken state this platform must not hide: the mandate allows physical goods but the
+   * store could never ship, because there is no address or no contact email on file.
+   */
+  physicalWithoutShipping: boolean;
   pendingProposals: number;
   approvedAwaitingSignature: number;
   /** Sum of approved proposals in the current mandate period, decimal USDC. */

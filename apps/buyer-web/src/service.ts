@@ -10,7 +10,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { AgentPOSError, addUsdc, formatUsdc, usdcFromMinor } from "@agentpos/core";
-import type { UsdcMinor } from "@agentpos/core";
+import type { Address, Logger, UsdcMinor } from "@agentpos/core";
 import { BuyerService, evaluateMandate, periodStart } from "@agentpos/mcp-buyer";
 import type { Offer, Profile } from "@agentpos/mcp-buyer";
 import type { BuyerWebStorage } from "./storage.js";
@@ -37,6 +37,18 @@ const PLACEHOLDER_ADDRESS = `G${"A".repeat(55)}`;
  */
 const NO_KEY_FILE = "buyer-web-never-has-a-key";
 
+/** The shipping address as the form sends it: every field a (possibly empty) string. */
+export interface ShippingInput {
+  name?: string;
+  line1?: string;
+  line2?: string;
+  city?: string;
+  region?: string;
+  postalCode?: string;
+  country?: string;
+  phone?: string;
+}
+
 export interface SaveProfileInput {
   /** Decimal USDC, e.g. "25" or "9.5". */
   maxPerTx: string;
@@ -46,6 +58,12 @@ export interface SaveProfileInput {
   stores?: string[];
   allowPhysicalGoods?: boolean;
   email?: string;
+  /**
+   * Where physical orders ship. Required (complete) whenever `allowPhysicalGoods` is on:
+   * a store refuses a physical cart without it, and the human must learn that here and not
+   * at payment time. Omitted or all-blank keeps whatever address was already on file.
+   */
+  shipping?: ShippingInput;
   /** Public wallet address (G...). A secret (S...) is refused loudly. */
   walletAddress?: string;
 }
@@ -56,6 +74,47 @@ export interface BuyerWebServiceDeps {
   /** Tests inject the in-process store; production uses global fetch. */
   fetchImpl?: typeof globalThis.fetch;
   now?: () => Date;
+  /** Structured event log. Nothing written here may carry a full postal address. */
+  logger?: Logger;
+}
+
+/**
+ * The address fields a store cannot ship without, in form order, each with the reason it is
+ * needed. The reason is shown to the human verbatim, so it says what the store cannot do.
+ */
+const REQUIRED_SHIPPING_FIELDS = [
+  {
+    key: "name",
+    what: "el nombre de quien recibe",
+    why: "saber a nombre de quien va el paquete",
+  },
+  { key: "line1", what: "la direccion (linea 1)", why: "una calle y un numero" },
+  { key: "city", what: "la ciudad", why: "la ciudad de destino" },
+  { key: "postalCode", what: "el codigo postal", why: "el codigo postal" },
+  { key: "country", what: "el pais", why: "el pais de destino" },
+] as const;
+
+/** The two ways out, spelled the same everywhere the human meets this refusal. */
+const HINT_PHYSICAL_ON =
+  "Completa la direccion de despacho en el mandato, o desactiva 'Permitir bienes fisicos' si solo compras cosas digitales.";
+const HINT_PHYSICAL_OFF =
+  "Completa el campo que falta o deja toda la direccion de despacho vacia: con bienes fisicos desactivados no hace falta.";
+
+/** Trimmed form values, country normalized to uppercase ISO-2 as stores expect it. */
+type TrimmedShipping = Record<keyof ShippingInput, string>;
+
+function trimShipping(input: ShippingInput | undefined): TrimmedShipping {
+  const t = (v: string | undefined) => (v ?? "").trim();
+  return {
+    name: t(input?.name),
+    line1: t(input?.line1),
+    line2: t(input?.line2),
+    city: t(input?.city),
+    region: t(input?.region),
+    postalCode: t(input?.postalCode),
+    country: t(input?.country).toUpperCase(),
+    phone: t(input?.phone),
+  };
 }
 
 export class BuyerWebService {
@@ -63,6 +122,7 @@ export class BuyerWebService {
   private readonly network: "testnet" | "mainnet";
   private readonly fetchImpl: typeof globalThis.fetch | undefined;
   private readonly now: () => Date;
+  private readonly logger: Logger | undefined;
   /** Last set of proposal ids handed to the signer, to log queue deliveries without spamming. */
   private lastQueueKey = "";
 
@@ -71,6 +131,7 @@ export class BuyerWebService {
     this.network = deps.network ?? "testnet";
     this.fetchImpl = deps.fetchImpl;
     this.now = deps.now ?? (() => new Date());
+    this.logger = deps.logger;
   }
 
   // --- profile / mandate -----------------------------------------------------
@@ -97,6 +158,22 @@ export class BuyerWebService {
         });
       }
     }
+    const allowPhysicalGoods = input.allowPhysicalGoods ?? false;
+    const email = input.email?.trim() ?? "";
+    // Authoritative: the browser hides the section, the server decides. A mandate that allows
+    // physical goods without a usable address is exactly the state that fails at payment.
+    const shipping = this.resolveShipping(
+      input.shipping,
+      allowPhysicalGoods,
+      this.storage.getProfile()?.shipping,
+    );
+    if (allowPhysicalGoods && email.length === 0) {
+      throw new AgentPOSError(
+        "SHIPPING_REQUIRED",
+        "Falta tu correo de contacto: la tienda no puede despachar sin un correo donde avisarte de la orden.",
+        { hint: HINT_PHYSICAL_ON },
+      );
+    }
     const parsed = buyerWebProfileSchema.safeParse({
       id: "default",
       network: this.network,
@@ -107,10 +184,11 @@ export class BuyerWebService {
         period: input.period ?? "day",
         // The store list IS the seller allowlist; an empty list means any store.
         allowedSellers: hosts.length > 0 ? hosts : "any",
-        allowPhysicalGoods: input.allowPhysicalGoods ?? false,
+        allowPhysicalGoods,
         shippingAddressLocked: true,
       },
-      ...(input.email?.trim() ? { email: input.email.trim() } : {}),
+      ...(email ? { email } : {}),
+      ...(shipping ? { shipping } : {}),
       ...(wallet ? { walletAddress: wallet } : {}),
       updatedAt: this.now().toISOString(),
     });
@@ -134,9 +212,16 @@ export class BuyerWebService {
         period: parsed.data.mandate.period,
         stores: parsed.data.stores,
         walletLinked: parsed.data.walletAddress !== undefined,
+        // Presence only: the history a buyer shares must not carry their home address.
+        shippingOnFile: parsed.data.shipping !== undefined,
       },
       this.now().toISOString(),
     );
+    this.logger?.info("buyer_web.profile_saved", {
+      allowPhysicalGoods: parsed.data.mandate.allowPhysicalGoods,
+      walletLinked: parsed.data.walletAddress !== undefined,
+      ...this.shippingLogFields(parsed.data.shipping),
+    });
     return parsed.data;
   }
 
@@ -170,6 +255,14 @@ export class BuyerWebService {
     const buyer = this.buyerFor(profile);
     const client = buyer.site(storeUrl);
     const info = await client.info();
+    // A physical item the store could never ship is refused BEFORE the cart exists, so the
+    // human reads why here instead of watching the payment fail later. The extra lookup only
+    // happens when the profile is not ready to receive a parcel.
+    const gap = this.shippingGap(profile);
+    if (gap) {
+      const item = await client.item(itemId);
+      if (item.physical) throw gap;
+    }
     const cart = await buyer.createCart(storeUrl, [{ itemId, quantity }]);
     const amount = usdcFromMinor(cart.quote.totalMinor);
     const hasPhysical = cart.quote.lines.some((l) => l.physical);
@@ -218,6 +311,13 @@ export class BuyerWebService {
       },
       proposal.createdAt,
     );
+    this.logger?.info("buyer_web.proposal_created", {
+      proposalId: proposal.id,
+      store: proposal.storeUrl,
+      amount: proposal.amount,
+      physical: proposal.physical,
+      ...(proposal.physical ? this.shippingLogFields(profile.shipping) : {}),
+    });
     return proposal;
   }
 
@@ -427,6 +527,10 @@ export class BuyerWebService {
             },
           }
         : {}),
+      ...(profile?.shipping
+        ? { shipping: { city: profile.shipping.city, country: profile.shipping.country } }
+        : {}),
+      physicalWithoutShipping: profile !== undefined && this.shippingGap(profile) !== undefined,
       pendingProposals: pending,
       approvedAwaitingSignature: approved,
       approvedInPeriod: profile ? formatUsdc(this.approvedInPeriod(profile)) : "0",
@@ -438,6 +542,95 @@ export class BuyerWebService {
   }
 
   // --- internals -------------------------------------------------------------
+
+  // --- shipping --------------------------------------------------------------
+
+  /**
+   * Validates the shipping section the way the store will: complete or absent, never half.
+   * Returns the address to persist, which is the previous one when the form sends nothing
+   * (the section is collapsed while physical goods are off, and a saved address survives).
+   */
+  private resolveShipping(
+    input: ShippingInput | undefined,
+    allowPhysicalGoods: boolean,
+    previous: Address | undefined,
+  ): Address | undefined {
+    const t = trimShipping(input);
+    const typedSomething = Object.values(t).some((v) => v.length > 0);
+    if (!typedSomething) {
+      if (previous) return previous;
+      if (allowPhysicalGoods) {
+        throw new AgentPOSError(
+          "SHIPPING_REQUIRED",
+          "Falta la direccion de despacho: la tienda no puede despachar sin una direccion a donde enviar el paquete.",
+          {
+            hint: HINT_PHYSICAL_ON,
+            details: { missing: REQUIRED_SHIPPING_FIELDS.map((f) => f.key) },
+          },
+        );
+      }
+      return undefined;
+    }
+    const missing = REQUIRED_SHIPPING_FIELDS.filter((f) => t[f.key].length === 0);
+    const first = missing.at(0);
+    if (first) {
+      throw new AgentPOSError(
+        allowPhysicalGoods ? "SHIPPING_REQUIRED" : "CONFIG_INVALID",
+        `Falta ${first.what}: la tienda no puede despachar sin ${first.why}.`,
+        {
+          hint: allowPhysicalGoods ? HINT_PHYSICAL_ON : HINT_PHYSICAL_OFF,
+          details: { missing: missing.map((f) => f.key) },
+        },
+      );
+    }
+    if (!/^[A-Z]{2}$/.test(t.country)) {
+      throw new AgentPOSError(
+        allowPhysicalGoods ? "SHIPPING_REQUIRED" : "CONFIG_INVALID",
+        "El pais debe ser un codigo ISO de dos letras: la tienda no puede despachar sin saber a que pais.",
+        { hint: "Por ejemplo CL para Chile, US para Estados Unidos, MX para Mexico." },
+      );
+    }
+    return {
+      name: t.name,
+      line1: t.line1,
+      city: t.city,
+      postalCode: t.postalCode,
+      country: t.country,
+      ...(t.line2 ? { line2: t.line2 } : {}),
+      ...(t.region ? { region: t.region } : {}),
+      ...(t.phone ? { phone: t.phone } : {}),
+    };
+  }
+
+  /**
+   * Why a PHYSICAL purchase cannot go through with this profile, or undefined when it can.
+   * Only the broken state answers: a mandate that allows physical goods with nowhere to ship.
+   */
+  private shippingGap(profile: BuyerWebProfile): AgentPOSError | undefined {
+    if (!profile.mandate.allowPhysicalGoods) return undefined;
+    if (!profile.shipping) {
+      return new AgentPOSError(
+        "SHIPPING_REQUIRED",
+        "No hay direccion de despacho guardada: la tienda no puede despachar sin una direccion a donde enviar el paquete.",
+        { hint: HINT_PHYSICAL_ON },
+      );
+    }
+    if (!profile.email) {
+      return new AgentPOSError(
+        "SHIPPING_REQUIRED",
+        "Falta tu correo de contacto: la tienda no puede despachar sin un correo donde avisarte de la orden.",
+        { hint: HINT_PHYSICAL_ON },
+      );
+    }
+    return undefined;
+  }
+
+  /** City and country only: a log line must never carry someone's street address. */
+  private shippingLogFields(shipping: Address | undefined): Record<string, unknown> {
+    return shipping
+      ? { shippingCity: shipping.city, shippingCountry: shipping.country }
+      : { shippingOnFile: false };
+  }
 
   private requireProfile(): BuyerWebProfile {
     const profile = this.storage.getProfile();
@@ -526,7 +719,12 @@ export class BuyerWebService {
       mandate: p.mandate,
       sites: p.stores,
       createdAt: p.updatedAt,
-      ...(p.email ? { buyer: { email: p.email } } : {}),
+      // Contact and address travel to the store through the mcp-buyer profile, exactly as
+      // they do for the CLI: createCart reads them when the mandate locks the address.
+      ...(p.email
+        ? { buyer: { email: p.email, ...(p.shipping ? { name: p.shipping.name } : {}) } }
+        : {}),
+      ...(p.shipping ? { shipping: p.shipping } : {}),
     };
     return new BuyerService({
       profile,

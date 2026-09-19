@@ -4,7 +4,7 @@
  * searchOffers / propose / approve / reject / status; the web pages do exactly the same.
  */
 export { BuyerWebService } from "./service.js";
-export type { BuyerWebServiceDeps, SaveProfileInput } from "./service.js";
+export type { BuyerWebServiceDeps, SaveProfileInput, ShippingInput } from "./service.js";
 export { BuyerWebStorage } from "./storage.js";
 export { createBuyerWebApp } from "./app.js";
 export type { BuyerWebApp, BuyerWebAppDeps } from "./app.js";

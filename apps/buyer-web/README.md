@@ -9,8 +9,8 @@ framework, zero CDN assets:
 
 | Page         | What it does                                                                                                                                                                                                    |
 | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/`          | Home: mandate state (limits, period, approved vs available with a budget bar), an offer search (`?q=`) that can turn a result into a proposal, the mandate editor, and the channel status (WhatsApp, signing bridge). |
-| `/proposals` | Proposal cards by state: pendiente (Aprobar / Rechazar), aprobada **esperando firma** (with the exact payment instructions and any failed-attempt reason), pagada (transaction link + order id).                  |
+| `/`          | Home: mandate state (limits, period, approved vs available with a budget bar, shipping city and country), an offer search (`?q=`) that can turn a result into a proposal, the mandate editor with its shipping section, and the channel status (WhatsApp, signing bridge). |
+| `/proposals` | Proposal cards by state: pendiente (Aprobar / Rechazar), aprobada **esperando firma** (with the exact payment instructions and any failed-attempt reason), pagada (transaction link + order id). A physical proposal says which city and country it ships to. |
 | `/activity`  | Proposal history plus the append-only activity log as a readable timeline.                                                                                                                                       |
 
 ## The custody rule, plainly
@@ -36,10 +36,28 @@ Mandate validation reuses `mandateSchema` from `@agentpos/mcp-buyer` verbatim, a
 bothered: a proposal that could never be paid is refused with a typed error
 (`MANDATE_EXCEEDED`, `SELLER_UNVERIFIED`, ...), not queued.
 
+### Shipping, when physical goods are allowed
+
+A store refuses a physical cart without an address and a contact email (`SHIPPING_REQUIRED`),
+so `saveProfile()` refuses to store that combination in the first place. With
+`allowPhysicalGoods: true`, `SaveProfileInput.shipping` must be complete (`name`, `line1`,
+`city`, `postalCode`, `country` as ISO-2, plus `line2` / `region` / `phone` if useful) and
+`email` must be set; each missing field gets its own typed error naming it. With the flag off
+the address is optional, and an address already on file survives a save that omits it. The
+browser only hides the section (CSS, no script): the server is the authority.
+
+The address is persisted in the buyer-web profile and handed to `BuyerService` as the
+mcp-buyer `Profile.shipping` / `Profile.buyer`, the same path the CLI uses, so `createCart()`
+sends it to the store with the mandate's locked-address rule intact. Pages, the activity log
+and log lines only ever carry its **city and country**. A profile saved before this rule
+existed (physical goods on, no address) is reported by `status().physicalWithoutShipping`, is
+shown as a warning banner on `/`, and makes physical proposals fail immediately with
+`SHIPPING_REQUIRED` instead of at payment time.
+
 ## Storage
 
-`node:sqlite` (no native dependencies) behind `BuyerWebStorage`: `profiles` (mandate +
-public wallet address), `proposals` (pending / approved / rejected / expired) and
+`node:sqlite` (no native dependencies) behind `BuyerWebStorage`: `profiles` (mandate,
+shipping address, public wallet address), `proposals` (pending / approved / rejected / expired) and
 `activity`, which is append-only by construction: the class exposes insert and select for it
 and nothing else.
 

@@ -150,6 +150,15 @@ pnpm --filter @agentpos/buyer-web dev     # http://localhost:8788
 There is deliberately **no** environment slot for a wallet key or passphrase in this app. Pasting
 a secret (`S...`) into the wallet field is refused with `SECRET_IN_CONFIG`.
 
+Ticking "allow physical goods" in the mandate reveals the shipping section, and the server
+requires it in full: recipient name, address line 1, city, postal code, country (two-letter ISO)
+and your contact email. Any of them missing and the save is refused with `SHIPPING_REQUIRED`
+naming the field, because the store cannot ship without it. With physical goods off the address
+is optional and a saved one is kept. Pages show only the city and country; the full address
+travels to the store you buy from and never reaches the activity history or a log line. An older
+profile that allows physical goods with no address gets a warning banner on the home page, and
+its physical proposals are refused up front instead of failing at payment time.
+
 ### WhatsApp
 
 The same five operations over WhatsApp: search, propose, approve, reject, status. Routes mount

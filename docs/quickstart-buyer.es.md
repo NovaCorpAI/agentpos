@@ -154,6 +154,16 @@ pnpm --filter @agentpos/buyer-web dev     # http://localhost:8788
 En esta aplicación no hay, a propósito, ninguna variable para una llave de wallet ni para una
 frase de paso. Pegar un secreto (`S...`) en el campo de wallet se rechaza con `SECRET_IN_CONFIG`.
 
+Si marcas "Permitir bienes físicos" en el mandato, el editor abre la sección "Dirección de
+despacho" y el servidor la exige completa: nombre de quien recibe, dirección (línea 1), ciudad,
+código postal, país (ISO de dos letras) y tu correo de contacto. Falta cualquiera de esos campos
+y el guardado se rechaza con `SHIPPING_REQUIRED` diciendo cuál falta, porque la tienda no puede
+despachar sin eso. Con los bienes físicos desactivados la dirección es opcional y, si ya estaba
+guardada, se conserva. En las páginas solo se muestran la ciudad y el país; la dirección completa
+viaja únicamente a la tienda donde compras y nunca aparece en el historial ni en los registros.
+Un perfil antiguo que permita bienes físicos sin dirección muestra un aviso en el inicio y sus
+propuestas físicas se rechazan de inmediato, en vez de fallar al momento de pagar.
+
 ### WhatsApp
 
 Las mismas cinco operaciones por WhatsApp: buscar, proponer, aprobar, rechazar, estado. Las rutas
