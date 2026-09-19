@@ -33,6 +33,9 @@ services:
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
+    environment:
+      # Bcrypt hash for the buyer space gate (see the agente.agentposhq.com block).
+      BUYER_WEB_BASIC_HASH: ${BUYER_WEB_BASIC_HASH:-}
     ports:
       - "80:80"
       - "443:443"
