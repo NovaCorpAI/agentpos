@@ -24,21 +24,10 @@ demo.agentposhq.com {
 	encode gzip
 }
 
-# The buyer space (private surface: the owner's mandate, proposals and activity). It can raise
-# spending limits and approve payments, so it is gated here until buyer-web has a login of its
-# own: HTTP basic auth with the hash in BUYER_WEB_BASIC_HASH (server env, never in the repo).
-# Twilio cannot send basic credentials, so the WhatsApp webhook is exempt: it authenticates
-# every request itself by verifying Twilio's signature and answers 401 otherwise.
+# The buyer space (private surface: the owner's mandate, proposals and activity). It has its own
+# login now (owner account, server sessions, CSRF, re-auth to approve), so no gate here. The
+# WhatsApp webhooks authenticate themselves by verifying the provider signature.
 agente.agentposhq.com {
-	@webhooks path /whatsapp/*
-	handle @webhooks {
-		reverse_proxy buyer-web:8788
-	}
-	handle {
-		basic_auth {
-			anael {env.BUYER_WEB_BASIC_HASH}
-		}
-		reverse_proxy buyer-web:8788
-	}
+	reverse_proxy buyer-web:8788
 	encode gzip
 }
