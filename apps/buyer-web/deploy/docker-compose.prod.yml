@@ -1,0 +1,63 @@
+# The owner's buyer space (https://agente.agentposhq.com), so the WhatsApp bot has a public
+# webhook Twilio can reach and the owner has the web UI.
+#
+# From the monorepo root on the server:
+#   docker network create edge 2>/dev/null; \
+#   docker compose -f apps/buyer-web/deploy/docker-compose.prod.yml --env-file /root/.agentpos/buyer-web.env up -d --build
+#
+# The env file carries the secrets (WhatsApp credentials, signer token). The container is never
+# published to the host: the single Caddy from the facilitator deploy fronts it over the shared
+# external `edge` network and terminates TLS.
+#
+# There is deliberately NO wallet secret, RPC URL, facilitator URL or checkout asset here:
+# apps/buyer-web/src/config.ts reads none of them because this process never pays. It quotes
+# against the store over plain HTTP and queues approvals; the payment happens on the machine
+# that holds the key (`agentpos-buyer watch`, which polls /api/signer/queue).
+services:
+  buyer-web:
+    build:
+      context: ../../..
+      dockerfile: apps/buyer-web/deploy/Dockerfile
+    image: agentpos-buyer-web:prod
+    restart: unless-stopped
+    environment:
+      # Pinned, not operator-tunable: the Dockerfile EXPOSEs it and the Caddy block proxies to it.
+      BUYER_WEB_PORT: "8788"
+      # SQLite file inside the mounted volume below.
+      BUYER_WEB_DB: /data/buyer-web.sqlite
+      # Keeps anything that resolves the AgentPOS home (profiles, keys) inside the volume
+      # instead of the container's home directory. No key is ever written here.
+      AGENTPOS_HOME: /data
+      # testnet | mainnet. Stated explicitly on purpose (guardrail 2: mainnet is a deliberate
+      # decision, never a default that slipped in).
+      AGENTPOS_NETWORK: ${AGENTPOS_NETWORK:?}
+      # Signing bridge (/api/signer/*). Min 24 chars; without it the routes are not mounted and
+      # `agentpos-buyer watch` cannot pay anything the owner approved. Not a wallet secret.
+      SIGNER_TOKEN: ${SIGNER_TOKEN:?}
+      # Owner allowlist, comma-separated E.164. Required whenever a WhatsApp provider is set.
+      WHATSAPP_ALLOWED_NUMBERS: ${WHATSAPP_ALLOWED_NUMBERS:?}
+      # Twilio WhatsApp (POST /whatsapp/twilio). All four or none; this deployment exists so
+      # Twilio can reach the webhook, so all four are required here.
+      # TWILIO_WEBHOOK_URL must be the exact public URL Twilio posts to
+      # (https://agente.agentposhq.com/whatsapp/twilio): X-Twilio-Signature is computed over it.
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:?}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:?}
+      TWILIO_FROM_NUMBER: ${TWILIO_FROM_NUMBER:?}
+      TWILIO_WEBHOOK_URL: ${TWILIO_WEBHOOK_URL:?}
+      # Meta WhatsApp Cloud API (GET/POST /whatsapp/meta), optional second channel. All four or
+      # none: leave every one of them empty to keep the Meta routes unmounted.
+      META_VERIFY_TOKEN: ${META_VERIFY_TOKEN:-}
+      META_APP_SECRET: ${META_APP_SECRET:-}
+      META_ACCESS_TOKEN: ${META_ACCESS_TOKEN:-}
+      META_PHONE_NUMBER_ID: ${META_PHONE_NUMBER_ID:-}
+    volumes:
+      # The SQLite database (mandate, proposals, activity) lives here, on the host. Must be
+      # owned by uid 1000: the container runs as the non-root `node` user.
+      - /root/.agentpos/buyer-web:/data
+    expose:
+      - "8788"
+    networks: [edge]
+
+networks:
+  edge:
+    external: true
