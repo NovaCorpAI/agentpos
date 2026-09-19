@@ -219,10 +219,10 @@ describe("catalog price, physical and stock filters", () => {
 });
 
 describe("catalog paging", () => {
-  it("defaults to 20 and reports the page it served", async () => {
+  it("defaults to the full-catalog page size and reports the page it served", async () => {
     const body = await search("");
     expect(body.page).toEqual({
-      limit: 20,
+      limit: 200,
       offset: 0,
       returned: ALL_PUBLISHED,
       total: ALL_PUBLISHED,
@@ -330,7 +330,7 @@ describe("catalog filter validation", () => {
     expect((await refused("physical=yes")).hint).toContain("physical=true");
     expect((await refused("inStock=1")).hint).toContain("inStock=true");
 
-    for (const bad of ["limit=0", "limit=101", "limit=abc", "limit=1.5", "offset=-1"]) {
+    for (const bad of ["limit=0", "limit=501", "limit=abc", "limit=1.5", "offset=-1"]) {
       expect((await refused(bad)).code).toBe("CONFIG_INVALID");
     }
 

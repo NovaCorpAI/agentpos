@@ -2,10 +2,15 @@ import type { CatalogItem, CatalogItemDraft, UsdcMinor } from "@agentpos/core";
 import { AgentPOSError, MIN_PRICE_USDC, compareUsdc, usdc } from "@agentpos/core";
 import type { SiteStorage } from "./storage.js";
 
-/** Page size when the caller does not ask for one. */
-export const CATALOG_DEFAULT_LIMIT = 20;
+/**
+ * Page size when the caller does not ask for one. Deliberately large: agents written before
+ * paging existed read `/catalog` once and buy from what they get, so a small default would
+ * silently hide the rest of the catalog from them. `page.total` always tells the truth, and a
+ * caller that wants small pages asks for them.
+ */
+export const CATALOG_DEFAULT_LIMIT = 200;
 /** Hard ceiling on a page: a catalog read must stay a cheap call for the store. */
-export const CATALOG_MAX_LIMIT = 100;
+export const CATALOG_MAX_LIMIT = 500;
 /** Values kept per facet. Enough to enumerate a real option list, not enough to dump a catalog. */
 export const CATALOG_MAX_FACET_VALUES = 25;
 /** Longest free-text query accepted; the rest is truncated rather than refused. */

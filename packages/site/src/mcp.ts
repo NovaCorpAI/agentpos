@@ -14,6 +14,7 @@ import {
   formatUsdc,
 } from "@agentpos/core";
 import type { CoreConfig } from "@agentpos/core";
+import { CATALOG_DEFAULT_LIMIT, CATALOG_MAX_LIMIT } from "./catalog.js";
 import type { CatalogService } from "./catalog.js";
 import { parsePriceBound } from "./catalog.js";
 import type { CheckoutService } from "./checkout.js";
@@ -91,7 +92,7 @@ export function buildMcpServer(deps: McpDeps): McpServer {
           .describe(
             "Filter on stock as the catalog knows it; items with untracked stock count as in stock.",
           ),
-        limit: z.number().int().min(1).max(100).default(20),
+        limit: z.number().int().min(1).max(CATALOG_MAX_LIMIT).default(CATALOG_DEFAULT_LIMIT),
         offset: z.number().int().min(0).default(0),
       },
     },

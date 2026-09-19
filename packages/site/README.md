@@ -61,7 +61,7 @@ combines:
 | `minPriceUsdc` / `maxPriceUsdc` | decimal USDC, max 7 decimals | inclusive bounds, compared in minor units                        |
 | `physical`                      | `true` \| `false`            | goods that need a shipping address, or digital ones              |
 | `inStock`                       | `true` \| `false`            | stock as the catalog knows it; untracked items count as in stock |
-| `limit` / `offset`              | integers                     | page size (default 20, max 100) and its start                    |
+| `limit` / `offset`              | integers                     | page size (default 200, max 500) and its start                   |
 
 ```
 curl "https://shop.example/agentpos/catalog?attr.Passepartout=con&attr.Fondo=blanco&maxPriceUsdc=40&physical=true"
