@@ -39,14 +39,22 @@ const CSS = `
   .banner { border-radius: 10px; padding: 10px 14px; margin: 0 0 16px; font-size: 0.92rem; }
   .banner.ok { background: rgba(38,208,160,0.08); border: 1px solid rgba(38,208,160,0.3); color: #26d0a0; }
   .banner.err { background: rgba(255,130,130,0.07); border: 1px solid rgba(255,130,130,0.28); color: #ff9c9c; }
+  .banner.warn { background: rgba(217,185,108,0.07); border: 1px solid rgba(217,185,108,0.32); color: #d9b96c; }
+  .banner strong { color: inherit; }
   .custody { color: #6d7ea6; font-size: 0.85rem; border-left: 3px solid #7aa2ff; padding-left: 12px; margin: 16px 0; }
   label { display: block; color: #6d7ea6; font-size: 0.84rem; margin: 14px 0 5px; }
   input[type=text], input[type=email], select, textarea { width: 100%; background: #101a33; color: #f4f7ff; border: 1px solid rgba(120,150,220,0.22); border-radius: 8px; padding: 8px 10px; font: inherit; }
   input:focus, select:focus, textarea:focus { outline: 1px solid #7aa2ff; }
   textarea { min-height: 74px; font-family: Consolas, ui-monospace, monospace; font-size: 0.85rem; }
   .row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
-  .check { display: flex; gap: 8px; align-items: center; margin-top: 14px; color: #f4f7ff; font-size: 0.92rem; }
-  .check input { width: auto; }
+  /* The shipping section is revealed by the checkbox alone: no script, no external resource.
+     It stays in the document when hidden, so a saved address is posted back unchanged. */
+  input.toggle { width: auto; margin: 18px 8px 0 0; vertical-align: middle; }
+  label.togglelabel { display: inline; color: #f4f7ff; font-size: 0.92rem; margin: 0; }
+  .ship { display: none; margin-top: 16px; padding: 4px 16px 16px; background: #101a33; border: 1px solid rgba(120,150,220,0.15); border-radius: 10px; }
+  input.toggle:checked ~ .ship { display: block; }
+  .ship h3 { color: #f4f7ff; font-size: 0.95rem; font-weight: 600; margin: 16px 0 2px; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
   button { background: #7aa2ff; color: #0b1020; font-weight: 600; border: 0; border-radius: 8px; padding: 8px 18px; font-family: inherit; font-size: inherit; cursor: pointer; margin-top: 18px; }
   button.ghost { background: transparent; color: #9fb0d0; font-weight: 500; border: 1px solid rgba(120,150,220,0.3); }
   button.danger { background: transparent; color: #ff9c9c; font-weight: 500; border: 1px solid rgba(255,130,130,0.35); }
@@ -187,6 +195,17 @@ function proposalMeta(p: Proposal): string {
   return `<div class="meta">${esc(p.storeName)} · <span class="mono">${esc(p.storeUrl)}</span> · propuesta el ${esc(fmtWhen(p.createdAt))}</div>`;
 }
 
+/**
+ * Where a physical purchase lands, for the human to double check before approving. City and
+ * country only: the full address lives in the mandate and is never printed on a page.
+ */
+function shippingLine(p: Proposal, shipping: { city: string; country: string } | undefined): string {
+  if (!p.physical) return "";
+  return shipping
+    ? `<div class="meta">Producto fisico: se despacha a ${esc(shipping.city)}, ${esc(shipping.country)}.</div>`
+    : `<div class="fail">Producto fisico sin direccion de despacho guardada: la tienda no puede despachar. Agrega tu direccion en el mandato antes de aprobar.</div>`;
+}
+
 interface PageError {
   code: string;
   message: string;
@@ -199,6 +218,18 @@ function errBanner(error: PageError): string {
 
 // --- home: mandate state, offer search, mandate editor, channels -------------
 
+/** Every field a string, so a rejected form re-renders exactly what the human typed. */
+export interface ShippingFormValues {
+  name: string;
+  line1: string;
+  line2: string;
+  city: string;
+  region: string;
+  postalCode: string;
+  country: string;
+  phone: string;
+}
+
 export interface MandateFormValues {
   maxPerTx: string;
   maxTotal: string;
@@ -206,6 +237,7 @@ export interface MandateFormValues {
   stores: string;
   allowPhysicalGoods: boolean;
   email: string;
+  shipping: ShippingFormValues;
   walletAddress: string;
 }
 
@@ -243,6 +275,10 @@ function mandateState(status: ServiceStatus): string {
     return `<div class="card"><div class="meta">Aun no hay mandato. Guarda abajo los limites de gasto para que tu agente pueda actuar.</div></div>`;
   }
   const wallet = status.walletLinked ? "Vinculada" : "Sin vincular";
+  // City and country only: the street address never reaches a page, a log or the history.
+  const shippingLine = status.shipping
+    ? `Despacho a ${status.shipping.city}, ${status.shipping.country}`
+    : "Sin direccion de despacho guardada";
   const storesLine =
     status.stores.length > 0
       ? `${String(status.stores.length)} tienda(s) permitida(s)`
@@ -257,7 +293,8 @@ function mandateState(status: ServiceStatus): string {
       <div class="stat"><div class="k">Wallet</div><div class="v">${esc(wallet)}</div></div>
     </div>
     ${spendBar(status.approvedInPeriod, m.maxTotal, m.period)}
-    <div class="meta" style="margin-top:8px">${esc(storesLine)} · Bienes fisicos: ${m.allowPhysicalGoods ? "permitidos" : "no permitidos"} · Propuestas pendientes: ${String(status.pendingProposals)} · Esperando firma: ${String(status.approvedAwaitingSignature)}</div>
+    <div class="meta" style="margin-top:8px">${esc(storesLine)} · Bienes fisicos: ${m.allowPhysicalGoods ? "permitidos" : "no permitidos"} · ${esc(shippingLine)}</div>
+    <div class="meta">Propuestas pendientes: ${String(status.pendingProposals)} · Esperando firma: ${String(status.approvedAwaitingSignature)}</div>
   </div>`;
 }
 
@@ -354,12 +391,25 @@ export function homePage(options: {
     : options.saved
       ? `<div class="banner ok">Mandato guardado. El agente lo obedece desde la proxima accion.</div>`
       : "";
+  // The state this platform must never hide: physical goods allowed with nowhere to ship.
+  const shippingWarning = options.status.physicalWithoutShipping
+    ? `<div class="banner warn"><strong>Tu mandato permite bienes fisicos, pero no hay a donde despachar.</strong> Sin direccion de despacho y correo de contacto la tienda no puede enviar el paquete y la compra falla al pagar.<br><span class="meta">Agrega tu direccion de despacho abajo o desactiva bienes fisicos.</span></div>`
+    : "";
   const period = (value: string, label: string) =>
     `<option value="${value}"${v.period === value ? " selected" : ""}>${label}</option>`;
+  const ship = (
+    id: string,
+    name: string,
+    label: string,
+    value: string,
+    extra = "",
+  ) => `<label for="${id}">${esc(label)}</label>
+      <input type="text" id="${id}" name="${name}" value="${esc(value)}"${extra}>`;
   const body = `
   <p class="lead">Tu agente de compras: busca, propone y tu apruebas.</p>
   <p class="sub">El agente nunca puede cambiar tus limites ni pagar solo: cada compra espera tu aprobacion y se firma en tu propia maquina.</p>
   ${banner}
+  ${shippingWarning}
   ${mandateState(options.status)}
   ${offerSearchSection(options.status, options.search)}
   <h2>Mandato</h2>
@@ -383,11 +433,25 @@ export function homePage(options: {
     </div>
     <label for="stores">Tiendas permitidas (una URL por linea; vacio permite cualquier tienda)</label>
     <textarea id="stores" name="stores" placeholder="https://tienda.ejemplo">${esc(v.stores)}</textarea>
-    <div class="check">
-      <input type="checkbox" id="allowPhysicalGoods" name="allowPhysicalGoods"${v.allowPhysicalGoods ? " checked" : ""}>
-      <label for="allowPhysicalGoods" style="margin:0">Permitir bienes fisicos (cosas que se envian a una direccion)</label>
+    <input type="checkbox" class="toggle" id="allowPhysicalGoods" name="allowPhysicalGoods"${v.allowPhysicalGoods ? " checked" : ""}>
+    <label class="togglelabel" for="allowPhysicalGoods">Permitir bienes fisicos (cosas que se envian a una direccion)</label>
+    <div class="ship">
+      <h3>Direccion de despacho</h3>
+      <p class="meta" style="margin:2px 0 0">La tienda necesita esta direccion y tu correo de contacto para despachar. Se guarda aqui y viaja solo a la tienda donde compras; en esta pagina se muestran unicamente la ciudad y el pais.</p>
+      ${ship("shipName", "shipName", "Nombre de quien recibe", v.shipping.name, ' autocomplete="name"')}
+      ${ship("shipLine1", "shipLine1", "Direccion (calle y numero)", v.shipping.line1, ' autocomplete="address-line1"')}
+      ${ship("shipLine2", "shipLine2", "Departamento, oficina o referencia (opcional)", v.shipping.line2, ' autocomplete="address-line2"')}
+      <div class="row">
+        <div>${ship("shipCity", "shipCity", "Ciudad", v.shipping.city, ' autocomplete="address-level2"')}</div>
+        <div>${ship("shipRegion", "shipRegion", "Region o estado (opcional)", v.shipping.region, ' autocomplete="address-level1"')}</div>
+        <div>${ship("shipPostalCode", "shipPostalCode", "Codigo postal", v.shipping.postalCode, ' autocomplete="postal-code"')}</div>
+      </div>
+      <div class="row2">
+        <div>${ship("shipCountry", "shipCountry", "Pais (codigo de dos letras, por ejemplo CL)", v.shipping.country, ' maxlength="2" style="text-transform:uppercase" autocomplete="country"')}</div>
+        <div>${ship("shipPhone", "shipPhone", "Telefono de contacto (opcional)", v.shipping.phone, ' autocomplete="tel"')}</div>
+      </div>
     </div>
-    <label for="email">Tu correo de contacto (las tiendas envian alli las novedades de la orden)</label>
+    <label for="email">Tu correo de contacto (las tiendas envian alli las novedades de la orden; obligatorio si permites bienes fisicos)</label>
     <input type="email" id="email" name="email" value="${esc(v.email)}" placeholder="tu@ejemplo.com">
     <label for="walletAddress">Direccion publica de tu wallet (empieza con G)</label>
     <input type="text" id="walletAddress" name="walletAddress" value="${esc(v.walletAddress)}" placeholder="G...">
@@ -412,6 +476,8 @@ export function proposalsPage(options: {
   paid: Proposal[];
   stores: string[];
   network: string;
+  /** City and country on file, shown on physical proposals so the human can check it. */
+  shipping?: { city: string; country: string };
   signerConfigured: boolean;
   instructionsFor: (p: Proposal) => { checkoutUrl: string; cli: string; note: string };
   highlight?: string;
@@ -423,6 +489,7 @@ export function proposalsPage(options: {
     <div class="cardhead"><span class="amount">${esc(p.amount)} ${esc(p.asset)}</span>${statusTag(p.status)}</div>
     <div class="title">${esc(p.title)}</div>
     ${proposalMeta(p)}
+    ${shippingLine(p, options.shipping)}
     <div class="meta">Cotizacion congelada, valida hasta ${esc(fmtWhen(p.cartExpiresAt))}.</div>
     <div class="actions">
       <form method="post" action="/proposals/${esc(p.id)}/approve"><button type="submit">Aprobar</button></form>
@@ -447,6 +514,7 @@ export function proposalsPage(options: {
     <div class="cardhead"><span class="amount">${esc(p.amount)} ${esc(p.asset)}</span>${statusTag(p.status)}</div>
     <div class="title">${esc(p.title)}</div>
     ${proposalMeta(p)}
+    ${shippingLine(p, options.shipping)}
     ${failure}
     <p class="custody">${esc(signingNote)}</p>
     <div class="meta">Pago (checkout): <span class="mono">${esc(i.checkoutUrl)}</span></div>

@@ -34,6 +34,16 @@ export const sticker: CatalogItem = {
   priceUsdc: usdc("1.5"),
 };
 
+/** Something the store must actually ship: a cart with it needs an address and an email. */
+export const poster: CatalogItem = {
+  ...mug,
+  id: "poster",
+  title: "Printed Poster",
+  descriptionAgent: "A2 printed poster, shipped rolled.",
+  priceUsdc: usdc("12"),
+  physical: true,
+};
+
 /** A store plus a fetch that reaches it without a network. */
 export function inProcessStore(options: { items?: CatalogItem[] } = {}): {
   fetchImpl: typeof globalThis.fetch;
@@ -45,7 +55,7 @@ export function inProcessStore(options: { items?: CatalogItem[] } = {}): {
     platform: "generic",
   });
   const storage = new SiteStorage(":memory:");
-  for (const item of options.items ?? [mug, sticker]) storage.upsertItem(item);
+  for (const item of options.items ?? [mug, sticker, poster]) storage.upsertItem(item);
   const connector: OrderConnector = {
     platform: "generic",
     getAvailability: async (items) => items.map((i) => ({ itemId: i.itemId, available: true })),

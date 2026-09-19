@@ -8,7 +8,7 @@ import type { Context } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { z } from "zod";
 import { AgentPOSError, isAgentPOSError } from "@agentpos/core";
-import type { ErrorCode } from "@agentpos/core";
+import type { ErrorCode, Logger } from "@agentpos/core";
 import { BuyerWebService } from "./service.js";
 import type { BuyerWebStorage } from "./storage.js";
 import { activityPage, errorPage, homePage, proposalsPage } from "./pages.js";
@@ -39,6 +39,8 @@ export interface BuyerWebAppDeps {
   whatsappTransports?: { meta?: WhatsAppTransport; twilio?: WhatsAppTransport };
   /** Structured event log for the WhatsApp channel. Event codes and sender hashes only. */
   log?: WhatsAppLogger;
+  /** Structured event log for the buyer service. Never carries a full postal address. */
+  logger?: Logger;
 }
 
 export interface BuyerWebApp {
@@ -74,6 +76,7 @@ const proposeSchema = z.object({
 });
 
 function formValues(profile: BuyerWebProfile | undefined): MandateFormValues {
+  const s = profile?.shipping;
   return {
     maxPerTx: profile?.mandate.maxPerTx ?? "10",
     maxTotal: profile?.mandate.maxTotal ?? "50",
@@ -81,6 +84,16 @@ function formValues(profile: BuyerWebProfile | undefined): MandateFormValues {
     stores: (profile?.stores ?? []).join("\n"),
     allowPhysicalGoods: profile?.mandate.allowPhysicalGoods ?? false,
     email: profile?.email ?? "",
+    shipping: {
+      name: s?.name ?? "",
+      line1: s?.line1 ?? "",
+      line2: s?.line2 ?? "",
+      city: s?.city ?? "",
+      region: s?.region ?? "",
+      postalCode: s?.postalCode ?? "",
+      country: s?.country ?? "",
+      phone: s?.phone ?? "",
+    },
     walletAddress: profile?.walletAddress ?? "",
   };
 }
@@ -100,6 +113,7 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
     storage: deps.storage,
     network,
     ...(deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {}),
+    ...(deps.logger ? { logger: deps.logger } : {}),
   });
   const app = new Hono();
 
@@ -147,6 +161,16 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
         .filter(Boolean),
       allowPhysicalGoods: body.allowPhysicalGoods !== undefined,
       email: asString(body.email),
+      shipping: {
+        name: asString(body.shipName),
+        line1: asString(body.shipLine1),
+        line2: asString(body.shipLine2),
+        city: asString(body.shipCity),
+        region: asString(body.shipRegion),
+        postalCode: asString(body.shipPostalCode),
+        country: asString(body.shipCountry),
+        phone: asString(body.shipPhone),
+      },
       walletAddress: asString(body.walletAddress),
     };
     try {
@@ -176,6 +200,7 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
 
   app.get("/proposals", (c) => {
     const highlight = c.req.query("approved");
+    const shipping = service.status().shipping;
     return c.html(
       proposalsPage({
         pending: service.pendingProposals(),
@@ -183,6 +208,7 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
         paid: service.paidProposals(),
         stores: service.getProfile()?.stores ?? [],
         network,
+        ...(shipping ? { shipping } : {}),
         signerConfigured: channels.signer,
         instructionsFor: (p) => service.instructionsFor(p),
         ...(highlight ? { highlight } : {}),
