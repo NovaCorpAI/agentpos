@@ -133,9 +133,9 @@ worst an agent can do is get refused.
 ## 7. The buyer web space (optional)
 
 `@agentpos/buyer-web` is a self-hosted page where a human watches and decides what the agent
-does: mandate state with a budget bar, offer search, and proposals to approve or reject. Three
-pages behind your login: `/` (home and mandate editor), `/proposals`, `/activity`, plus
-`/login` and `/setup`.
+does: mandate state with a budget bar, offer search, and proposals to approve or reject. Four
+pages behind your login: `/` (home and mandate editor), `/proposals`, `/activity`, `/cuenta`,
+plus `/login`, `/setup` and `/recuperar`.
 
 ```bash
 pnpm --filter @agentpos/buyer-web dev     # http://localhost:8788
@@ -148,6 +148,7 @@ pnpm --filter @agentpos/buyer-web dev     # http://localhost:8788
 | `AGENTPOS_NETWORK` | `testnet` (default) or `mainnet`. |
 | `SIGNER_TOKEN` | Enables the signing bridge under `/api/signer/*`. Min 24 chars (`openssl rand -hex 24`). Without it those routes do not exist. |
 | `BUYER_WEB_OWNER_EMAIL` + `BUYER_WEB_OWNER_PASSWORD_HASH` | Owner account for an unattended deploy. Both or neither, and always a scrypt hash, never the password. |
+| `BUYER_WEB_PUBLIC_URL` | Read only by `recover-cli.js`, to print the recovery URL with the right host. A command-line argument overrides it. |
 
 There is deliberately **no** environment slot for a wallet key or passphrase in this app. Pasting
 a secret (`S...`) into the wallet field is refused with `SECRET_IN_CONFIG`.
@@ -171,8 +172,11 @@ up: until the account exists, whoever gets there first becomes the owner.
 - **Approving asks for the password again** (above `requireConfirmAboveUsdc`, and for any
   amount when you have not set that threshold), with the amount and the store written next to
   the field. The rest of the session stays signed in.
-- `/activity` has an **Accesos** panel: logins, failed attempts and approvals, with the date, a
-  short hash of the IP and the browser family. It answers "has anyone else been here?".
+- **Changing your password** is on `/cuenta`: current password, then the new one twice. Every
+  other session closes; the one you are typing in stays open.
+- `/activity` has an **Accesos** panel: logins, failed attempts, approvals and every recovery
+  step, with the date, a short hash of the IP and the browser family. It answers "has anyone
+  else been here?".
 - The WhatsApp routes and `/api/signer/*` are unchanged: they authenticate themselves on every
   request (the provider signature, the signer bearer token), so Twilio and your watcher keep
   working exactly as before.
@@ -186,8 +190,54 @@ pnpm --filter @agentpos/buyer-web hash-password    # type the password, copy the
 
 and set it as `BUYER_WEB_OWNER_PASSWORD_HASH` together with `BUYER_WEB_OWNER_EMAIL`. The pair is
 authoritative on every start: it creates the account when there is none and replaces it, closing
-every open session, when it changes. That is also how you get back in if you lose the password.
-A plaintext `BUYER_WEB_OWNER_PASSWORD` is refused with `SECRET_IN_CONFIG`.
+every open session, when it changes. Use it to replace the account outright, for instance to
+move the space to a different email; to get back in after losing the password, use one of the
+three paths below instead. A plaintext `BUYER_WEB_OWNER_PASSWORD` is refused with
+`SECRET_IN_CONFIG`.
+
+### If you lose the password
+
+**There is no "email me a reset link", on purpose.** You are running this on your own machine,
+and your machine has no mail server. A button that promises an email nobody can send is worse
+than not having one, so AgentPOS ships no SMTP client and asks for no mail credentials. Three
+things that do work, in the order the page offers them:
+
+**1. Recovery codes. Set these up now, on `/cuenta`.** "Generar codigos nuevos" gives you ten
+codes like `ABCD-EFGH-JKLM`, shown **once**, on a page that tells you so. Print them or keep
+them where you keep the things you cannot lose. They need no email, no phone and no server
+access. Until you have a set, a banner on every page offers to make one (you can put it away
+for the session; it comes back next time).
+
+- Each code works exactly once. Using one at `/recuperar`, with your email, lets you set a new
+  password and nothing else: that short session cannot see your mandate, your proposals or
+  approve a payment.
+- Finishing a recovery **closes every session**, including any that were not yours. That is
+  the point: if you are recovering because something felt wrong, this is what throws them out.
+- Generating a new set retires the old one instantly. Do that if you are unsure who has seen
+  them.
+
+**2. A code over WhatsApp, if you configured the channel.** `/recuperar` then also offers
+"Enviar codigo a mi WhatsApp": six digits, valid ten minutes, three attempts, at most one send
+per minute, delivered through the same provider the bot already uses and **only** to a number
+in `WHATSAPP_ALLOWED_NUMBERS`. The page always answers "si la cuenta existe, enviamos el
+codigo", whether or not that email has an account here: nothing on this surface tells a
+stranger who exists.
+
+**3. A one-time link, from the machine itself.** For whoever can already run commands on the
+server:
+
+```bash
+node dist/auth/recover-cli.js https://your-buyer-web.example
+pnpm --filter @agentpos/buyer-web recover-url      # from a checkout, for a local install
+```
+
+It prints a URL that works once, expires in 15 minutes, and is stored only as a hash. Its own
+output says what it is: a link that bypasses the password. Issuing it and using it both land
+on the `Accesos` panel, with the time and the origin, so a recovery you did not do is
+something you can see.
+
+A recovery does not touch your mandate, your proposals, your history or your wallet. It
+cannot: the wallet key was never here.
 
 Ticking "allow physical goods" in the mandate reveals the shipping section, and the server
 requires it in full: recipient name, address line 1, city, postal code, country (two-letter ISO)

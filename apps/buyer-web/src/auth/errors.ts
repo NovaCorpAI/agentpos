@@ -16,7 +16,7 @@ export const AUTH_ERROR_CODES = [
   "CSRF_INVALID",
   /** The password was not given again where approving requires it. */
   "REAUTH_REQUIRED",
-  /** The password given again on the approval form was wrong. */
+  /** The password given again (approving a payment, or changing the password) was wrong. */
   "REAUTH_FAILED",
   /** The owner account does not exist yet: go through /setup. */
   "SETUP_REQUIRED",
@@ -24,6 +24,16 @@ export const AUTH_ERROR_CODES = [
   "SETUP_DONE",
   /** The email or the password does not meet the rules at setup time. */
   "ACCOUNT_INVALID",
+  /**
+   * The recovery code, the WhatsApp code or the operator token did not check out (wrong,
+   * already used, or expired). Deliberately one code for all of them, and it says nothing
+   * about whether the email matched.
+   */
+  "RECOVERY_INVALID",
+  /** The set-a-new-password step was reached without a live recovery session. */
+  "RECOVERY_REQUIRED",
+  /** A recovery session tried to reach anything other than the set-a-new-password page. */
+  "RECOVERY_SCOPE_LIMITED",
 ] as const;
 
 export type AuthErrorCode = (typeof AUTH_ERROR_CODES)[number];
@@ -38,6 +48,9 @@ const STATUS: Record<AuthErrorCode, number> = {
   SETUP_REQUIRED: 403,
   SETUP_DONE: 404,
   ACCOUNT_INVALID: 400,
+  RECOVERY_INVALID: 401,
+  RECOVERY_REQUIRED: 403,
+  RECOVERY_SCOPE_LIMITED: 403,
 };
 
 export class AuthError extends Error {

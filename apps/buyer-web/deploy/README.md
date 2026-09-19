@@ -15,6 +15,10 @@ temporary HTTP basic-auth gate in the Caddyfile is no longer needed and **must b
 when this version goes up, see step 4. The owner account is created once, either in the
 browser at `/setup` or from the environment (step 2b).
 
+**After the first login of this version, do step 2c: generate the recovery codes.** A
+banner on every page will ask until you do. It takes ten seconds and it is the difference
+between "I forgot my password" and "I need to ssh into the box".
+
 ## 0. DNS (once)
 
 In Cloudflare, add an `A` record `agente` -> `YOUR_SERVER_IP`, **DNS-only (grey cloud)**. Proxied
@@ -79,8 +83,10 @@ redirects to `https://agente.agentposhq.com/setup`, which asks for an email and 
 `/setup` answers 404 from then on. Do this the same minute the host goes up: until the
 account exists, whoever opens `/setup` first becomes the owner.
 
-**From the environment (for an unattended deploy, or to replace a lost password).** Generate
-the hash with the app's own code, so the password never reaches the env file:
+**From the environment (for an unattended deploy, or to replace the account entirely).**
+This is no longer the way to recover a lost password, see step 5b; it is the way to swap
+the account for a different email or hash. Generate the hash with the app's own code, so
+the password never reaches the env file:
 
 ```sh
 cd /opt/agentpos
@@ -102,6 +108,20 @@ The pair is applied on every start: it creates the account when there is none an
 it, closing every open session, when it changes. A malformed hash (or a plaintext
 `BUYER_WEB_OWNER_PASSWORD`) stops the container with a typed `CONFIG_INVALID` /
 `SECRET_IN_CONFIG` instead of starting an unprotected space.
+
+## 2c. The recovery codes (do this at the first login)
+
+Log in, open `/cuenta`, press **Generar codigos nuevos**. Ten codes appear, once, on a page
+that says so. Print them or put them where you keep the things you cannot lose; only their
+scrypt hashes stay on the server, so there is no second chance to read them.
+
+Each one works once, at `/recuperar`, with the owner's email. Finishing a recovery closes
+every session, so anyone who was inside is out. Generating a new set retires the old one
+immediately, which is what to do if you are unsure who has seen them.
+
+If the WhatsApp channel is configured (it is here, Twilio), `/recuperar` also offers a
+six-digit code sent to `WHATSAPP_ALLOWED_NUMBERS`: valid ten minutes, three attempts, one
+send per minute, and never to any other number.
 
 ## 3. Build and start
 
@@ -171,6 +191,10 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST \
 
 # Signing bridge without a token: 401 with a typed error body.
 curl -s -o /dev/null -w '%{http_code}\n' https://agente.agentposhq.com/api/signer/queue
+
+# The recovery form is open (200) and says nothing about which accounts exist: a real
+# email and an invented one get byte-for-byte the same 401 page.
+curl -s -o /dev/null -w '%{http_code}\n' https://agente.agentposhq.com/recuperar
 ```
 
 Then point the Twilio sandbox inbound webhook at
@@ -184,6 +208,45 @@ export AGENTPOS_SIGNER_TOKEN=<same value as SIGNER_TOKEN>
 export AGENTPOS_BUYER_PASSPHRASE=<keyfile passphrase>
 agentpos-buyer watch https://agente.agentposhq.com
 ```
+
+## 5b. Locked out: the documented way back in
+
+**There is no email reset, and there never will be.** This box has no mail server, and a
+reset button that silently needs SMTP is a reset button that fails on the one day it
+matters. Use one of these three, in this order.
+
+**1. A recovery code (step 2c).** Open `https://agente.agentposhq.com/recuperar`, type the
+owner's email and one of the ten codes, then choose a new password. Every session closes,
+including any that are not yours. Nothing on the server has to be touched.
+
+**2. A code over WhatsApp.** On the same page, "Enviar codigo a mi WhatsApp". The six
+digits go to `WHATSAPP_ALLOWED_NUMBERS` and nowhere else, are good for ten minutes and
+survive three wrong guesses. The page always says "si la cuenta existe, enviamos el
+codigo", whether the email matched or not: that is on purpose.
+
+**3. The operator link, from this box.** This replaces the old "edit the env vars and
+restart" instructions. It does not touch the account, does not need a rebuild and does not
+close anyone's session until the new password is set:
+
+```sh
+cd /opt/agentpos
+docker compose -f apps/buyer-web/deploy/docker-compose.prod.yml \
+  --env-file /root/.agentpos/buyer-web.env exec \
+  buyer-web node dist/auth/recover-cli.js https://agente.agentposhq.com
+```
+
+It prints one URL, good for 15 minutes and for exactly one use. Only its scrypt hash is
+stored, so if the URL is lost, run the command again and the old one stops working. Both
+issuing it and using it appear on the `Accesos` panel of `/activity`: this link bypasses
+the password, so it is meant to leave a mark. Open it, confirm, set a new password.
+
+Note `exec` (the running container, which holds `/data`), not `run --rm`: a throwaway
+container shares the same bind mount, so either works, but `exec` cannot be run against a
+stopped service by mistake.
+
+`BUYER_WEB_OWNER_EMAIL` + `BUYER_WEB_OWNER_PASSWORD_HASH` (step 2b) remain documented for
+what they are good at: replacing the account wholesale, for instance moving the space to a
+different owner email. They are not the recovery path any more.
 
 ## Updating
 
@@ -203,10 +266,15 @@ image. Back that directory up with the same care as the mandate it holds.
   port would also be a port with no TLS, so the session cookie would travel unencrypted and
   would not be marked `Secure`.
 - The owner's session lasts 12 hours of inactivity and slides while it is in use. Sessions
-  live in the SQLite file, so they survive a restart; replacing `BUYER_WEB_OWNER_*` closes
-  all of them.
-- The `Accesos` panel on `/activity` lists the last logins, the failed attempts and the
-  approvals, by hash. Read it after any deploy you did not do yourself.
+  live in the SQLite file, so they survive a restart; replacing `BUYER_WEB_OWNER_*`, and
+  finishing a recovery, close all of them. A recovery session is a different thing: 15
+  minutes, no sliding, and every route but the set-a-new-password page answers it 403.
+- The `Accesos` panel on `/activity` lists the last logins, the failed attempts, the
+  approvals and every recovery step, by hash. Read it after any deploy you did not do
+  yourself, and after anyone runs `recover-cli.js`.
+- The upgrade that added recovery adds two tables and one column to `sessions`. It happens
+  on the first start, keeps existing sessions alive, and needs nothing from you. The
+  database is still the same file in the same bind mount.
 - No RPC URL, facilitator URL, facilitator API key or checkout asset is configured here:
   `src/config.ts` reads none of them, because this process never pays.
 - `SIGNER_TOKEN` is an access token for the owner's own signer daemon, not a wallet secret.

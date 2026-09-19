@@ -23,7 +23,8 @@
     "lint": "eslint src",
     "dev": "tsx src/server.ts",
     "start": "node dist/server.js",
-    "hash-password": "tsx src/auth/hash-cli.ts"
+    "hash-password": "tsx src/auth/hash-cli.ts",
+    "recover-url": "tsx src/auth/recover-cli.ts"
   },
   "dependencies": {
     "@agentpos/core": "workspace:*",

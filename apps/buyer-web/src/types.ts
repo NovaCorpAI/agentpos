@@ -131,6 +131,13 @@ export interface OwnerAccount {
 }
 
 /**
+ * What a session is allowed to do. `full` is the signed-in owner. `recovery` is what
+ * proving a recovery code (or a WhatsApp code, or the operator token) buys: the right to
+ * set a new password and nothing else, not the mandate, not the proposals, not an approval.
+ */
+export type SessionScope = "full" | "recovery";
+
+/**
  * A live login. The cookie carries this row's `id` and nothing else: no signed payload, no
  * claim the server has to trust. Deleting the row ends the session everywhere, at once.
  */
@@ -147,6 +154,37 @@ export interface SessionRecord {
   ipHash: string;
   /** Coarse browser family ("Chrome", "Firefox", "curl"), never the full user-agent. */
   uaFamily: string;
+  /** `full` unless this session came out of a recovery. See SessionScope. */
+  scope: SessionScope;
+}
+
+/**
+ * One printable recovery code, as it is kept: a scrypt hash and whether it has been spent.
+ * The code itself exists on the owner's paper and nowhere else, not even in a log line.
+ */
+export interface RecoveryCodeRecord {
+  id: number;
+  codeHash: string;
+  createdAt: string;
+  /** Set the moment the code is spent; a spent code never works again. */
+  usedAt: string | undefined;
+}
+
+/** What a recovery challenge is: a WhatsApp code sent out, or an operator's one-time URL. */
+export type RecoveryChallengeKind = "whatsapp" | "operator";
+
+/**
+ * A short-lived, single-use secret waiting to be presented back. At most one per kind: a
+ * new one replaces the old, so asking for a second WhatsApp code retires the first.
+ */
+export interface RecoveryChallenge {
+  kind: RecoveryChallengeKind;
+  /** scrypt hash of the code or token. The value itself is shown once and never stored. */
+  codeHash: string;
+  createdAt: string;
+  expiresAt: string;
+  /** Wrong guesses so far. The challenge dies at MAX_RECOVERY_ATTEMPTS. */
+  attempts: number;
 }
 
 /** What the owner can read on the `Accesos` panel: who got in, who tried, what was approved. */
@@ -162,7 +200,23 @@ export interface AccessEntry {
     | "session_expired"
     | "approval"
     | "reauth_failed"
-    | "csrf_invalid";
+    | "csrf_invalid"
+    /** A new set of printable recovery codes was generated; the old set stopped working. */
+    | "recovery_codes_generated"
+    /** A six-digit code was sent to the owner's allowlisted WhatsApp number. */
+    | "recovery_code_sent"
+    /** A code (or the operator token) checked out: a recovery session was opened. */
+    | "recovery_started"
+    /** A code, a WhatsApp code or an operator token was refused. */
+    | "recovery_failed"
+    /** Too many recovery attempts from this address or against this account. */
+    | "recovery_rate_limited"
+    /** A recovery session set a new password. Every session died with it. */
+    | "recovery_completed"
+    /** The owner changed their password from inside a live session. */
+    | "password_changed"
+    /** The operator issued a one-time recovery URL from the server's command line. */
+    | "operator_token_issued";
   ipHash: string;
   uaFamily: string;
   /** sha256 of the email tried, first 8 hex chars. Never the email itself. */

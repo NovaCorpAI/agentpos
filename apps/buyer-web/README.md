@@ -12,8 +12,10 @@ zero CDN assets, no client JavaScript:
 | `/`          | Home: mandate state (limits, period, approved vs available with a budget bar, shipping city and country), the **market call** (below) that can turn any offer into a proposal, the mandate editor with its shipping section, and the channel status (WhatsApp, signing bridge). |
 | `/proposals` | Proposal cards by state: pendiente (Aprobar / Rechazar), aprobada **esperando firma** (with the exact payment instructions and any failed-attempt reason), pagada (transaction link + order id). A physical proposal says which city and country it ships to.                   |
 | `/activity`  | Proposal history, the append-only activity log as a readable timeline, and the **Accesos** panel (logins, refusals and approvals).                                                                                                                                              |
+| `/cuenta`    | The account: change the password (current + new twice), and generate the ten recovery codes. Shows how many are left, never a code.                                                                                                                                            |
 | `/setup`     | First run only: creates the one owner account. Answers 404 forever after that.                                                                                                                                                                                                  |
 | `/login`     | The way in. `/logout` (POST) destroys the session row.                                                                                                                                                                                                                          |
+| `/recuperar` | The way back in: email plus a recovery code, or a six-digit code over WhatsApp. `/recuperar/nueva-clave` is the only page a recovery session reaches.                                                                                                                          |
 
 ## The custody rule, plainly
 
@@ -63,6 +65,56 @@ for any amount when that is unset) the approval form carries a password field, w
 amount and the store written next to it; the rest of the session stays signed in. A wrong
 password answers `403 REAUTH_FAILED` and the proposal stays pending.
 
+**Changing the password** lives on `/cuenta`: current password, then the new one twice. It
+closes every **other** session and keeps the one doing the change, and lands in the access
+log as `password_changed`.
+
+## Getting back in after a lost password
+
+There is deliberately **no email reset**. This is software people run on their own box, and
+a self-hosted box has no mail server; a reset path that silently needs SMTP is a reset path
+that fails the day it is needed. No SMTP client is a dependency of this package, and none
+will be. Three paths that do work instead, in the order the pages offer them:
+
+**1. Recovery codes (always available, no infrastructure).** Ten codes, generated from
+`/cuenta` ("Generar codigos nuevos"), shown in full exactly once on a page that says so.
+Format `ABCD-EFGH-JKLM`: 12 symbols from a 32-character alphabet with no `I`, `O`, `0` or
+`1`, drawn from `crypto.randomBytes`, 60 bits each. Only their scrypt hashes are stored, one
+row per code in `recovery_codes`, with `used_at`. Spending one is an `UPDATE ... WHERE
+used_at IS NULL`, so a replay of the same code loses the race and is refused like any wrong
+code. Generating a new set retires the whole old one. An installation that predates this
+feature gets a dismissible banner on every page until a set exists.
+
+**2. A code over WhatsApp (when the channel is configured).** With
+`WHATSAPP_ALLOWED_NUMBERS` and a provider set, `/recuperar` also offers "enviar codigo a mi
+WhatsApp": six digits, valid ten minutes, three attempts, at most one send per 60 seconds,
+delivered through the **same** transport the bot replies with (there is no second send
+path) and only ever to an allowlisted owner number. The page always answers "si la cuenta
+existe, enviamos el codigo", whether the email matched or not.
+
+**3. The operator's one-time URL (last resort).** On the server:
+
+```sh
+node dist/auth/recover-cli.js https://agente.example    # pnpm --filter @agentpos/buyer-web recover-url
+```
+
+It prints a single-use URL good for 15 minutes, stores only its scrypt hash, says in its own
+output that it bypasses the password, and writes both the issue and the use to the access
+log. This replaces "edit the env vars and restart" as the documented way back in;
+`BUYER_WEB_OWNER_*` remains the way to replace the account entirely.
+
+**What a recovery session may do: one thing.** Proving a code opens a session marked
+`scope = 'recovery'`, good for 15 minutes and not sliding. Every route except
+`/recuperar/nueva-clave` (and `/logout`) answers it `403 RECOVERY_SCOPE_LIMITED`: no
+mandate, no proposals, no approval, no JSON API. Setting the new password then deletes
+**every** session, this one and any an intruder was holding, and the owner logs in fresh.
+
+**What no recovery route reveals.** A wrong code, a spent code, an expired code and an email
+with no account here are one refusal with one sentence, `401 RECOVERY_INVALID`, and all of
+them pay for a scrypt derivation so the clock says nothing either. `/recuperar` is throttled
+per client address and per account with the same escalating lockout as the login, on its own
+counters, so failing here does not lock the owner out of `/login`.
+
 ### The route matrix
 
 | Route                                                                             | Anonymous                | CSRF token |
@@ -70,8 +122,12 @@ password answers `403 REAUTH_FAILED` and the proposal stays pending.
 | `GET /health`                                                                     | 200                      | n/a        |
 | `GET /setup`, `POST /setup`                                                       | 200 (404 once it exists) | no         |
 | `GET /login`, `POST /login`                                                       | 200                      | no         |
-| `GET /`, `/proposals`, `/activity`                                                | `302 /login?next=...`    | n/a        |
+| `GET /recuperar`, `POST /recuperar`                                               | 200                      | no         |
+| `POST /recuperar/whatsapp`, `GET/POST /recuperar/operador`                        | 200                      | no         |
+| `GET/POST /recuperar/nueva-clave`                                                 | `302 /recuperar`         | **yes**    |
+| `GET /`, `/proposals`, `/activity`, `/cuenta`                                     | `302 /login?next=...`    | n/a        |
 | `POST /profile`, `/proposals`, `/proposals/:id/approve`, `/:id/reject`, `/logout` | `302 /login`             | **yes**    |
+| `POST /cuenta/clave`, `/cuenta/codigos`, `/cuenta/recordatorio`                   | `302 /login`             | **yes**    |
 | `GET /api/status`, `/api/offers`, `/api/market`, `/api/proposals`                 | `401 AUTH_REQUIRED`      | n/a        |
 | `POST /api/proposals`, `/api/proposals/:id/approve`, `/:id/reject`                | `401 AUTH_REQUIRED`      | **yes**    |
 | `/whatsapp/*` (GET, POST)                                                         | unchanged (signature)    | exempt     |
@@ -87,7 +143,8 @@ them. Nothing else on this server is exempt.
 A deploy that cannot stop at a form sets `BUYER_WEB_OWNER_EMAIL` and
 `BUYER_WEB_OWNER_PASSWORD_HASH` (a scrypt hash, never a password). The pair is applied on
 every start: it creates the account when there is none, and replaces it (closing every open
-session) when it differs, which is also how an owner who lost the password gets back in.
+session) when it differs. That is how an account is **replaced entirely**, not how a lost
+password is recovered: for that, see the three paths above.
 `BUYER_WEB_OWNER_PASSWORD` is refused outright with `SECRET_IN_CONFIG`.
 
 Generate the hash with this package's own code, reading the password from stdin so it never
@@ -103,10 +160,14 @@ docker compose -f apps/buyer-web/deploy/docker-compose.prod.yml run --rm --no-de
 ### What the logs may say
 
 `auth.login_ok`, `auth.login_failed`, `auth.login_rate_limited`, `auth.logout`,
-`auth.setup`, `auth.session_expired`, `auth.csrf_invalid`, `auth.reauth_failed`, each with an
+`auth.setup`, `auth.session_expired`, `auth.csrf_invalid`, `auth.reauth_failed`,
+`auth.password_changed`, `auth.recovery_codes_generated`, `auth.recovery_code_sent`,
+`auth.recovery_failed`, `auth.recovery_started`, `auth.recovery_completed`, each with an
 8-char sha256 of the email, an 8-char sha256 of the client address and a coarse browser
-family. Never the email, never the password, never the session id or the CSRF token. A test
-asserts exactly that against a spy logger.
+family. Never the email, never the password, never a recovery code, never an operator
+token, never the session id or the CSRF token. A test asserts exactly that against a spy
+logger. The same events reach the `Accesos` panel on `/activity`, in Spanish, so the owner
+can see for themselves that a recovery happened and when.
 
 ## The market call
 
@@ -174,10 +235,13 @@ shown as a warning banner on `/`, and makes physical proposals fail immediately 
 `node:sqlite` (no native dependencies) behind `BuyerWebStorage`: `profiles` (mandate,
 shipping address, public wallet address), `proposals` (pending / approved / rejected /
 expired), `activity`, `owner_account` (email + scrypt hash), `sessions` (id, CSRF token,
-sliding expiry, origin hashes) and `access_log`. `activity` and `access_log` are append-only
-by construction: the class exposes insert and select for them and nothing else. The tables
-are created on open (`create table if not exists`), so an existing database gains the three
-new ones on the next start with nothing to migrate by hand.
+sliding expiry, origin hashes, `scope`), `access_log`, `recovery_codes` (one scrypt hash per
+printable code, plus `used_at`) and `recovery_challenges` (at most one live WhatsApp code
+and one live operator token, also hashed, with an expiry and an attempt counter). `activity`
+and `access_log` are append-only by construction: the class exposes insert and select for
+them and nothing else. The tables are created on open (`create table if not exists`), and a
+database that predates recovery gains `sessions.scope` through a one-line `alter table` on
+the next start, so the owner is not logged out by the upgrade. Nothing to migrate by hand.
 
 ## WhatsApp channel
 
@@ -332,4 +396,10 @@ guarded route signs in through the real `/setup` or `/login` form and carries th
 cookie and CSRF token (`setUpOwner` / `logIn` in `src/test-utils.ts`): nothing reaches past
 the access layer by a back door, because then nothing would be testing it. `src/auth.test.ts`
 covers the route matrix, sessions, CSRF, the throttle, the approval re-authentication and
-the no-secrets-in-logs rule.
+the no-secrets-in-logs rule. `src/recovery.test.ts` covers the three ways back in: codes
+hashed at rest and spent exactly once (a replay is refused), a recovery session that
+reaches nothing but its one page, a completed recovery that kills every session including
+an intruder's, the per-address and per-account lockout, the WhatsApp code with its expiry,
+its three attempts, its one-per-minute send and its refusal to message a number outside
+the allowlist, the operator link's single use and expiry, changing the password from
+inside, and the fact that nothing about any of it reaches a log line.

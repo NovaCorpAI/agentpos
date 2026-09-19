@@ -119,6 +119,9 @@ const CSS = `
   .tl-when { color: #6d7ea6; font-size: 0.8rem; font-family: Consolas, ui-monospace, monospace; }
   .tl-detail { color: #9fb0d0; font-size: 0.88rem; margin-top: 1px; word-break: break-word; }
   code, .mono { font-family: Consolas, ui-monospace, monospace; font-size: 0.85em; color: #b9ccff; word-break: break-all; }
+  .codes { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin: 14px 0; }
+  .codes li { list-style: none; font-family: Consolas, ui-monospace, monospace; font-size: 1.02rem; letter-spacing: 0.06em; color: #f4f7ff; background: #101a33; border: 1px solid rgba(120,150,220,0.22); border-radius: 8px; padding: 8px 10px; text-align: center; }
+  ol.codes { padding: 0; margin: 14px 0; }
   pre { background: #101a33; border: 1px solid rgba(120,150,220,0.15); border-radius: 8px; padding: 10px 12px; overflow-x: auto; }
   .empty { color: #6d7ea6; padding: 22px 0; text-align: center; }
 `;
@@ -150,11 +153,17 @@ export interface SessionView {
 export interface LayoutInput {
   title: string;
   /** "none" is the signed-out chrome: wordmark and network badge, no tabs, no session. */
-  active: "home" | "proposals" | "activity" | "none";
+  active: "home" | "proposals" | "activity" | "account" | "none";
   network: string;
   pendingCount: number;
   body: string;
   session?: SessionView;
+  /**
+   * The nudge for an installation that predates recovery codes: it offers to generate a
+   * set, and can be put away for this session. It comes back on the next one until codes
+   * exist, because "I cannot get back in" is not a problem to discover on the bad day.
+   */
+  reminder?: { csrf: string; next: string };
 }
 
 /** The hidden field every state-changing form carries. Empty renders nothing. */
@@ -172,11 +181,24 @@ export function layout(input: LayoutInput): string {
       ${tab("/", "home", "Inicio")}
       ${tab("/proposals", "proposals", proposalsLabel)}
       ${tab("/activity", "activity", "Actividad")}
+      ${tab("/cuenta", "account", "Cuenta")}
     </nav>
     <div class="who">
       <span class="whoemail">${esc(input.session.email)}</span>
       <form method="post" action="/logout">${csrfInput(input.session.csrf)}<button type="submit" class="linkish">Salir</button></form>
     </div>`
+    : "";
+  const reminder = input.reminder
+    ? `<div class="banner warn">
+    <strong>Todavia no tienes codigos de recuperacion.</strong> Son diez codigos en papel, la
+    unica forma de volver a entrar si olvidas la contrasena y nadie mas tiene acceso a este
+    servidor. Se muestran una sola vez.<br>
+    <span class="meta">Se generan en un segundo y no cambian nada de lo que ya funciona.</span>
+    <div class="actions">
+      <form method="post" action="/cuenta/codigos">${csrfInput(input.reminder.csrf)}<button type="submit">Generar mis codigos</button></form>
+      <form method="post" action="/cuenta/recordatorio">${csrfInput(input.reminder.csrf)}<input type="hidden" name="next" value="${esc(input.reminder.next)}"><button type="submit" class="ghost">Ahora no</button></form>
+    </div>
+  </div>`
     : "";
   return `<!doctype html>
 <html lang="es">
@@ -200,6 +222,7 @@ export function layout(input: LayoutInput): string {
     <span>Limites de gasto que tu defines</span>
     <span>Cada compra con comprobante firmado</span>
   </div>
+  ${reminder}
   ${input.body}
 </div>
 </body>
@@ -280,6 +303,7 @@ export function loginPage(options: {
       <input type="password" id="password" name="password" autocomplete="current-password" required>
       <button type="submit">Entrar</button>
     </form>
+    <p class="meta"><a href="/recuperar">Olvide mi contrasena</a></p>
     <p class="custody">Esta plataforma nunca guarda ni pide una llave secreta de wallet. Tu contrasena se guarda solo como un hash scrypt; ni nosotros ni nadie puede leerla desde la base de datos.</p>
   </div>`;
   return layout({
@@ -311,13 +335,222 @@ export function setupPage(options: {
       <input type="password" id="confirm" name="confirm" autocomplete="new-password" required minlength="12">
       <button type="submit">Crear cuenta y entrar</button>
     </form>
-    <p class="custody">Guarda esta contrasena donde guardas las importantes: no hay correo de recuperacion. Si la pierdes, se reemplaza desde el entorno del servidor (BUYER_WEB_OWNER_PASSWORD_HASH) y se cierran todas las sesiones.</p>
+    <p class="custody">Guarda esta contrasena donde guardas las importantes. No hay correo de recuperacion, a proposito: esto corre en tu servidor y tu servidor no tiene por que saber enviar correo. Apenas entres te mostramos diez codigos de recuperacion en papel, una sola vez.</p>
   </div>`;
   return layout({
     title: "Crear cuenta",
     active: "none",
     network: options.network,
     pendingCount: 0,
+    body,
+  });
+}
+
+// --- getting back in: recovery ------------------------------------------------
+
+/**
+ * The recovery form. It never says whether that email has an account here, and it never
+ * says which of the two fields was wrong: one refusal, always the same words.
+ *
+ * Why there is no "send me an email": this runs on the owner's own server, and a
+ * self-hosted box has no mail server to send from. The page says so, in one line, instead
+ * of leaving a person hunting for a link that was never going to arrive.
+ */
+export function recoverPage(options: {
+  network: string;
+  /** True when WHATSAPP_ALLOWED_NUMBERS and a provider are configured. */
+  whatsapp: boolean;
+  email?: string;
+  error?: PageError;
+  /** Shown after asking for a code. Always the same sentence, whatever happened. */
+  notice?: string;
+}): string {
+  const email = esc(options.email ?? "");
+  const whatsapp = options.whatsapp
+    ? `
+    <form method="post" action="/recuperar/whatsapp" class="card">
+      <p class="lead" style="font-size:1rem">O pide un codigo por WhatsApp</p>
+      <p class="sub" style="margin-bottom:0">Llega solo al numero del dueno que esta en la lista del servidor, nunca a otro. Vale 10 minutos.</p>
+      <label for="wemail">Correo</label>
+      <input type="email" id="wemail" name="email" value="${email}" autocomplete="username" required>
+      <button type="submit" class="ghost">Enviar codigo a mi WhatsApp</button>
+    </form>`
+    : "";
+  const body = `
+  <div class="gate">
+    <p class="lead">Recuperar tu acceso</p>
+    <p class="sub">Escribe tu correo y uno de tus codigos de recuperacion. Si el codigo sirve, lo unico que podras hacer es fijar una contrasena nueva.</p>
+    ${options.error ? errBanner(options.error) : ""}
+    ${options.notice ? `<div class="banner ok">${esc(options.notice)}</div>` : ""}
+    <form method="post" action="/recuperar" class="card">
+      <label for="email">Correo</label>
+      <input type="email" id="email" name="email" value="${email}" autocomplete="username" required>
+      <label for="code">Codigo de recuperacion (o el codigo de 6 digitos que pediste por WhatsApp)</label>
+      <input type="text" id="code" name="code" placeholder="ABCD-EFGH-JKLM" autocomplete="one-time-code" required>
+      <button type="submit">Continuar</button>
+    </form>
+    ${whatsapp}
+    <p class="custody">Aqui no hay correo de recuperacion, y no es un olvido: este espacio corre en tu propio servidor, que no tiene por que saber enviar correo. Si perdiste la contrasena y no tienes codigos, la ultima via es la linea de comandos del servidor: <span class="mono">node dist/auth/recover-cli.js</span> imprime un enlace de un solo uso. Queda registrado en Accesos.</p>
+  </div>`;
+  return layout({
+    title: "Recuperar acceso",
+    active: "none",
+    network: options.network,
+    pendingCount: 0,
+    body,
+  });
+}
+
+/** The one thing a recovery session can do. Nothing else on this site answers it. */
+export function newPasswordPage(options: {
+  network: string;
+  csrf: string;
+  error?: PageError;
+}): string {
+  const body = `
+  <div class="gate">
+    <p class="lead">Elige una contrasena nueva</p>
+    <p class="sub">Con esto termina la recuperacion. Se cierran todas las sesiones abiertas, la tuya incluida y la de cualquiera que estuviera dentro, y entras de nuevo con la contrasena nueva.</p>
+    ${options.error ? errBanner(options.error) : ""}
+    <form method="post" action="/recuperar/nueva-clave" class="card">
+      ${csrfInput(options.csrf)}
+      <label for="password">Contrasena nueva (minimo 12 caracteres)</label>
+      <input type="password" id="password" name="password" autocomplete="new-password" required minlength="12">
+      <label for="confirm">Repite la contrasena nueva</label>
+      <input type="password" id="confirm" name="confirm" autocomplete="new-password" required minlength="12">
+      <button type="submit">Guardar y cerrar todas las sesiones</button>
+    </form>
+    <p class="custody">Esta sesion de recuperacion no puede ver tu mandato, tus propuestas ni aprobar un pago. Solo sirve para esto, y dura 15 minutos.</p>
+  </div>`;
+  return layout({
+    title: "Contrasena nueva",
+    active: "none",
+    network: options.network,
+    pendingCount: 0,
+    body,
+  });
+}
+
+/**
+ * What the operator's one-time URL opens: a confirmation, not the recovery itself. The
+ * token is spent by the POST, so nothing that merely fetches the link (a chat preview, a
+ * crawler, an antivirus proxy) can burn it.
+ */
+export function operatorRecoveryPage(options: {
+  network: string;
+  token: string;
+  error?: PageError;
+}): string {
+  const body = `
+  <div class="gate">
+    <p class="lead">Enlace de recuperacion del servidor</p>
+    <p class="sub">Este enlace lo genero alguien con acceso a la linea de comandos del servidor. Salta la contrasena, se usa una sola vez y queda registrado en el panel Accesos.</p>
+    ${options.error ? errBanner(options.error) : ""}
+    <form method="post" action="/recuperar/operador" class="card">
+      <input type="hidden" name="token" value="${esc(options.token)}">
+      <p class="meta" style="margin:0">Si no fuiste tu quien lo genero, cierra esta pagina y revisa Accesos.</p>
+      <button type="submit">Continuar y fijar una contrasena nueva</button>
+    </form>
+  </div>`;
+  return layout({
+    title: "Enlace del servidor",
+    active: "none",
+    network: options.network,
+    pendingCount: 0,
+    body,
+  });
+}
+
+// --- the account page ---------------------------------------------------------
+
+/**
+ * The ten codes, printed once. This page is the only time they exist outside the owner's
+ * hands: only their scrypt hashes are kept, so there is no second chance to read them.
+ */
+export function recoveryCodesPage(options: {
+  network: string;
+  codes: string[];
+  session: SessionView;
+  pendingCount: number;
+}): string {
+  const items = options.codes.map((c) => `<li>${esc(c)}</li>`).join("");
+  const body = `
+  <p class="lead">Tus codigos de recuperacion</p>
+  <div class="banner warn"><strong>Guardalas ahora: no se vuelven a mostrar.</strong> Imprimelas o copialas a donde guardas lo importante. Si cierras esta pagina sin copiarlas, tendras que generar un juego nuevo.</div>
+  <div class="card">
+    <ol class="codes">${items}</ol>
+    <p class="meta">Cada codigo sirve una sola vez. Con uno de ellos y tu correo entras en <span class="mono">/recuperar</span> y fijas una contrasena nueva; al terminar se cierran todas las sesiones.</p>
+    <p class="meta">Generar un juego nuevo anula estos ${String(options.codes.length)} al instante.</p>
+  </div>
+  <p><a href="/cuenta">Volver a mi cuenta</a></p>`;
+  return layout({
+    title: "Codigos de recuperacion",
+    active: "account",
+    network: options.network,
+    pendingCount: options.pendingCount,
+    session: options.session,
+    body,
+  });
+}
+
+/** Change the password, and look after the codes. Everything about the account, one page. */
+export function accountPage(options: {
+  network: string;
+  session: SessionView;
+  pendingCount: number;
+  codes: { total: number; unused: number };
+  /** True when the WhatsApp route is available as a second way back in. */
+  whatsapp: boolean;
+  saved?: boolean;
+  error?: PageError;
+}): string {
+  const csrf = options.session.csrf;
+  const codesState =
+    options.codes.total === 0
+      ? `<div class="banner warn"><strong>No tienes codigos de recuperacion.</strong> Sin ellos, si olvidas la contrasena solo queda la linea de comandos del servidor.</div>`
+      : `<div class="meta">Te quedan <strong style="color:#f4f7ff">${String(options.codes.unused)}</strong> de ${String(options.codes.total)} codigos sin usar.</div>`;
+  const whatsappLine = options.whatsapp
+    ? `<div class="chan"><span class="st on">Activo</span><div><strong>Codigo por WhatsApp</strong>. Puedes pedir un codigo de 6 digitos desde /recuperar; llega solo al numero del dueno que esta en la lista del servidor.</div></div>`
+    : `<div class="chan"><span class="st off">No configurado</span><div><strong>Codigo por WhatsApp</strong>. Se activa solo si defines WHATSAPP_ALLOWED_NUMBERS y las credenciales de Meta o Twilio en el servidor.</div></div>`;
+  const body = `
+  <p class="lead">Tu cuenta</p>
+  <p class="sub">La contrasena que protege tus limites de gasto, y las formas de volver a entrar si la pierdes.</p>
+  ${options.error ? errBanner(options.error) : ""}
+  ${options.saved ? `<div class="banner ok">Contrasena cambiada. Las otras sesiones se cerraron; esta sigue abierta.</div>` : ""}
+  <h2>Cambiar la contrasena</h2>
+  <form method="post" action="/cuenta/clave" class="card">
+    ${csrfInput(csrf)}
+    <label for="current">Tu contrasena actual</label>
+    <input type="password" id="current" name="current" autocomplete="current-password" required>
+    <label for="password">Contrasena nueva (minimo 12 caracteres)</label>
+    <input type="password" id="password" name="password" autocomplete="new-password" required minlength="12">
+    <label for="confirm">Repite la contrasena nueva</label>
+    <input type="password" id="confirm" name="confirm" autocomplete="new-password" required minlength="12">
+    <p class="meta" style="margin:12px 0 0">Al guardar se cierran todas las demas sesiones. Esta, en la que estas escribiendo, sigue abierta.</p>
+    <button type="submit">Cambiar contrasena</button>
+  </form>
+  <h2>Codigos de recuperacion</h2>
+  <div class="card">
+    ${codesState}
+    <p class="meta" style="margin-top:10px">Diez codigos en papel, cada uno de un solo uso. Es la via que siempre funciona: no necesita correo, ni telefono, ni acceso al servidor.</p>
+    <form method="post" action="/cuenta/codigos">
+      ${csrfInput(csrf)}
+      <button type="submit" class="${options.codes.total === 0 ? "" : "ghost"}">Generar codigos nuevos</button>
+    </form>
+    <p class="meta" style="margin:10px 0 0">Generar codigos nuevos anula los anteriores, usados o no. Se muestran una sola vez.</p>
+  </div>
+  <h2>Otras formas de volver a entrar</h2>
+  <div class="card">
+    ${whatsappLine}
+    <div class="chan"><span class="st on">Siempre</span><div><strong>Linea de comandos del servidor</strong>. Quien pueda correr comandos en el servidor genera un enlace de un solo uso con <span class="mono">node dist/auth/recover-cli.js</span>. Vence a los 15 minutos y queda registrado en Accesos.</div></div>
+    <p class="custody">No hay recuperacion por correo, y es deliberado: este espacio corre en tu propio servidor, que no tiene servidor de correo. Un boton que promete un correo que nunca llega es peor que no tenerlo.</p>
+  </div>`;
+  return layout({
+    title: "Cuenta",
+    active: "account",
+    network: options.network,
+    pendingCount: options.pendingCount,
+    session: options.session,
     body,
   });
 }
@@ -669,6 +902,7 @@ export function homePage(options: {
   saved?: boolean;
   error?: PageError;
   market?: MarketSearch;
+  reminder?: { csrf: string; next: string };
 }): string {
   const v = options.values;
   const banner = options.error
@@ -751,6 +985,7 @@ export function homePage(options: {
     network: options.network,
     pendingCount: options.status.pendingProposals,
     session: options.session,
+    ...(options.reminder ? { reminder: options.reminder } : {}),
     body,
   });
 }
@@ -773,6 +1008,7 @@ export function proposalsPage(options: {
   highlight?: string;
   /** Shown on the proposal whose re-authentication was just refused. */
   reauthError?: { proposalId: string; message: string };
+  reminder?: { csrf: string; next: string };
 }): string {
   const csrf = options.session.csrf;
   const pendingCards = options.pending
@@ -898,6 +1134,7 @@ export function proposalsPage(options: {
     network: options.network,
     pendingCount: options.pending.length,
     session: options.session,
+    ...(options.reminder ? { reminder: options.reminder } : {}),
     body,
   });
 }
@@ -957,6 +1194,14 @@ const ACCESS_LABEL: Record<AccessEntry["event"], string> = {
   approval: "propuesta aprobada",
   reauth_failed: "contrasena incorrecta al aprobar",
   csrf_invalid: "formulario sin token valido",
+  recovery_codes_generated: "codigos de recuperacion nuevos",
+  recovery_code_sent: "codigo enviado por WhatsApp",
+  recovery_started: "recuperacion iniciada",
+  recovery_failed: "codigo de recuperacion rechazado",
+  recovery_rate_limited: "recuperacion bloqueada",
+  recovery_completed: "contrasena recuperada",
+  password_changed: "contrasena cambiada",
+  operator_token_issued: "enlace de recuperacion del servidor",
 };
 
 /** Red for what someone else may have done, green for money decisions, muted for routine. */
@@ -968,6 +1213,14 @@ const ACCESS_CLASS: Partial<Record<AccessEntry["event"], string>> = {
   approval: "paid",
   session_expired: "expired",
   logout: "expired",
+  recovery_failed: "rejected",
+  recovery_rate_limited: "rejected",
+  recovery_started: "pending",
+  recovery_code_sent: "pending",
+  operator_token_issued: "pending",
+  recovery_completed: "paid",
+  password_changed: "paid",
+  recovery_codes_generated: "approved",
 };
 
 /**
@@ -1001,6 +1254,7 @@ export function activityPage(options: {
   network: string;
   session: SessionView;
   access: AccessEntry[];
+  reminder?: { csrf: string; next: string };
 }): string {
   const timeline = options.activity
     .map((e) => {
@@ -1035,6 +1289,7 @@ export function activityPage(options: {
     network: options.network,
     pendingCount: s.pendingProposals,
     session: options.session,
+    ...(options.reminder ? { reminder: options.reminder } : {}),
     body,
   });
 }

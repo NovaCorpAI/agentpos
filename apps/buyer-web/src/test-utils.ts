@@ -256,7 +256,12 @@ export interface BuyerWebClient {
   csrf: string;
 }
 
-/** The session cookie as a browser would keep it: name=value, without the attributes. */
+/**
+ * The session cookie as a browser would keep it: name=value, without the attributes. When a
+ * response carries the cookie twice (the access layer slides the old session, the handler
+ * then hands out a new one, as on a login made while holding a recovery cookie), the LAST
+ * one wins, which is what a browser does too.
+ */
 export function cookieFrom(res: Response): string {
   const raw = res.headers.get("set-cookie") ?? "";
   return (
@@ -264,7 +269,7 @@ export function cookieFrom(res: Response): string {
       .split(",")
       .map((part) => part.trim().split(";").at(0) ?? "")
       .filter((c) => c.startsWith("agentpos_buyer_session="))
-      .at(0) ?? ""
+      .at(-1) ?? ""
   );
 }
 
@@ -318,6 +323,38 @@ function clientFor(app: AppLike, cookie: string, csrf: string): BuyerWebClient {
         { cookie: true, csrf },
       );
     },
+  };
+}
+
+/**
+ * The ten recovery codes, read out of the page that shows them once, exactly as the owner
+ * would copy them off the screen. Generating them goes through the real form.
+ */
+export async function generateCodes(client: BuyerWebClient): Promise<string[]> {
+  const res = await client.request("/cuenta/codigos", { method: "POST" });
+  expect(res.status).toBe(200);
+  const html = await res.text();
+  const codes = [...html.matchAll(/<li>([A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4})<\/li>/g)].map(
+    (m) => m[1] as string,
+  );
+  expect(codes).toHaveLength(10);
+  return codes;
+}
+
+/** Posts the recovery form the way the browser does, and keeps the cookie it hands back. */
+export async function startRecovery(
+  app: AppLike,
+  fields: { email?: string; code: string },
+): Promise<{ status: number; cookie: string; html: string; retryAfter: string | null }> {
+  const res = await app.request("/recuperar", {
+    method: "POST",
+    body: new URLSearchParams({ email: fields.email ?? OWNER_EMAIL, code: fields.code }),
+  });
+  return {
+    status: res.status,
+    cookie: cookieFrom(res),
+    retryAfter: res.headers.get("retry-after"),
+    html: res.status === 303 ? "" : await res.text(),
   };
 }
 
