@@ -138,7 +138,8 @@ puede lograr un agente es que lo rechacen.
 
 `@agentpos/buyer-web` es una página autoalojada donde una persona mira y decide lo que hace el
 agente: estado del mandato con barra de presupuesto, búsqueda de ofertas y propuestas para aprobar
-o rechazar. Tres páginas: `/` (inicio y editor del mandato), `/proposals`, `/activity`.
+o rechazar. Tres páginas detrás de tu acceso: `/` (inicio y editor del mandato),
+`/proposals`, `/activity`, más `/login` y `/setup`.
 
 ```bash
 pnpm --filter @agentpos/buyer-web dev     # http://localhost:8788
@@ -150,9 +151,46 @@ pnpm --filter @agentpos/buyer-web dev     # http://localhost:8788
 | `BUYER_WEB_DB` | Archivo SQLite. Por defecto `~/.agentpos/buyer-web.sqlite`. |
 | `AGENTPOS_NETWORK` | `testnet` (por defecto) o `mainnet`. |
 | `SIGNER_TOKEN` | Activa el puente de firma en `/api/signer/*`. Mínimo 24 caracteres (`openssl rand -hex 24`). Sin él esas rutas no existen. |
+| `BUYER_WEB_OWNER_EMAIL` + `BUYER_WEB_OWNER_PASSWORD_HASH` | Cuenta del dueño para despliegues automatizados. Las dos o ninguna, y siempre un hash scrypt, nunca la contraseña. |
 
 En esta aplicación no hay, a propósito, ninguna variable para una llave de wallet ni para una
 frase de paso. Pegar un secreto (`S...`) en el campo de wallet se rechaza con `SECRET_IN_CONFIG`.
+
+### Entrar: una cuenta, la tuya
+
+Esta página puede subir tus límites de gasto y aprobar pagos que después firma tu máquina, así
+que tiene su propio acceso. La primera vez que la abres, todo te lleva a `/setup`: ahí creas la
+única cuenta de dueño (correo y contraseña de 12 caracteres o más, escrita dos veces) y quedas
+dentro. Desde ese momento `/setup` responde 404 para siempre. Hazlo apenas levantes el servicio:
+mientras no exista la cuenta, la crea quien llegue primero.
+
+- La contraseña se guarda solo como hash scrypt (sal propia por cuenta, comparación en tiempo
+  constante). Nadie, ni tú, puede leerla desde la base de datos.
+- La sesión es una fila en el servidor y la cookie lleva solo su id (`HttpOnly`,
+  `SameSite=Strict`, `Secure` sobre https). Dura 12 horas sin uso y se renueva mientras
+  trabajas; `Salir` borra la fila y la cookie deja de valer en todas partes.
+- Un correo desconocido y una contraseña equivocada reciben la misma respuesta ("correo o
+  contraseña incorrectos"): nada revela qué cuentas existen. Tras varios intentos fallidos el
+  acceso se bloquea un rato y responde 429 con `Retry-After`.
+- **Aprobar pide la contraseña de nuevo** (sobre `requireConfirmAboveUsdc`, y en cualquier monto
+  si no fijaste ese umbral), con el monto y la tienda escritos al lado del campo. La sesión
+  sigue abierta para lo demás.
+- En `/activity` hay un panel **Accesos**: entradas, intentos fallidos y aprobaciones, con la
+  fecha, un hash corto de la IP y el navegador. Sirve para responder "¿estuvo alguien más aquí?".
+- Las rutas de WhatsApp y `/api/signer/*` no cambian: se autentican solas en cada petición (la
+  firma del proveedor y el token del firmador), así que Twilio y tu vigilante siguen igual.
+
+Para un despliegue automatizado, genera el hash con el código del propio paquete (la contraseña
+se escribe por la entrada estándar, nunca como argumento, para que no quede en el historial):
+
+```bash
+pnpm --filter @agentpos/buyer-web hash-password    # escribe la contraseña, copia el scrypt$...
+```
+
+y pon el resultado en `BUYER_WEB_OWNER_PASSWORD_HASH` junto con `BUYER_WEB_OWNER_EMAIL`. El par
+manda en cada arranque: crea la cuenta si no existe y la reemplaza si cambia, cerrando todas las
+sesiones abiertas. Así se recupera el acceso si pierdes la contraseña. Poner la contraseña en
+claro en `BUYER_WEB_OWNER_PASSWORD` se rechaza con `SECRET_IN_CONFIG`.
 
 Si marcas "Permitir bienes físicos" en el mandato, el editor abre la sección "Dirección de
 despacho" y el servidor la exige completa: nombre de quien recibe, dirección (línea 1), ciudad,

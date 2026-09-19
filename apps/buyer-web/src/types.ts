@@ -117,6 +117,60 @@ export interface ApprovalResult {
   instructions: PaymentInstructions;
 }
 
+/**
+ * The single owner account of this buyer space. One per installation: this surface belongs
+ * to one person, the one whose money it can commit. The password is only ever here as a
+ * scrypt hash (salt and parameters included); the plaintext is never stored or logged.
+ */
+export interface OwnerAccount {
+  id: string;
+  email: string;
+  passwordHash: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * A live login. The cookie carries this row's `id` and nothing else: no signed payload, no
+ * claim the server has to trust. Deleting the row ends the session everywhere, at once.
+ */
+export interface SessionRecord {
+  id: string;
+  accountId: string;
+  /** Per-session CSRF token, rendered in every form and compared in constant time. */
+  csrfToken: string;
+  createdAt: string;
+  /** Slides forward on every authenticated request. */
+  expiresAt: string;
+  lastSeenAt: string;
+  /** sha256 of the client address, first 8 hex chars. The address itself is never stored. */
+  ipHash: string;
+  /** Coarse browser family ("Chrome", "Firefox", "curl"), never the full user-agent. */
+  uaFamily: string;
+}
+
+/** What the owner can read on the `Accesos` panel: who got in, who tried, what was approved. */
+export interface AccessEntry {
+  seq: number;
+  at: string;
+  event:
+    | "setup"
+    | "login_ok"
+    | "login_failed"
+    | "login_rate_limited"
+    | "logout"
+    | "session_expired"
+    | "approval"
+    | "reauth_failed"
+    | "csrf_invalid";
+  ipHash: string;
+  uaFamily: string;
+  /** sha256 of the email tried, first 8 hex chars. Never the email itself. */
+  emailHash: string;
+  /** One short line of context (the proposal approved, for instance). Never a secret. */
+  detail: string;
+}
+
 /** One row of the append-only activity log. */
 export interface ActivityEntry {
   seq: number;

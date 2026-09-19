@@ -9,6 +9,12 @@ What this deployment does **not** do: hold a wallet key, sign, or pay. Approving
 here only queues it; `agentpos-buyer watch` on the machine that holds the key polls
 `/api/signer/queue` and pays. See `../README.md`.
 
+**Access.** buyer-web has its own login now (one owner account, scrypt, server-side
+sessions, CSRF on every form, and the password asked again before an approval). The
+temporary HTTP basic-auth gate in the Caddyfile is no longer needed and **must be removed**
+when this version goes up, see step 4. The owner account is created once, either in the
+browser at `/setup` or from the environment (step 2b).
+
 ## 0. DNS (once)
 
 In Cloudflare, add an `A` record `agente` -> `YOUR_SERVER_IP`, **DNS-only (grey cloud)**. Proxied
@@ -53,12 +59,49 @@ META_VERIFY_TOKEN=
 META_APP_SECRET=
 META_ACCESS_TOKEN=
 META_PHONE_NUMBER_ID=
+# Owner account, optional (see 2b). Both or neither.
+BUYER_WEB_OWNER_EMAIL=
+BUYER_WEB_OWNER_PASSWORD_HASH=
 EOF
 chmod 600 /root/.agentpos/buyer-web.env
 ```
 
 `TWILIO_WEBHOOK_URL` must be the exact public URL Twilio posts to: `X-Twilio-Signature` is
 computed over it, and behind Caddy the URL this process sees is not the URL Twilio signed.
+
+## 2b. The owner account
+
+Two ways, pick one.
+
+**In the browser (simplest).** Leave `BUYER_WEB_OWNER_*` empty. On the first visit every page
+redirects to `https://agente.agentposhq.com/setup`, which asks for an email and a password
+(minimum 12 characters, typed twice), creates the single owner account and signs you in.
+`/setup` answers 404 from then on. Do this the same minute the host goes up: until the
+account exists, whoever opens `/setup` first becomes the owner.
+
+**From the environment (for an unattended deploy, or to replace a lost password).** Generate
+the hash with the app's own code, so the password never reaches the env file:
+
+```sh
+cd /opt/agentpos
+docker compose -f apps/buyer-web/deploy/docker-compose.prod.yml \
+  --env-file /root/.agentpos/buyer-web.env run --rm --no-deps \
+  buyer-web node dist/auth/hash-cli.js
+# type the password, press ctrl-D, copy the scrypt$... line
+```
+
+Put it in the env file **with every `$` doubled**, because compose interpolates `$` in
+values and an unescaped hash arrives truncated:
+
+```sh
+BUYER_WEB_OWNER_EMAIL=tu@correo.example
+BUYER_WEB_OWNER_PASSWORD_HASH=scrypt$$16384$$8$$1$$<salt>$$<hash>
+```
+
+The pair is applied on every start: it creates the account when there is none and replaces
+it, closing every open session, when it changes. A malformed hash (or a plaintext
+`BUYER_WEB_OWNER_PASSWORD`) stops the container with a typed `CONFIG_INVALID` /
+`SECRET_IN_CONFIG` instead of starting an unprotected space.
 
 ## 3. Build and start
 
@@ -71,9 +114,10 @@ docker compose -f apps/buyer-web/deploy/docker-compose.prod.yml \
   --env-file /root/.agentpos/buyer-web.env logs --tail 20 buyer-web
 ```
 
-The startup log states the custody rule and which channels are mounted. Expect
-`whatsapp twilio` and `signer bridge enabled`; `whatsapp disabled` means the Twilio variables
-did not arrive and the webhook would answer 404.
+The startup log states the custody rule, which channels are mounted and whether the owner
+account exists. Expect `whatsapp twilio`, `signer bridge enabled` and an `access` line;
+`whatsapp disabled` means the Twilio variables did not arrive and the webhook would answer
+404, and `access NO OWNER YET` means step 2b is still pending.
 
 ## 4. Add the Caddy vhost and reload
 
@@ -89,20 +133,34 @@ docker compose -f apps/facilitator/deploy/docker-compose.prod.yml \
 docker compose -f apps/facilitator/deploy/docker-compose.prod.yml logs --tail 20 caddy
 ```
 
+**Retiring the temporary gate.** An older Caddyfile has an `agente.agentposhq.com` block
+with a `basic_auth` directive and a `/whatsapp/*` exemption; it stood in for the login that
+now exists in the app. Replace that whole block with the snippet above (a plain
+`reverse_proxy`), reload Caddy, and drop `BUYER_WEB_BASIC_HASH` from the facilitator env
+file. Leaving it in place is not dangerous, it just means typing two passwords and it breaks
+password managers on `/login`. Only remove it once step 2b is done and you have logged in:
+never leave the host with neither gate nor owner account.
+
 Caddy picks the certificate up on the first request; the log line to look for is
 `certificate obtained successfully` for `agente.agentposhq.com`.
 
 ## 5. Post-deploy checks
 
 ```sh
-# Health: {"ok":true,"network":"mainnet"}
+# Health: {"ok":true,"network":"mainnet"} (the only route with no login)
 curl -fsS https://agente.agentposhq.com/health
 
-# The three pages answer 200 with HTML.
+# The three pages redirect an anonymous visitor to the login: 302 each, and no HTML body.
 for p in / /proposals /activity; do
   printf '%s -> ' "$p"
-  curl -s -o /dev/null -w '%{http_code}\n' "https://agente.agentposhq.com$p"
+  curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' "https://agente.agentposhq.com$p"
 done
+
+# The JSON API answers a typed 401 instead of redirecting a program into a login page.
+curl -s https://agente.agentposhq.com/api/status   # {"error":{"code":"AUTH_REQUIRED",...}}
+
+# Setup is closed once the owner exists: 404.
+curl -s -o /dev/null -w '%{http_code}\n' https://agente.agentposhq.com/setup
 
 # Unsigned Twilio POST: 401 (signature refused). Never 500 (a crash), never 404 (routes not
 # mounted, i.e. the Twilio variables are missing or incomplete).
@@ -141,8 +199,14 @@ image. Back that directory up with the same care as the mandate it holds.
 ## Operational notes
 
 - The container is never published to the host (`expose`, not `ports`): only Caddy reaches it,
-  over `edge`. Do not add a port mapping; `agente.agentposhq.com` has no login and anyone who
-  reaches it can approve purchases.
+  over `edge`. Do not add a port mapping. The app has its own login, but a directly exposed
+  port would also be a port with no TLS, so the session cookie would travel unencrypted and
+  would not be marked `Secure`.
+- The owner's session lasts 12 hours of inactivity and slides while it is in use. Sessions
+  live in the SQLite file, so they survive a restart; replacing `BUYER_WEB_OWNER_*` closes
+  all of them.
+- The `Accesos` panel on `/activity` lists the last logins, the failed attempts and the
+  approvals, by hash. Read it after any deploy you did not do yourself.
 - No RPC URL, facilitator URL, facilitator API key or checkout asset is configured here:
   `src/config.ts` reads none of them, because this process never pays.
 - `SIGNER_TOKEN` is an access token for the owner's own signer daemon, not a wallet secret.

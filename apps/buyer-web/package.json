@@ -22,7 +22,8 @@
     "test": "vitest run",
     "lint": "eslint src",
     "dev": "tsx src/server.ts",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "hash-password": "tsx src/auth/hash-cli.ts"
   },
   "dependencies": {
     "@agentpos/core": "workspace:*",

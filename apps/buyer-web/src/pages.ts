@@ -10,7 +10,8 @@
  */
 import { formatUsdc, usdc, usdcFromMinor } from "@agentpos/core";
 import type { MandateBlock, MarketCallResult, MarketOffer } from "@agentpos/mcp-buyer";
-import type { ActivityEntry, Proposal, ServiceStatus } from "./types.js";
+import { CSRF_FIELD } from "./auth/http.js";
+import type { AccessEntry, ActivityEntry, Proposal, ServiceStatus } from "./types.js";
 
 const esc = (s: string): string =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -28,6 +29,16 @@ const CSS = `
   .net { font-family: Consolas, ui-monospace, monospace; font-size: 0.72rem; border-radius: 999px; padding: 2px 10px; border: 1px solid rgba(120,150,220,0.25); color: #9fb0d0; white-space: nowrap; }
   .net.main { color: #26d0a0; border-color: rgba(38,208,160,0.35); }
   nav { margin-left: auto; display: flex; gap: 16px; }
+  .who { display: flex; align-items: center; gap: 10px; padding-left: 14px; margin-left: 14px; border-left: 1px solid rgba(120,150,220,0.25); }
+  .who form { margin: 0; }
+  .whoemail { color: #6d7ea6; font-size: 0.82rem; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  button.linkish { background: transparent; color: #9fb0d0; font-weight: 500; border: 1px solid rgba(120,150,220,0.3); border-radius: 8px; padding: 3px 12px; margin: 0; font-size: 0.84rem; }
+  .gate { max-width: 420px; margin: 40px auto 0; }
+  .gate button { width: 100%; }
+  input[type=password] { width: 100%; background: #101a33; color: #f4f7ff; border: 1px solid rgba(120,150,220,0.22); border-radius: 8px; padding: 8px 10px; font: inherit; }
+  .confirm { margin-top: 14px; padding: 12px 14px; background: #101a33; border: 1px solid rgba(217,185,108,0.32); border-radius: 10px; }
+  .confirm .k { color: #d9b96c; font-size: 0.84rem; margin-bottom: 6px; }
+  .confirm label { margin-top: 8px; }
   nav a { color: #9fb0d0; text-decoration: none; font-size: 0.92rem; padding-bottom: 3px; }
   nav a[data-on] { color: #f4f7ff; border-bottom: 2px solid #7aa2ff; }
   .assure { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 16px 0 26px; padding: 9px 14px; background: #0d1428; border: 1px solid rgba(120,150,220,0.15); border-radius: 10px; color: #6d7ea6; font-size: 0.82rem; }
@@ -130,12 +141,25 @@ function txLink(network: string, txHash: string): string {
   return `<a class="mono" href="${esc(href)}" rel="noopener noreferrer">${esc(txHash)}</a>`;
 }
 
+/** The signed-in owner, as the header shows them. Absent on /login and /setup. */
+export interface SessionView {
+  email: string;
+  csrf: string;
+}
+
 export interface LayoutInput {
   title: string;
-  active: "home" | "proposals" | "activity";
+  /** "none" is the signed-out chrome: wordmark and network badge, no tabs, no session. */
+  active: "home" | "proposals" | "activity" | "none";
   network: string;
   pendingCount: number;
   body: string;
+  session?: SessionView;
+}
+
+/** The hidden field every state-changing form carries. Empty renders nothing. */
+export function csrfInput(token: string | undefined): string {
+  return token ? `<input type="hidden" name="${CSRF_FIELD}" value="${esc(token)}">` : "";
 }
 
 export function layout(input: LayoutInput): string {
@@ -143,11 +167,23 @@ export function layout(input: LayoutInput): string {
     `<a href="${href}"${input.active === id ? " data-on" : ""}>${esc(label)}</a>`;
   const proposalsLabel =
     input.pendingCount > 0 ? `Propuestas (${input.pendingCount})` : "Propuestas";
+  const nav = input.session
+    ? `<nav>
+      ${tab("/", "home", "Inicio")}
+      ${tab("/proposals", "proposals", proposalsLabel)}
+      ${tab("/activity", "activity", "Actividad")}
+    </nav>
+    <div class="who">
+      <span class="whoemail">${esc(input.session.email)}</span>
+      <form method="post" action="/logout">${csrfInput(input.session.csrf)}<button type="submit" class="linkish">Salir</button></form>
+    </div>`
+    : "";
   return `<!doctype html>
 <html lang="es">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
 <title>${esc(input.title)} · AgentPOS, espacio del comprador</title>
 <style>${CSS}</style>
 </head>
@@ -157,11 +193,7 @@ export function layout(input: LayoutInput): string {
     <span class="wordmark">AGENT<span class="pos">POS</span></span>
     <span class="space">Espacio del comprador</span>
     ${netBadge(input.network)}
-    <nav>
-      ${tab("/", "home", "Inicio")}
-      ${tab("/proposals", "proposals", proposalsLabel)}
-      ${tab("/activity", "activity", "Actividad")}
-    </nav>
+    ${nav}
   </header>
   <div class="assure">
     <span>Tu llave nunca sale de tu maquina</span>
@@ -220,6 +252,74 @@ interface PageError {
 
 function errBanner(error: PageError): string {
   return `<div class="banner err"><strong>${esc(error.code)}</strong>: ${esc(error.message)}<br><span class="meta">${esc(error.hint)}</span></div>`;
+}
+
+// --- the way in: login and first-run setup -----------------------------------
+
+/**
+ * The login form. It says nothing about which accounts exist, on purpose: the refusal for
+ * an unknown correo and for a wrong contrasena is the same sentence.
+ */
+export function loginPage(options: {
+  network: string;
+  next?: string;
+  error?: PageError;
+  notice?: string;
+}): string {
+  const body = `
+  <div class="gate">
+    <p class="lead">Entra a tu espacio</p>
+    <p class="sub">Aqui se definen tus limites de gasto y se aprueban los pagos que tu maquina firma. Solo entra el dueno.</p>
+    ${options.error ? errBanner(options.error) : ""}
+    ${options.notice ? `<div class="banner ok">${esc(options.notice)}</div>` : ""}
+    <form method="post" action="/login" class="card">
+      <input type="hidden" name="next" value="${esc(options.next ?? "/")}">
+      <label for="email">Correo</label>
+      <input type="email" id="email" name="email" autocomplete="username" required>
+      <label for="password">Contrasena</label>
+      <input type="password" id="password" name="password" autocomplete="current-password" required>
+      <button type="submit">Entrar</button>
+    </form>
+    <p class="custody">Esta plataforma nunca guarda ni pide una llave secreta de wallet. Tu contrasena se guarda solo como un hash scrypt; ni nosotros ni nadie puede leerla desde la base de datos.</p>
+  </div>`;
+  return layout({
+    title: "Entrar",
+    active: "none",
+    network: options.network,
+    pendingCount: 0,
+    body,
+  });
+}
+
+/** First run: the one and only owner account. After this, /setup answers 404 forever. */
+export function setupPage(options: {
+  network: string;
+  email?: string;
+  error?: PageError;
+}): string {
+  const body = `
+  <div class="gate">
+    <p class="lead">Crea tu cuenta de dueno</p>
+    <p class="sub">Esta instalacion todavia no tiene dueno. La cuenta se crea una sola vez y es la unica que puede cambiar tus limites y aprobar pagos.</p>
+    ${options.error ? errBanner(options.error) : ""}
+    <form method="post" action="/setup" class="card">
+      <label for="email">Correo</label>
+      <input type="email" id="email" name="email" value="${esc(options.email ?? "")}" autocomplete="username" required>
+      <label for="password">Contrasena (minimo 12 caracteres)</label>
+      <input type="password" id="password" name="password" autocomplete="new-password" required minlength="12">
+      <label for="confirm">Repite la contrasena</label>
+      <input type="password" id="confirm" name="confirm" autocomplete="new-password" required minlength="12">
+      <button type="submit">Crear cuenta y entrar</button>
+    </form>
+    <p class="custody">Guarda esta contrasena donde guardas las importantes: no hay correo de recuperacion. Si la pierdes, se reemplaza desde el entorno del servidor (BUYER_WEB_OWNER_PASSWORD_HASH) y se cierran todas las sesiones.</p>
+  </div>`;
+  return layout({
+    title: "Crear cuenta",
+    active: "none",
+    network: options.network,
+    pendingCount: 0,
+    body,
+  });
 }
 
 // --- home: mandate state, offer search, mandate editor, channels -------------
@@ -375,7 +475,7 @@ function payableCell(offer: MarketOffer): string {
   return `<span class="tag rejected">no</span><div class="meta">${esc(reasons)}</div>`;
 }
 
-function offerRow(offer: MarketOffer, quantity: number): string {
+function offerRow(offer: MarketOffer, quantity: number, csrf: string): string {
   const shown =
     Object.keys(offer.matchedAttributes).length > 0 ? offer.matchedAttributes : offer.attributes;
   const attributes = Object.entries(shown)
@@ -396,6 +496,7 @@ function offerRow(offer: MarketOffer, quantity: number): string {
         <td>${payableCell(offer)}</td>
         <td>
           <form method="post" action="/proposals">
+            ${csrfInput(csrf)}
             <input type="hidden" name="storeUrl" value="${esc(offer.store.url)}">
             <input type="hidden" name="itemId" value="${esc(offer.itemId)}">
             <input type="hidden" name="quantity" value="${esc(String(quantity))}">
@@ -448,7 +549,11 @@ function facetsSection(values: MarketFormValues, result: MarketCallResult): stri
   </div>`;
 }
 
-function marketSection(status: ServiceStatus, search: MarketSearch | undefined): string {
+function marketSection(
+  status: ServiceStatus,
+  search: MarketSearch | undefined,
+  csrf: string,
+): string {
   if (!status.profileConfigured) {
     return `
   <h2>Llamado al mercado</h2>
@@ -511,7 +616,7 @@ function marketSection(status: ServiceStatus, search: MarketSearch | undefined):
   <div class="card">
     <table>
       <tr><th>Tienda</th><th>Producto</th><th>Unitario</th><th>Total x${String(quantity)}</th><th>Pagable</th><th></th></tr>
-      ${result.offers.map((o) => offerRow(o, quantity)).join("")}
+      ${result.offers.map((o) => offerRow(o, quantity, csrf)).join("")}
     </table>
     <p class="meta" style="margin:12px 0 0">${String(result.offers.length)} oferta(s), de la mas barata a la mas cara, para ${String(quantity)} unidad(es). Una oferta marcada "no" se muestra igual: es tu limite el que la frena, no la tienda.</p>
   </div>`;
@@ -560,6 +665,7 @@ export function homePage(options: {
   network: string;
   status: ServiceStatus;
   channels: ChannelsState;
+  session: SessionView;
   saved?: boolean;
   error?: PageError;
   market?: MarketSearch;
@@ -590,10 +696,11 @@ export function homePage(options: {
   ${banner}
   ${shippingWarning}
   ${mandateState(options.status)}
-  ${marketSection(options.status, options.market)}
+  ${marketSection(options.status, options.market, options.session.csrf)}
   <h2>Mandato</h2>
   <p class="sub" style="margin-bottom:12px">Lo que tu agente tiene permitido hacer. El agente no puede editar esta pagina; solo tu.</p>
   <form method="post" action="/profile" class="card">
+    ${csrfInput(options.session.csrf)}
     <div class="row">
       <div>
         <label for="maxPerTx">Maximo por compra (USDC)</label>
@@ -643,6 +750,7 @@ export function homePage(options: {
     active: "home",
     network: options.network,
     pendingCount: options.status.pendingProposals,
+    session: options.session,
     body,
   });
 }
@@ -659,23 +767,49 @@ export function proposalsPage(options: {
   shipping?: { city: string; country: string };
   signerConfigured: boolean;
   instructionsFor: (p: Proposal) => { checkoutUrl: string; cli: string; note: string };
+  session: SessionView;
+  /** True when approving this proposal asks for the password again. */
+  needsReauth: (p: Proposal) => boolean;
   highlight?: string;
+  /** Shown on the proposal whose re-authentication was just refused. */
+  reauthError?: { proposalId: string; message: string };
 }): string {
+  const csrf = options.session.csrf;
   const pendingCards = options.pending
-    .map(
-      (p) => `
+    .map((p) => {
+      // Approving is the moment this space commits money, so above the confirmation
+      // threshold the password is asked again, right here, with the amount and the store
+      // written next to the field: nobody approves by muscle memory on a borrowed screen.
+      const failed =
+        options.reauthError?.proposalId === p.id
+          ? `<div class="fail">${esc(options.reauthError.message)}</div>`
+          : "";
+      const confirm = options.needsReauth(p)
+        ? `
+      <div class="confirm">
+        <div class="k">Confirma con tu contrasena: vas a aprobar ${esc(p.amount)} ${esc(p.asset)} en ${esc(p.storeName)}.</div>
+        ${failed}
+        <label for="pw-${esc(p.id)}">Tu contrasena</label>
+        <input type="password" id="pw-${esc(p.id)}" name="password" autocomplete="current-password" required>
+      </div>`
+        : failed;
+      return `
   <div class="card">
     <div class="cardhead"><span class="amount">${esc(p.amount)} ${esc(p.asset)}</span>${statusTag(p.status)}</div>
     <div class="title">${esc(p.title)}</div>
     ${proposalMeta(p)}
     ${shippingLine(p, options.shipping)}
     <div class="meta">Cotizacion congelada, valida hasta ${esc(fmtWhen(p.cartExpiresAt))}.</div>
+    <form method="post" action="/proposals/${esc(p.id)}/approve">
+      ${csrfInput(csrf)}
+      ${confirm}
+      <div class="actions"><button type="submit">Aprobar</button></div>
+    </form>
     <div class="actions">
-      <form method="post" action="/proposals/${esc(p.id)}/approve"><button type="submit">Aprobar</button></form>
-      <form method="post" action="/proposals/${esc(p.id)}/reject"><button type="submit" class="danger">Rechazar</button></form>
+      <form method="post" action="/proposals/${esc(p.id)}/reject">${csrfInput(csrf)}<button type="submit" class="danger">Rechazar</button></form>
     </div>
-  </div>`,
-    )
+  </div>`;
+    })
     .join("");
 
   const signingNote = options.signerConfigured
@@ -700,7 +834,7 @@ export function proposalsPage(options: {
     <div class="meta">Para pagar a mano desde la maquina que tiene tu llave:</div>
     <pre><code>${esc(i.cli)}</code></pre>
     <div class="actions">
-      <form method="post" action="/proposals/${esc(p.id)}/reject"><button type="submit" class="ghost">Cancelar aprobacion</button></form>
+      <form method="post" action="/proposals/${esc(p.id)}/reject">${csrfInput(csrf)}<button type="submit" class="ghost">Cancelar aprobacion</button></form>
     </div>
   </div>`;
     })
@@ -731,6 +865,7 @@ export function proposalsPage(options: {
       ? `
   <h2>Proponer una compra tu mismo</h2>
   <form method="post" action="/proposals" class="card">
+    ${csrfInput(csrf)}
     <div class="row">
       <div>
         <label for="storeUrl">Tienda</label>
@@ -762,6 +897,7 @@ export function proposalsPage(options: {
     active: "proposals",
     network: options.network,
     pendingCount: options.pending.length,
+    session: options.session,
     body,
   });
 }
@@ -811,11 +947,60 @@ function activitySummary(e: ActivityEntry): string {
   }
 }
 
+const ACCESS_LABEL: Record<AccessEntry["event"], string> = {
+  setup: "cuenta creada",
+  login_ok: "entrada correcta",
+  login_failed: "intento fallido",
+  login_rate_limited: "intento bloqueado",
+  logout: "salida",
+  session_expired: "sesion expirada",
+  approval: "propuesta aprobada",
+  reauth_failed: "contrasena incorrecta al aprobar",
+  csrf_invalid: "formulario sin token valido",
+};
+
+/** Red for what someone else may have done, green for money decisions, muted for routine. */
+const ACCESS_CLASS: Partial<Record<AccessEntry["event"], string>> = {
+  login_failed: "rejected",
+  login_rate_limited: "rejected",
+  reauth_failed: "rejected",
+  csrf_invalid: "rejected",
+  approval: "paid",
+  session_expired: "expired",
+  logout: "expired",
+};
+
+/**
+ * The panel that answers "has anyone else been here?". Everything it shows is a hash or a
+ * coarse label: the address, the browser and the email never land in this table whole.
+ */
+function accessSection(access: AccessEntry[]): string {
+  if (access.length === 0) {
+    return `
+  <h2>Accesos</h2>
+  <div class="card"><div class="empty">Sin registros todavia.</div></div>`;
+  }
+  const rows = access
+    .map(
+      (a) =>
+        `<tr><td class="meta">${esc(fmtWhen(a.at))}</td><td><span class="tag ${ACCESS_CLASS[a.event] ?? "approved"}">${esc(ACCESS_LABEL[a.event] ?? a.event)}</span></td><td class="meta mono">${esc(a.ipHash)}</td><td class="meta">${esc(a.uaFamily)}</td><td class="meta">${esc(a.detail)}</td></tr>`,
+    )
+    .join("");
+  return `
+  <h2>Accesos</h2>
+  <div class="card">
+    <table><tr><th>Fecha</th><th>Que paso</th><th>Origen</th><th>Navegador</th><th>Detalle</th></tr>${rows}</table>
+    <p class="meta" style="margin:12px 0 0">El origen es un hash corto de la direccion IP, no la direccion: sirve para reconocer "esto fui yo, desde casa" sin guardar de donde te conectas. Intentos fallidos seguidos de nada son ruido de internet; intentos fallidos seguidos de una entrada correcta que no reconoces, no.</p>
+  </div>`;
+}
+
 export function activityPage(options: {
   activity: ActivityEntry[];
   proposals: Proposal[];
   status: ServiceStatus;
   network: string;
+  session: SessionView;
+  access: AccessEntry[];
 }): string {
   const timeline = options.activity
     .map((e) => {
@@ -842,12 +1027,14 @@ export function activityPage(options: {
   <h2>Linea de tiempo</h2>
   <div class="card">
     ${timeline ? `<ol class="timeline">${timeline}</ol>` : '<div class="empty">Nada todavia.</div>'}
-  </div>`;
+  </div>
+  ${accessSection(options.access)}`;
   return layout({
     title: "Actividad",
     active: "activity",
     network: options.network,
     pendingCount: s.pendingProposals,
+    session: options.session,
     body,
   });
 }
@@ -861,16 +1048,20 @@ export function errorPage(options: {
   message: string;
   hint: string;
   backHref: string;
+  backLabel?: string;
+  /** Absent for an anonymous visitor: the error page must not render a session that is not there. */
+  session?: SessionView;
 }): string {
   const body = `
   <div class="banner err"><strong>${esc(options.code)}</strong>: ${esc(options.message)}</div>
   <p class="meta">${esc(options.hint)}</p>
-  <p><a href="${esc(options.backHref)}">Volver a propuestas</a></p>`;
+  <p><a href="${esc(options.backHref)}">${esc(options.backLabel ?? "Volver a propuestas")}</a></p>`;
   return layout({
     title: "Error",
-    active: "proposals",
+    active: options.session ? "proposals" : "none",
     network: options.network,
     pendingCount: options.pendingCount,
+    ...(options.session ? { session: options.session } : {}),
     body,
   });
 }

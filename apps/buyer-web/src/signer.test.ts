@@ -7,7 +7,8 @@ import { describe, expect, it } from "vitest";
 import { createBuyerWebApp } from "./app.js";
 import { configFromEnv } from "./config.js";
 import { BuyerWebStorage } from "./storage.js";
-import { STORE_URL, inProcessStore } from "./test-utils.js";
+import { STORE_URL, inProcessStore, setUpOwner } from "./test-utils.js";
+import type { BuyerWebClient } from "./test-utils.js";
 import type { Proposal, SignerQueueItem } from "./types.js";
 
 const TOKEN = "signer-token-0123456789abcdef"; // 30 chars, >= 24
@@ -27,8 +28,16 @@ function auth(token = TOKEN): Record<string, string> {
   return { authorization: `Bearer ${token}` };
 }
 
-async function saveProfile(app: App): Promise<void> {
-  const res = await app.request("/profile", {
+/**
+ * The owner's own browser side of the flow. The signer routes below deliberately do NOT
+ * use it: they carry a bearer token and no cookie, which is the whole point of this file.
+ */
+async function ownerOf(app: App): Promise<BuyerWebClient> {
+  return setUpOwner(app);
+}
+
+async function saveProfile(client: BuyerWebClient): Promise<void> {
+  const res = await client.request("/profile", {
     method: "POST",
     body: new URLSearchParams({
       maxPerTx: "25",
@@ -40,8 +49,8 @@ async function saveProfile(app: App): Promise<void> {
   expect(res.status).toBe(303);
 }
 
-async function propose(app: App, itemId = "sticker"): Promise<Proposal> {
-  const res = await app.request("/api/proposals", {
+async function propose(client: BuyerWebClient, itemId = "sticker"): Promise<Proposal> {
+  const res = await client.request("/api/proposals", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ storeUrl: STORE_URL, itemId }),
@@ -50,10 +59,10 @@ async function propose(app: App, itemId = "sticker"): Promise<Proposal> {
   return ((await res.json()) as { proposal: Proposal }).proposal;
 }
 
-async function approvedProposal(app: App): Promise<Proposal> {
-  await saveProfile(app);
-  const proposal = await propose(app);
-  const res = await app.request(`/api/proposals/${proposal.id}/approve`, { method: "POST" });
+async function approvedProposal(client: BuyerWebClient): Promise<Proposal> {
+  await saveProfile(client);
+  const proposal = await propose(client);
+  const res = await client.approve(proposal.id, { api: true });
   expect(res.status).toBe(200);
   return ((await res.json()) as { proposal: Proposal }).proposal;
 }
@@ -103,7 +112,8 @@ describe("mounting and auth", () => {
 describe("the queue", () => {
   it("lists approved-unpaid proposals with everything a payer needs", async () => {
     const { app } = makeApp();
-    const approved = await approvedProposal(app);
+    const client = await ownerOf(app);
+    const approved = await approvedProposal(client);
     const res = await app.request("/api/signer/queue", { headers: auth() });
     expect(res.status).toBe(200);
     const { proposals } = (await res.json()) as { proposals: SignerQueueItem[] };
@@ -120,17 +130,19 @@ describe("the queue", () => {
 
   it("excludes pending, rejected and paid proposals", async () => {
     const { app } = makeApp();
-    await saveProfile(app);
-    await propose(app); // stays pending
-    const rejected = await propose(app, "mug");
-    await app.request(`/api/proposals/${rejected.id}/reject`, { method: "POST" });
+    const client = await ownerOf(app);
+    await saveProfile(client);
+    await propose(client); // stays pending
+    const rejected = await propose(client, "mug");
+    await client.request(`/api/proposals/${rejected.id}/reject`, { method: "POST" });
     const empty = await app.request("/api/signer/queue", { headers: auth() });
     expect(((await empty.json()) as { proposals: unknown[] }).proposals).toHaveLength(0);
   });
 
   it("logs a queue delivery to the activity trail once per set, not once per poll", async () => {
     const { app, service } = makeApp();
-    await approvedProposal(app);
+    const client = await ownerOf(app);
+    await approvedProposal(client);
     await app.request("/api/signer/queue", { headers: auth() });
     await app.request("/api/signer/queue", { headers: auth() });
     await app.request("/api/signer/queue", { headers: auth() });
@@ -142,7 +154,8 @@ describe("the queue", () => {
 describe("paid reports", () => {
   it("marks an approved proposal paid, idempotently, and drops it from the queue", async () => {
     const { app, service } = makeApp();
-    const approved = await approvedProposal(app);
+    const client = await ownerOf(app);
+    const approved = await approvedProposal(client);
     const first = await markPaid(app, approved.id);
     expect(first.status).toBe(200);
     const paid = ((await first.json()) as { proposal: Proposal }).proposal;
@@ -163,15 +176,16 @@ describe("paid reports", () => {
 
   it("refuses to mark paid a proposal that is not approved", async () => {
     const { app } = makeApp();
-    await saveProfile(app);
-    const pending = await propose(app);
+    const client = await ownerOf(app);
+    await saveProfile(client);
+    const pending = await propose(client);
     const onPending = await markPaid(app, pending.id);
     expect(onPending.status).toBe(409);
     expect(((await onPending.json()) as { error: { code: string } }).error.code).toBe(
       "APPROVAL_PENDING",
     );
 
-    await app.request(`/api/proposals/${pending.id}/reject`, { method: "POST" });
+    await client.request(`/api/proposals/${pending.id}/reject`, { method: "POST" });
     const onRejected = await markPaid(app, pending.id);
     expect(onRejected.status).toBe(409);
     expect(((await onRejected.json()) as { error: { code: string } }).error.code).toBe(
@@ -181,19 +195,20 @@ describe("paid reports", () => {
 
   it("shows the payment in the status views: pages, history and API", async () => {
     const { app } = makeApp();
-    const approved = await approvedProposal(app);
+    const client = await ownerOf(app);
+    const approved = await approvedProposal(client);
     await markPaid(app, approved.id, "tx_visible");
-    const proposalsHtml = await (await app.request("/proposals")).text();
+    const proposalsHtml = await (await client.request("/proposals")).text();
     expect(proposalsHtml).toContain("Pagadas");
     expect(proposalsHtml).toContain("tx_visible");
-    const activityHtml = await (await app.request("/activity")).text();
+    const activityHtml = await (await client.request("/activity")).text();
     expect(activityHtml).toContain("tx_visible");
-    const api = (await (await app.request("/api/proposals")).json()) as {
+    const api = (await (await client.request("/api/proposals")).json()) as {
       proposals: Proposal[];
     };
     expect(api.proposals[0]?.status).toBe("paid");
     // A paid proposal can no longer be approved or rejected.
-    expect((await app.request(`/api/proposals/${approved.id}/reject`, { method: "POST" })).status)
+    expect((await client.request(`/api/proposals/${approved.id}/reject`, { method: "POST" })).status)
       .toBe(400);
   });
 });
@@ -201,7 +216,8 @@ describe("paid reports", () => {
 describe("failure reports", () => {
   it("keeps the proposal approved, records why, and shows it to the human", async () => {
     const { app, service } = makeApp();
-    const approved = await approvedProposal(app);
+    const client = await ownerOf(app);
+    const approved = await approvedProposal(client);
     const res = await app.request("/api/signer/failed", {
       method: "POST",
       headers: { ...auth(), "content-type": "application/json" },
@@ -220,7 +236,7 @@ describe("failure reports", () => {
     const queue = await app.request("/api/signer/queue", { headers: auth() });
     expect(((await queue.json()) as { proposals: unknown[] }).proposals).toHaveLength(1);
 
-    const html = await (await app.request("/proposals")).text();
+    const html = await (await client.request("/proposals")).text();
     expect(html).toContain("MANDATE_EXCEEDED");
     expect(html).toContain("El ultimo intento de pago fallo");
     expect(service.activity().some((e) => e.kind === "proposal.payment_failed")).toBe(true);
@@ -228,7 +244,8 @@ describe("failure reports", () => {
 
   it("ignores a stale failure that arrives after the payment settled", async () => {
     const { app } = makeApp();
-    const approved = await approvedProposal(app);
+    const client = await ownerOf(app);
+    const approved = await approvedProposal(client);
     await markPaid(app, approved.id);
     const res = await app.request("/api/signer/failed", {
       method: "POST",

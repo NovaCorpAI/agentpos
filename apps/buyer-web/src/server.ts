@@ -11,13 +11,14 @@ import { BuyerWebStorage } from "./storage.js";
 try {
   const config = configFromEnv();
   const storage = new BuyerWebStorage(config.dbFile);
-  const { app } = createBuyerWebApp({
+  const { app, auth } = createBuyerWebApp({
     storage,
     network: config.network,
     // City and country are the most a line here may say about where a parcel goes.
     logger: createLogger({ base: { app: "buyer-web", network: config.network } }),
     ...(config.whatsapp ? { whatsapp: config.whatsapp } : {}),
     ...(config.signerToken ? { signerToken: config.signerToken } : {}),
+    ...(config.owner ? { owner: config.owner } : {}),
   });
 
   const channels = config.whatsapp
@@ -32,6 +33,13 @@ try {
   console.log(`  whatsapp ${channels}`);
   console.log(
     `  signer   ${config.signerToken ? "bridge enabled (/api/signer, run `agentpos-buyer watch` where the wallet lives)" : "bridge disabled (set SIGNER_TOKEN to enable)"}`,
+  );
+  console.log(
+    `  access   ${
+      auth.hasOwner()
+        ? `owner account ready, log in at http://localhost:${config.port}/login`
+        : `NO OWNER YET: create it once at http://localhost:${config.port}/setup before exposing this host`
+    }${config.owner ? " (bootstrapped from the environment)" : ""}`,
   );
   console.log(`  custody  this process stores PUBLIC wallet addresses only and cannot sign`);
 
