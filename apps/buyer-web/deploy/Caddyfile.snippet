@@ -1,0 +1,16 @@
+# Paste this block into apps/facilitator/deploy/Caddyfile on the VPS (the single Caddy that
+# fronts every public hostname on the box over the shared `edge` network), then reload Caddy.
+# This file is a snippet on purpose: the checked-in facilitator Caddyfile is not modified here.
+#
+# The Cloudflare DNS record for agente.agentposhq.com must be DNS-only (grey cloud), not
+# proxied: Caddy answers the ACME challenge itself to get the certificate.
+#
+# PRIVATE SURFACE. This host exposes the owner's mandate, purchase proposals and activity
+# history, and it has no login: whoever knows the URL can approve purchases. Never link it
+# publicly, never put it in a sitemap, a README example or the landing page. The only things
+# that should ever call it are the owner's browser, Twilio's webhook POSTs and the owner's own
+# `agentpos-buyer watch` daemon (bearer token).
+agente.agentposhq.com {
+	reverse_proxy buyer-web:8788
+	encode gzip
+}

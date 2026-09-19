@@ -161,6 +161,24 @@ Environment (all optional):
 
 There is deliberately no environment slot for any wallet key or passphrase.
 
+## Deploy
+
+`deploy/` holds the production assets for `https://agente.agentposhq.com` (the owner's buyer
+space on the shared VPS, behind the single Caddy that fronts every public hostname over the
+external `edge` network):
+
+- `deploy/Dockerfile` - multi-stage `node:22-alpine`, builds only what `@agentpos/buyer-web`
+  needs from the workspace, runs as the non-root `node` user, SQLite in `/data`, port `8788`.
+- `deploy/docker-compose.prod.yml` - one `buyer-web` service on `edge`, never published to the
+  host, `/root/.agentpos/buyer-web:/data`, env passthrough for exactly what `src/config.ts`
+  reads.
+- `deploy/Caddyfile.snippet` - the `agente.agentposhq.com` vhost to append to the facilitator
+  Caddyfile on the VPS.
+- `deploy/README.md` - the operator's command sequence and the post-deploy checks.
+
+The host serves a **private** surface (the owner's mandate, proposals and activity, with no
+login), so it is never linked publicly.
+
 ## Test
 
 ```sh
