@@ -76,7 +76,7 @@ location /agentpos/      { proxy_pass http://127.0.0.1:8402; }
 | URL                                                  | Para qué                                                                                         |
 | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
 | `https://tu-sitio/.well-known/ucp`                   | Manifiesto UCP de descubrimiento con el handler de pago `x402-stellar`                           |
-| `https://tu-sitio/agentpos/catalog`                 | Productos publicados, precios en USDC, búsqueda con `?q=`                                        |
+| `https://tu-sitio/agentpos/catalog`                 | Productos publicados, precios en USDC, búsqueda con `?q=`, `attr.<nombre>=<valor>`, rango de precio |
 | `https://tu-sitio/agentpos/feed`                    | Feed de productos ACP                                                                            |
 | `https://tu-sitio/agentpos/mcp`                     | Servidor MCP: `search_items`, `get_item`, `create_cart`, `get_order`, `get_payment_instructions` |
 | `POST https://tu-sitio/agentpos/cart`               | Cotización para `{ items, buyer, shipping }`                                                     |

@@ -15,6 +15,7 @@ import {
 } from "@agentpos/core";
 import type { CoreConfig } from "@agentpos/core";
 import type { CatalogService } from "./catalog.js";
+import { parsePriceBound } from "./catalog.js";
 import type { CheckoutService } from "./checkout.js";
 import { cartView, orderView, priceOf } from "./app.js";
 import type { SiteRoutes } from "./app.js";
@@ -53,28 +54,86 @@ export function buildMcpServer(deps: McpDeps): McpServer {
     "search_items",
     {
       title: "Search items",
-      description: `Search ${deps.site.displayName}'s catalog. Returns ids, prices in ${deps.core.checkoutAsset} and attributes.`,
+      description:
+        `Search ${deps.site.displayName}'s catalog. Returns ids, prices in ${deps.core.checkoutAsset} and attributes. ` +
+        "Variants are separate items carrying their options in `attributes`, so filter by them " +
+        "instead of guessing from the title: `attributes` matches exactly, ignoring case and " +
+        "Spanish accents. `facets` in the answer lists every value each attribute can take among " +
+        "the items matching the rest of your request, so you can discover the options (for " +
+        'example that "Passepartout" is "con" or "sin") and then narrow down.',
       inputSchema: {
-        query: z.string().default(""),
-        limit: z.number().int().min(1).max(50).default(20),
+        query: z.string().default("").describe("Free text over title, description and attributes."),
+        attributes: z
+          .record(z.string(), z.string())
+          .optional()
+          .describe(
+            'Exact attribute match, ANDed: { "Passepartout": "con", "Fondo": "blanco" }. Case- and accent-insensitive. An unknown attribute name matches nothing.',
+          ),
+        minPriceUsdc: z
+          .string()
+          .optional()
+          .describe(
+            `Lowest acceptable price, inclusive, as a decimal ${deps.core.checkoutAsset} string (e.g. "10.5").`,
+          ),
+        maxPriceUsdc: z
+          .string()
+          .optional()
+          .describe(
+            `Highest acceptable price, inclusive, as a decimal ${deps.core.checkoutAsset} string (e.g. "40").`,
+          ),
+        physical: z
+          .boolean()
+          .optional()
+          .describe("true: goods that need a shipping address. false: digital items."),
+        inStock: z
+          .boolean()
+          .optional()
+          .describe(
+            "Filter on stock as the catalog knows it; items with untracked stock count as in stock.",
+          ),
+        limit: z.number().int().min(1).max(100).default(20),
+        offset: z.number().int().min(0).default(0),
       },
     },
-    async ({ query, limit }) => {
-      const items = query
-        ? deps.catalog.search(query, limit)
-        : deps.catalog.published().slice(0, limit);
-      return ok({
-        items: items.map((i) => ({
-          id: i.id,
-          title: i.title,
-          description: i.descriptionAgent,
-          price: formatUsdc(priceOf(i)),
-          asset: deps.core.checkoutAsset,
-          physical: i.physical,
-          attributes: i.attributes,
-          url: i.url,
-        })),
-      });
+    async ({ query, attributes, minPriceUsdc, maxPriceUsdc, physical, inStock, limit, offset }) => {
+      try {
+        // Same contract as GET /catalog, including the typed CONFIG_INVALID on a bad price bound.
+        const result = deps.catalog.query({
+          ...(query ? { q: query } : {}),
+          ...(attributes && Object.keys(attributes).length > 0 ? { attributes } : {}),
+          ...(minPriceUsdc !== undefined
+            ? { minPriceUsdc: parsePriceBound(minPriceUsdc, "minPriceUsdc") }
+            : {}),
+          ...(maxPriceUsdc !== undefined
+            ? { maxPriceUsdc: parsePriceBound(maxPriceUsdc, "maxPriceUsdc") }
+            : {}),
+          ...(physical !== undefined ? { physical } : {}),
+          ...(inStock !== undefined ? { inStock } : {}),
+          limit,
+          offset,
+        });
+        return ok({
+          items: result.items.map((i) => ({
+            id: i.id,
+            title: i.title,
+            description: i.descriptionAgent,
+            price: formatUsdc(priceOf(i)),
+            asset: deps.core.checkoutAsset,
+            physical: i.physical,
+            attributes: i.attributes,
+            url: i.url,
+          })),
+          facets: result.facets,
+          page: {
+            limit: result.limit,
+            offset: result.offset,
+            returned: result.items.length,
+            total: result.total,
+          },
+        });
+      } catch (err) {
+        return fail(err);
+      }
     },
   );
 

@@ -76,7 +76,7 @@ location /agentpos/      { proxy_pass http://127.0.0.1:8402; }
 | URL                                                   | Purpose                                                                                        |
 | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | `https://your-site/.well-known/ucp`                   | UCP discovery manifest with the `x402-stellar` payment handler                                 |
-| `https://your-site/agentpos/catalog`                 | Published items, prices in USDC, search with `?q=`                                             |
+| `https://your-site/agentpos/catalog`                 | Published items, prices in USDC, search with `?q=`, `attr.<name>=<value>`, price bounds        |
 | `https://your-site/agentpos/feed`                    | ACP product feed                                                                               |
 | `https://your-site/agentpos/mcp`                     | MCP server: `search_items`, `get_item`, `create_cart`, `get_order`, `get_payment_instructions` |
 | `POST https://your-site/agentpos/cart`               | Quote for `{ items, buyer, shipping }`                                                         |
