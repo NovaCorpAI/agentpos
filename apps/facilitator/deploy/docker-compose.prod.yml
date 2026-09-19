@@ -35,6 +35,8 @@ services:
     restart: unless-stopped
     environment:
       # Bcrypt hash for the buyer space gate (see the agente.agentposhq.com block).
+      # Gotcha: compose interpolates $ in values, so the hash MUST be written with doubled
+      # dollars in the env file ($$2a$$14$$...) or it arrives truncated and every login fails.
       BUYER_WEB_BASIC_HASH: ${BUYER_WEB_BASIC_HASH:-}
     ports:
       - "80:80"
