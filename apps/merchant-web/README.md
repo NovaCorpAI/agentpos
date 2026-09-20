@@ -74,3 +74,11 @@ Every error is typed: `{ error: { code, message, hint, retryable } }`.
 pnpm --filter @agentpos/merchant-web dev    # http://localhost:8410 (PORT to change)
 pnpm --filter @agentpos/merchant-web test
 ```
+
+## Deploy
+
+`deploy/` holds the production assets for `https://conecta.agentposhq.com`: a multi-stage
+Dockerfile (node:22-alpine, non-root), a compose service on the shared external `edge` network
+with no host port, the Caddy block (also checked in at `apps/facilitator/deploy/Caddyfile`) and
+the operator sequence with its post-deploy checks. `PORT` is the only variable this app reads.
+See `deploy/README.md`.
