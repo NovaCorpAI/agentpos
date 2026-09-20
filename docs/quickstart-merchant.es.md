@@ -91,7 +91,9 @@ real de <https://demo.agentposhq.com>) está en
 `@agentpos/merchant-web` es un asistente de cuatro pasos que escribe los mismos dos archivos por
 ti: URL y nombre de la tienda con una prueba en vivo de tus llaves de WooCommerce, tu dirección de
 wallet (si pegas un secreto se rechaza al instante), el `agentpos.config.json` y el `.env`
-generados para descargar, y los fragmentos de proxy junto con la lista de verificación.
+generados para descargar, y los fragmentos de proxy junto con la lista de verificación. También
+genera la llave que necesita tu panel (`MERCHANT_API_TOKEN`, ver paso 3), te la muestra en el
+paso 4 con un botón para copiarla y puede comprobarla contra tu tienda en vivo.
 
 ```bash
 pnpm --filter @agentpos/merchant-web dev    # http://localhost:8410 (PORT para cambiarlo)
@@ -108,7 +110,18 @@ AGENTPOS_NETWORK=testnet
 AGENTPOS_FACILITATOR_API_KEY=<tu llave del facilitador>
 AGENTPOS_WOO_CONSUMER_KEY=ck_...
 AGENTPOS_WOO_CONSUMER_SECRET=cs_...
+MERCHANT_API_TOKEN=<la llave de tu panel>
 ```
+
+**La llave de tu panel.** `MERCHANT_API_TOKEN` es la llave que deja al panel de AgentPOS leer tus
+órdenes. Es de solo lectura: con ella se pueden ver tus órdenes, tus comprobantes y tus reglas, y
+nada más. No puede mover tu dinero, ni cambiar tus precios, ni publicar artículos. El asistente
+de la opción C te escribe una; si llenaste el `.env` a mano, crea la tuya con
+`openssl rand -hex 24` (mínimo 24 caracteres, o AgentPOS se niega a arrancar). Cuando tu tienda
+esté funcionando, conéctala al panel en app.agentposhq.com con la dirección de tu tienda y esta
+llave. Si la pierdes, escribe otra en esa línea, reinicia AgentPOS y vuelve a conectar el panel:
+la anterior deja de servir en ese mismo momento. Si dejas la línea fuera, el panel simplemente no
+tiene nada que leer.
 
 Las llaves son por red, así que puedes mantener las dos y cambiar de red sin riesgo:
 `AGENTPOS_FACILITATOR_API_KEY_TESTNET` y `AGENTPOS_FACILITATOR_API_KEY_MAINNET` tienen prioridad
@@ -203,7 +216,16 @@ curl -s https://TU-TIENDA/agentpos/catalog     | head    # tus artículos public
 curl -s https://TU-TIENDA/openapi.json         | head    # cómo te descubre un agente
 curl -s https://TU-TIENDA/agentpos/health                # ok: true, facilitador alcanzable
 open   https://TU-TIENDA/agentpos/dashboard              # tu panel de ventas
+
+# la llave de tu panel: 200 con ella, 401 sin ella. Las dos respuestas importan.
+curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $MERCHANT_API_TOKEN" \
+  https://TU-TIENDA/agentpos/api/merchant/summary
+curl -s -o /dev/null -w '%{http_code}\n' https://TU-TIENDA/agentpos/api/merchant/summary
 ```
+
+Un `404` en esa última dirección significa que tu tienda corre una versión antigua de AgentPOS:
+actualízala y vuelve a levantar `agentpos serve`. Un `401` con la llave significa que la llave
+que enviaste no es la que está en el `.env` con el que corre tu tienda.
 
 También se sirven, sin configurar nada: `/agentpos/feed` (catálogo ACP), `/agentpos/mcp` (punto
 MCP), `/llms.txt` y `/agentpos/metrics`.

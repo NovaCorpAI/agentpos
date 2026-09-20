@@ -90,7 +90,9 @@ Copy it if you are starting a store from scratch.
 `@agentpos/merchant-web` is a four-step wizard that writes the same two files for you: store URL
 and name with a live probe of your WooCommerce keys, your wallet address (a pasted secret is
 refused instantly), the generated `agentpos.config.json` and `.env` to download, and the proxy
-snippets plus the verification checklist.
+snippets plus the verification checklist. It also generates the key your panel needs
+(`MERCHANT_API_TOKEN`, see step 3), shows it in step 4 with a copy button, and can check it
+against your live store.
 
 ```bash
 pnpm --filter @agentpos/merchant-web dev    # http://localhost:8410 (PORT to change)
@@ -107,7 +109,18 @@ AGENTPOS_NETWORK=testnet
 AGENTPOS_FACILITATOR_API_KEY=<your facilitator key>
 AGENTPOS_WOO_CONSUMER_KEY=ck_...
 AGENTPOS_WOO_CONSUMER_SECRET=cs_...
+MERCHANT_API_TOKEN=<your panel key>
 ```
+
+**Your panel key.** `MERCHANT_API_TOKEN` is the key that lets the AgentPOS panel read your
+orders. It is read only: with it your orders, your receipts and your rules can be read, and
+nothing else. It cannot move your money, change your prices or publish items. The wizard in
+option C writes one for you; if you filled `.env` by hand, make your own with
+`openssl rand -hex 24` (24 characters minimum, or AgentPOS refuses to start). Once your store is
+running, connect it to the panel at app.agentposhq.com with your store address and this key. If
+you lose it, write a new one on that line, restart AgentPOS and connect the panel again: the old
+one stops working right then. Leave the line out entirely and the panel simply has nothing to
+read.
 
 Keys are per network, so you can keep both and switch networks safely:
 `AGENTPOS_FACILITATOR_API_KEY_TESTNET` and `AGENTPOS_FACILITATOR_API_KEY_MAINNET` win over the
@@ -198,7 +211,16 @@ curl -s https://YOUR-STORE/agentpos/catalog     | head    # your published items
 curl -s https://YOUR-STORE/openapi.json         | head    # how an agent discovers you
 curl -s https://YOUR-STORE/agentpos/health                # ok: true, facilitator reachable
 open   https://YOUR-STORE/agentpos/dashboard              # your sales dashboard
+
+# your panel key: 200 with it, 401 without it. Both answers matter.
+curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $MERCHANT_API_TOKEN" \
+  https://YOUR-STORE/agentpos/api/merchant/summary
+curl -s -o /dev/null -w '%{http_code}\n' https://YOUR-STORE/agentpos/api/merchant/summary
 ```
+
+A `404` on that last address means your store is running an older version of AgentPOS: update it
+and start `agentpos serve` again. A `401` with the key means the key you sent is not the one in
+the `.env` your store is running.
 
 Also served, no configuration needed: `/agentpos/feed` (ACP product feed), `/agentpos/mcp` (MCP
 endpoint), `/llms.txt`, `/agentpos/metrics`.

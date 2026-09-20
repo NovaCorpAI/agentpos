@@ -13,5 +13,5 @@ export { generateFiles, generateRequestSchema } from "./generate.js";
 export type { GenerateRequest, GeneratedOutput } from "./generate.js";
 export { validateWooCredentials, wooValidationRequestSchema } from "./woo.js";
 export type { WooValidationRequest, WooValidationResult } from "./woo.js";
-export { verifyDeployment, normalizeDomain } from "./verify.js";
-export type { VerifyCheck, VerifyCheckId, VerifyResult } from "./verify.js";
+export { verifyDeployment, normalizeDomain, verifyRequestSchema } from "./verify.js";
+export type { VerifyCheck, VerifyCheckId, VerifyRequest, VerifyResult } from "./verify.js";

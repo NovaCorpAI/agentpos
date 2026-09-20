@@ -66,7 +66,7 @@ const STRINGS = {
       "Solo necesitamos tu dirección pública, jamás tu llave secreta. Si pegas una clave que empieza con S, este asistente la rechaza al instante y no la guarda en ninguna parte. Tu saldo queda siempre bajo tu control.",
     s3Title: "Revisa y descarga",
     s3Lead:
-      "Revisa tus datos y genera tus dos archivos. Se validan con las mismas reglas que usa tu instalación: si aparecen aquí, el sidecar los acepta.",
+      "Revisa tus datos y genera tus dos archivos. Se validan con las mismas reglas que usa tu instalación: si aparecen aquí, AgentPOS los acepta tal cual.",
     revStore: "Tienda",
     revName: "Nombre",
     revPlatform: "Plataforma",
@@ -80,30 +80,44 @@ const STRINGS = {
     download: "Descargar",
     s4Title: "Instala y vende",
     s4Lead:
-      "Deja los dos archivos en tu servidor, redirige estas rutas al sidecar y ejecuta los comandos. Al terminar, tu tienda ya vende a agentes: compruébalo aquí abajo.",
+      "Deja los dos archivos en tu servidor, redirige estas rutas a AgentPOS y ejecuta los comandos. Al terminar, tu tienda ya vende a agentes: compruébalo aquí abajo.",
     s4Pending:
-      "Genera tus archivos en el paso 3 y aquí verás las rutas y los comandos listos para copiar.",
+      "Genera tus archivos en el paso 3 y aquí verás las rutas, los comandos y la llave de tu panel, listos para copiar.",
     proxyTitle: "Rutas del proxy",
     proxyNote:
-      "Tu dominio tiene que redirigir estas rutas al sidecar (puerto 8402). Elige tu servidor:",
+      "Tu dominio tiene que redirigir estas rutas a AgentPOS en tu servidor (puerto 8402). Elige tu servidor:",
     cmdTitle: "Comandos de instalación",
     cmdNote:
       "En tu servidor, en la carpeta donde dejaste los dos archivos. El escáner solo lee tu tienda, tú confirmas cada precio y nada se publica sin tu ok.",
+    tokenTitle: "La llave de tu panel",
+    tokenWhat:
+      "Esta es la llave que deja al panel de AgentPOS leer tus órdenes. Ya viene dentro del archivo .env que descargaste en el paso 3, en la línea MERCHANT_API_TOKEN, así que no tienes que inventar nada ni pedirla: cópiala de aquí.",
+    tokenReadOnly:
+      "Es de solo lectura. Con esta llave se pueden ver tus órdenes, tus comprobantes y tus reglas, y nada más: no puede mover tu dinero, ni cambiar tus precios, ni publicar artículos, ni tocar tu tienda.",
+    tokenNext:
+      "Siguiente paso: conecta tu tienda al panel en app.agentposhq.com con la dirección de tu tienda y esta llave.",
+    tokenLost:
+      "Si la pierdes no pasa nada: escribe otra llave cualquiera de 24 caracteres o más en la línea MERCHANT_API_TOKEN de tu archivo .env, reinicia AgentPOS en tu servidor y vuelve a conectar el panel con la nueva. La anterior deja de servir en ese mismo momento.",
     vTitle: "Comprueba que tu tienda ya vende a agentes",
     vNote:
-      "Escribe tu dominio y comprobamos lo mismo que comprueba un agente comprador real: que tu tienda se describe sola y que el sidecar responde. No tienes que confiar en nadie, nosotros incluidos.",
+      "Escribe tu dominio y comprobamos lo mismo que comprueba un agente comprador real: que tu tienda se describe sola y que AgentPOS responde. No tienes que confiar en nadie, nosotros incluidos.",
     vDomain: "Tu dominio",
     vDomainPh: "mitienda.cl",
+    vToken: "Llave de tu panel (opcional)",
+    vTokenNote:
+      "Si la pegas aquí, comprobamos también que tu panel puede leer tus órdenes con ella y que sin ella nadie puede. La usamos para esas dos consultas a tu propia tienda y no la guardamos.",
     vRun: "Verificar",
     vRunning: "Verificando...",
     vAllOk: "Tu tienda está lista: los agentes ya pueden encontrarla y comprarte.",
     vSomeFail: "Todavía falta algo. Sigue la pista de cada punto rojo.",
     vStore: "Tienda",
     vNetwork: "red",
-    checkHealth: "El sidecar responde (/agentpos/health)",
+    checkHealth: "AgentPOS responde en tu tienda (/agentpos/health)",
     checkOpenapi: "Contrato OpenAPI (/openapi.json)",
     checkUcp: "Manifiesto UCP (/.well-known/ucp)",
     checkLlms: "llms.txt (recomendado)",
+    checkMerchantApi:
+      "Tu panel lee tus órdenes con la llave, y sin la llave nadie las ve (/agentpos/api/merchant/summary)",
     errNetwork: "No se pudo contactar al servidor del asistente. ¿Sigue corriendo?",
     errSecretTitle:
       "Eso parece una llave SECRETA, no una dirección pública. No se guardó en ninguna parte; no la vuelvas a pegar.",
@@ -131,7 +145,8 @@ const STRINGS = {
     next2: "Continue: review and download",
     next3: "Continue: install and sell",
     s1Title: "Your store",
-    s1Lead: "Tell us where your store lives and what it is called: this is what agents will see when they buy from you.",
+    s1Lead:
+      "Tell us where your store lives and what it is called: this is what agents will see when they buy from you.",
     s1Url: "Public URL of your store",
     s1UrlPh: "https://myshop.example",
     s1Name: "Name (what agents will see)",
@@ -149,7 +164,8 @@ const STRINGS = {
     wooCs: "Consumer secret",
     wooCheck: "Test connection",
     wooChecking: "Testing...",
-    wooOk: "Connection works: the key is good and AgentPOS will be able to create orders in your store.",
+    wooOk:
+      "Connection works: the key is good and AgentPOS will be able to create orders in your store.",
     s1Safe:
       "Your keys are used exactly once, to test the connection against your own store, and end up only in the .env file you download in step 3. They are never stored or logged on any server of ours.",
     s2Title: "Your wallet",
@@ -163,7 +179,7 @@ const STRINGS = {
       "We only need your public address, never your secret key. If you paste a key that starts with S, this assistant refuses it instantly and stores it nowhere. Your balance stays under your control, always.",
     s3Title: "Review and download",
     s3Lead:
-      "Review your details and generate your two files. They are validated with the very rules your install runs: if they show up here, the sidecar accepts them.",
+      "Review your details and generate your two files. They are validated with the very rules your install runs: if they show up here, AgentPOS accepts them as they are.",
     revStore: "Store",
     revName: "Name",
     revPlatform: "Platform",
@@ -177,28 +193,44 @@ const STRINGS = {
     download: "Download",
     s4Title: "Install and sell",
     s4Lead:
-      "Put the two files on your server, forward these paths to the sidecar and run the commands. When you are done, your store already sells to agents: prove it below.",
-    s4Pending: "Generate your files in step 3 and the paths and commands will appear here, ready to copy.",
+      "Put the two files on your server, forward these paths to AgentPOS and run the commands. When you are done, your store already sells to agents: prove it below.",
+    s4Pending:
+      "Generate your files in step 3 and the paths, the commands and your panel key will appear here, ready to copy.",
     proxyTitle: "Proxy rules",
-    proxyNote: "Your domain must forward these paths to the sidecar (port 8402). Pick your server:",
+    proxyNote:
+      "Your domain must forward these paths to AgentPOS on your server (port 8402). Pick your server:",
     cmdTitle: "Install commands",
     cmdNote:
       "On your server, in the folder holding the two files. The scanner reads only your store, you confirm every price, and nothing is published without your ok.",
+    tokenTitle: "Your panel key",
+    tokenWhat:
+      "This is the key that lets the AgentPOS panel read your orders. It is already inside the .env file you downloaded in step 3, on the MERCHANT_API_TOKEN line, so there is nothing to invent and nobody to ask: copy it from here.",
+    tokenReadOnly:
+      "It is read only. With this key your orders, your receipts and your rules can be read, and nothing else: it cannot move your money, change your prices, publish items or touch your store.",
+    tokenNext:
+      "Next step: connect your store to the panel at app.agentposhq.com with your store address and this key.",
+    tokenLost:
+      "If you lose it, no harm done: write any other key of 24 characters or more on the MERCHANT_API_TOKEN line of your .env file, restart AgentPOS on your server, and connect the panel again with the new one. The old one stops working right then.",
     vTitle: "Prove your store already sells to agents",
     vNote:
-      "Type your domain and we check exactly what a real buying agent checks: that your store describes itself and the sidecar answers. You do not have to trust anyone, us included.",
+      "Type your domain and we check exactly what a real buying agent checks: that your store describes itself and that AgentPOS answers. You do not have to trust anyone, us included.",
     vDomain: "Your domain",
     vDomainPh: "myshop.example",
+    vToken: "Your panel key (optional)",
+    vTokenNote:
+      "Paste it here and we also check that your panel can read your orders with it, and that without it nobody can. We use it for those two calls to your own store and keep no copy.",
     vRun: "Verify",
     vRunning: "Verifying...",
     vAllOk: "Your store is ready: agents can already find it and buy from you.",
     vSomeFail: "Something is still missing. Follow the hint on each red item.",
     vStore: "Store",
     vNetwork: "network",
-    checkHealth: "Sidecar answers (/agentpos/health)",
+    checkHealth: "AgentPOS answers on your store (/agentpos/health)",
     checkOpenapi: "OpenAPI contract (/openapi.json)",
     checkUcp: "UCP manifest (/.well-known/ucp)",
     checkLlms: "llms.txt (recommended)",
+    checkMerchantApi:
+      "Your panel reads your orders with the key, and without the key nobody does (/agentpos/api/merchant/summary)",
     errNetwork: "Could not reach the wizard server. Is it still running?",
     errSecretTitle:
       "That looks like a SECRET key, not a public address. It was not saved anywhere; do not paste it again.",
@@ -297,6 +329,7 @@ export function buildWizardHtml(): string {
   .checks .fail { background: #ff6e82; }
   .checks .hint { display: block; color: #6d7ea6; font-size: 0.82rem; }
   .checks .url { display: block; color: #6d7ea6; opacity: 0.7; font-family: Consolas, "Cascadia Mono", ui-monospace, monospace; font-size: 0.75rem; }
+  .nextstep { border-left: 2px solid #7aa2ff; padding-left: 12px; color: #f4f7ff; font-size: 0.92rem; margin: 16px 0 10px; }
   .storeinfo { color: #9fb0d0; font-size: 0.85rem; margin-top: 12px; }
   .foot { color: #6d7ea6; font-size: 0.8rem; margin-top: 28px; }
   [hidden] { display: none !important; }
@@ -418,6 +451,16 @@ export function buildWizardHtml(): string {
           <div class="filehead"><code>shell</code><button class="ghost" data-copy="commands" data-i18n="copy"></button></div>
           <pre id="pre-commands"></pre>
         </div>
+        <div class="subsec">
+          <h3 data-i18n="tokenTitle"></h3>
+          <p class="note" data-i18n="tokenWhat"></p>
+          <div class="filehead"><code>MERCHANT_API_TOKEN</code>
+            <button class="ghost" data-copy="token" data-i18n="copy"></button></div>
+          <pre id="pre-token"></pre>
+          <div class="safe"><div class="safe-t" data-i18n="safeTitle"></div><span data-i18n="tokenReadOnly"></span></div>
+          <p class="nextstep" data-i18n="tokenNext"></p>
+          <p class="note" data-i18n="tokenLost"></p>
+        </div>
       </div>
     </div>
     <div class="card">
@@ -425,6 +468,9 @@ export function buildWizardHtml(): string {
       <p class="lead" data-i18n="vNote"></p>
       <label for="verifyDomain" data-i18n="vDomain"></label>
       <input id="verifyDomain" type="text" data-i18n-ph="vDomainPh" spellcheck="false">
+      <label for="verifyToken" data-i18n="vToken"></label>
+      <input id="verifyToken" class="mono" type="text" spellcheck="false" autocomplete="off">
+      <p class="note" data-i18n="vTokenNote"></p>
       <button class="act" id="btn-verify" data-i18n="vRun"></button>
       <div class="msg" id="msg-verify"></div>
       <div class="storeinfo" id="verify-store"></div>
@@ -482,6 +528,10 @@ function renderReview() {
   $("rev-wallet").textContent = $("payTo").value.trim() || empty;
 }
 function prefillVerify() {
+  // The key never leaves the browser except in the verification call the merchant triggers.
+  if (generated && $("verifyToken").value.trim() === "") {
+    $("verifyToken").value = generated.merchantApiToken;
+  }
   if ($("verifyDomain").value.trim() !== "") return;
   try { $("verifyDomain").value = new URL($("siteUrl").value).host; } catch { /* leave empty */ }
 }
@@ -588,6 +638,8 @@ $("btn-generate").addEventListener("click", async () => {
   $("pre-nginx").textContent = generated.proxy.nginx;
   $("pre-caddy").textContent = generated.proxy.caddy;
   $("pre-commands").textContent = generated.commands.join("\\n");
+  $("pre-token").textContent = generated.merchantApiToken;
+  $("verifyToken").value = generated.merchantApiToken;
   $("output").hidden = false;
   $("output-install").hidden = false;
   $("install-pending").hidden = true;
@@ -599,6 +651,7 @@ function textFor(kind) {
   if (kind === "env") return generated.files.env.content;
   if (kind === "nginx") return generated.proxy.nginx;
   if (kind === "caddy") return generated.proxy.caddy;
+  if (kind === "token") return generated.merchantApiToken;
   return generated.commands.join("\\n");
 }
 document.querySelectorAll("[data-copy]").forEach((b) => b.addEventListener("click", async () => {
@@ -618,14 +671,21 @@ document.querySelectorAll("[data-dl]").forEach((b) => b.addEventListener("click"
 }));
 
 // --- step 4: verify -------------------------------------------------------
-const CHECK_LABELS = { health: "checkHealth", openapi: "checkOpenapi", ucp: "checkUcp", llms: "checkLlms" };
+const CHECK_LABELS = {
+  health: "checkHealth", openapi: "checkOpenapi", ucp: "checkUcp", llms: "checkLlms",
+  merchantApi: "checkMerchantApi",
+};
 $("btn-verify").addEventListener("click", async () => {
   const btn = $("btn-verify");
   clearMsg($("msg-verify"));
   $("verify-checks").textContent = "";
   $("verify-store").textContent = "";
   btn.disabled = true; btn.textContent = t("vRunning");
-  const r = await api("/api/verify?domain=" + encodeURIComponent($("verifyDomain").value.trim()));
+  // POST, not a query string: the panel key travels in the body and is never part of a URL.
+  const payload = { domain: $("verifyDomain").value.trim() };
+  const token = $("verifyToken").value.trim();
+  if (token) payload.merchantApiToken = token;
+  const r = await post("/api/verify", payload);
   btn.disabled = false; btn.textContent = t("vRun");
   if (!r.ok) { showErr($("msg-verify"), r.error); return; }
   const result = r.body;

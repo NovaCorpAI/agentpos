@@ -76,6 +76,36 @@ describe("generateFiles", () => {
     );
   });
 
+  it("mints a MERCHANT_API_TOKEN into .env: url-safe, well above the 24-char minimum", () => {
+    const out = generateFiles(wooRequest);
+    const line = /^MERCHANT_API_TOKEN=(\S+)$/m.exec(out.files.env.content);
+    expect(line).not.toBeNull();
+    const token = line?.[1] ?? "";
+    // base64url of 32 random bytes: 43 characters, nothing that needs quoting in a .env.
+    expect(token).toMatch(/^[A-Za-z0-9_-]{32,}$/);
+    expect(token.length).toBeGreaterThanOrEqual(24);
+    // Same value the wizard shows and the merchant pastes into the panel.
+    expect(out.merchantApiToken).toBe(token);
+  });
+
+  it("explains the token in Spanish, above the line, and says it is read-only", () => {
+    const env = generateFiles(wooRequest).files.env.content;
+    const lines = env.split("\n");
+    const index = lines.findIndex((l) => l.startsWith("MERCHANT_API_TOKEN="));
+    const comment = lines.slice(Math.max(0, index - 2), index).join(" ");
+    expect(comment).toContain("# Llave del panel de AgentPOS");
+    expect(comment).toContain("solo lectura");
+    // Project convention: no em dashes in Spanish text.
+    expect(comment).not.toContain("—");
+  });
+
+  it("never repeats a token across generations", () => {
+    const tokens = new Set(
+      Array.from({ length: 50 }, () => generateFiles(wooRequest).merchantApiToken),
+    );
+    expect(tokens.size).toBe(50);
+  });
+
   it("mirrors the onboarding guide: proxy snippets and the four next commands", () => {
     const out = generateFiles(wooRequest);
     for (const path of ["/.well-known/ucp", "/agentpos/", "/openapi.json", "/llms.txt"]) {
