@@ -21,6 +21,14 @@ export function validateWalletAddress(raw: unknown): string {
     });
   }
   const address = raw.trim();
+  // A Stellar address is 56 characters. Refuse anything long before it reaches StrKey, and
+  // never put the value itself in the error: this function also sees pasted secrets.
+  if (address.length > 120) {
+    throw new AgentPOSError("CONFIG_INVALID", "That is too long to be a Stellar address", {
+      hint: "A public address has 56 characters and starts with G. Copy it again from your wallet app.",
+      details: { length: address.length },
+    });
+  }
   if (address.startsWith("S")) {
     // Deliberately not included in details: an error object must never carry the secret.
     throw new AgentPOSError(

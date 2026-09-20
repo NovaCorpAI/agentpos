@@ -9,8 +9,22 @@ import { createLogger, resolveConfig, silentLogger, usdc } from "@agentpos/core"
 import type { CatalogItem, OrderConnector } from "@agentpos/core";
 import { createAgentPOSApp, parseSiteConfig, siteConfigSchema, SiteStorage } from "@agentpos/site";
 import { createMerchantWebApp } from "./app.js";
+import type { MerchantWebDeps } from "./app.js";
+import type { HostResolver } from "./ssrf.js";
 
 const payTo = Keypair.random().publicKey();
+
+/**
+ * Every outbound fetch goes through the SSRF guard, which resolves the hostname first. Tests
+ * never touch DNS: this resolver says the fixture hosts (shop.test, wp.test, shop.example) are
+ * ordinary public addresses. The tests that exercise the guard inject their own.
+ */
+const publicResolver: HostResolver = async () => ["93.184.216.34"];
+
+/** The wizard as every test builds it: silent logger, stubbed resolver, no real network. */
+function wizard(deps: MerchantWebDeps = {}): ReturnType<typeof createMerchantWebApp> {
+  return createMerchantWebApp({ logger: silentLogger, resolveHost: publicResolver, ...deps });
+}
 
 async function errorOf(res: Response): Promise<{ code: string; message: string; hint: string }> {
   const body = (await res.json()) as { error: { code: string; message: string; hint: string } };
@@ -28,7 +42,7 @@ function postJson(app: ReturnType<typeof createMerchantWebApp>, path: string, pa
 // ---------------------------------------------------------------------------
 describe("the wizard page", () => {
   it("serves one self-contained page that states the no-secret-key rule in Spanish", async () => {
-    const app = createMerchantWebApp({ logger: silentLogger });
+    const app = wizard();
     const res = await app.request("/");
     expect(res.status).toBe(200);
     const html = await res.text();
@@ -40,7 +54,7 @@ describe("the wizard page", () => {
   });
 
   it("explains the panel key in merchant language and names the next step", async () => {
-    const app = createMerchantWebApp({ logger: silentLogger });
+    const app = wizard();
     const html = await (await app.request("/")).text();
     expect(html).toContain("la llave que deja al panel de AgentPOS leer tus órdenes");
     expect(html).toContain("Es de solo lectura");
@@ -57,14 +71,14 @@ describe("the wizard page", () => {
 // ---------------------------------------------------------------------------
 describe("POST /api/validate-wallet", () => {
   it("accepts a public address", async () => {
-    const app = createMerchantWebApp({ logger: silentLogger });
+    const app = wizard();
     const res = await postJson(app, "/api/validate-wallet", { address: payTo });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, address: payTo });
   });
 
   it("refuses a secret key with SECRET_IN_CONFIG and never echoes it", async () => {
-    const app = createMerchantWebApp({ logger: silentLogger });
+    const app = wizard();
     const secret = Keypair.random().secret();
     const res = await postJson(app, "/api/validate-wallet", { address: secret });
     expect(res.status).toBe(400);
@@ -74,14 +88,14 @@ describe("POST /api/validate-wallet", () => {
   });
 
   it("refuses garbage with CONFIG_INVALID", async () => {
-    const app = createMerchantWebApp({ logger: silentLogger });
+    const app = wizard();
     const res = await postJson(app, "/api/validate-wallet", { address: "garbage" });
     expect(res.status).toBe(400);
     expect((await errorOf(res)).code).toBe("CONFIG_INVALID");
   });
 
   it("answers a non-JSON body in our error vocabulary", async () => {
-    const app = createMerchantWebApp({ logger: silentLogger });
+    const app = wizard();
     const res = await app.request("/api/validate-wallet", { method: "POST", body: "nope" });
     expect(res.status).toBe(400);
     expect((await errorOf(res)).code).toBe("CONFIG_INVALID");
@@ -103,7 +117,7 @@ describe("POST /api/validate-woo", () => {
       seen.push({ url: String(input), auth: headers.get("authorization") ?? undefined });
       return new Response(JSON.stringify([{ id: 1 }]), { status: 200 });
     }) as typeof globalThis.fetch;
-    const app = createMerchantWebApp({ fetchImpl, logger: silentLogger });
+    const app = wizard({ fetchImpl });
 
     const res = await postJson(app, "/api/validate-woo", wooPayload);
     expect(res.status).toBe(200);
@@ -116,7 +130,7 @@ describe("POST /api/validate-woo", () => {
 
   it("maps a 401 to CONFIG_INVALID with an actionable hint", async () => {
     const fetchImpl = (async () => new Response("{}", { status: 401 })) as typeof globalThis.fetch;
-    const app = createMerchantWebApp({ fetchImpl, logger: silentLogger });
+    const app = wizard({ fetchImpl });
     const res = await postJson(app, "/api/validate-woo", wooPayload);
     expect(res.status).toBe(400);
     const error = await errorOf(res);
@@ -126,7 +140,7 @@ describe("POST /api/validate-woo", () => {
 
   it("maps a 404 to a permalinks/URL hint", async () => {
     const fetchImpl = (async () => new Response("", { status: 404 })) as typeof globalThis.fetch;
-    const app = createMerchantWebApp({ fetchImpl, logger: silentLogger });
+    const app = wizard({ fetchImpl });
     const res = await postJson(app, "/api/validate-woo", wooPayload);
     const error = await errorOf(res);
     expect(error.code).toBe("CONFIG_INVALID");
@@ -137,14 +151,14 @@ describe("POST /api/validate-woo", () => {
     const fetchImpl = (async () => {
       throw new TypeError("fetch failed");
     }) as typeof globalThis.fetch;
-    const app = createMerchantWebApp({ fetchImpl, logger: silentLogger });
+    const app = wizard({ fetchImpl });
     const res = await postJson(app, "/api/validate-woo", wooPayload);
     expect(res.status).toBe(502);
     expect((await errorOf(res)).code).toBe("SITE_UNREACHABLE");
   });
 
   it("refuses a request with missing fields, listing the issues", async () => {
-    const app = createMerchantWebApp({ logger: silentLogger });
+    const app = wizard();
     const res = await postJson(app, "/api/validate-woo", { baseUrl: "https://wp.test" });
     expect(res.status).toBe(400);
     expect((await errorOf(res)).code).toBe("CONFIG_INVALID");
@@ -154,7 +168,7 @@ describe("POST /api/validate-woo", () => {
 // ---------------------------------------------------------------------------
 describe("POST /api/generate", () => {
   it("returns both files, and the config round-trips through siteConfigSchema", async () => {
-    const app = createMerchantWebApp({ logger: silentLogger });
+    const app = wizard();
     const res = await postJson(app, "/api/generate", {
       siteUrl: "https://shop.example",
       displayName: "Faro Store",
@@ -175,7 +189,7 @@ describe("POST /api/generate", () => {
   });
 
   it("refuses to generate anything for a secret key", async () => {
-    const app = createMerchantWebApp({ logger: silentLogger });
+    const app = wizard();
     const res = await postJson(app, "/api/generate", {
       siteUrl: "https://shop.example",
       displayName: "Faro Store",
@@ -239,7 +253,7 @@ function inProcessStore(): typeof globalThis.fetch {
 
 describe("GET /api/verify", () => {
   it("passes all checks against a live in-process AgentPOS site, scheme added for free", async () => {
-    const app = createMerchantWebApp({ fetchImpl: inProcessStore(), logger: silentLogger });
+    const app = wizard({ fetchImpl: inProcessStore() });
     const res = await app.request("/api/verify?domain=shop.test");
     expect(res.status).toBe(200);
     const result = (await res.json()) as {
@@ -263,7 +277,7 @@ describe("GET /api/verify", () => {
   it("fails with per-check hints when the proxy exposes nothing", async () => {
     const fetchImpl = (async () =>
       new Response("not found", { status: 404 })) as typeof globalThis.fetch;
-    const app = createMerchantWebApp({ fetchImpl, logger: silentLogger });
+    const app = wizard({ fetchImpl });
     const res = await app.request("/api/verify?domain=https://shop.test");
     const result = (await res.json()) as {
       ok: boolean;
@@ -280,7 +294,7 @@ describe("GET /api/verify", () => {
     const fetchImpl = (async () => {
       throw new TypeError("getaddrinfo ENOTFOUND");
     }) as typeof globalThis.fetch;
-    const app = createMerchantWebApp({ fetchImpl, logger: silentLogger });
+    const app = wizard({ fetchImpl });
     const res = await app.request("/api/verify?domain=no-such.example");
     expect(res.status).toBe(200);
     const result = (await res.json()) as { ok: boolean; checks: Array<{ ok: boolean }> };
@@ -289,7 +303,7 @@ describe("GET /api/verify", () => {
   });
 
   it("refuses a missing or invalid domain with CONFIG_INVALID", async () => {
-    const app = createMerchantWebApp({ logger: silentLogger });
+    const app = wizard();
     expect((await errorOf(await app.request("/api/verify"))).code).toBe("CONFIG_INVALID");
     const bad = await app.request("/api/verify?domain=%20");
     expect(bad.status).toBe(400);
@@ -334,7 +348,7 @@ async function verifyPost(
   fetchImpl: typeof globalThis.fetch,
   payload: unknown,
 ): Promise<VerifyBody> {
-  const app = createMerchantWebApp({ fetchImpl, logger: silentLogger });
+  const app = wizard({ fetchImpl });
   const res = await postJson(app, "/api/verify", payload);
   expect(res.status).toBe(200);
   return (await res.json()) as VerifyBody;
@@ -396,7 +410,7 @@ describe("POST /api/verify, with the merchant panel key", () => {
   it("never writes the key to a log line, on the happy path or on an error", async () => {
     const lines: string[] = [];
     const logger = createLogger({ level: "debug", sink: (line) => lines.push(line) });
-    const app = createMerchantWebApp({ fetchImpl: storeWithPanel("guarded"), logger });
+    const app = wizard({ fetchImpl: storeWithPanel("guarded"), logger });
 
     const generated = (await (
       await postJson(app, "/api/generate", {
@@ -419,5 +433,176 @@ describe("POST /api/verify, with the merchant panel key", () => {
     });
 
     expect(lines.join("\n")).not.toContain(generated.merchantApiToken);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Published on the open internet, the three endpoints that fetch are the risk. These exercise
+// them through the HTTP surface, with the guard's resolver stubbed.
+describe("the endpoints that fetch, published", () => {
+  /** Reality, stubbed: localhost is loopback, two names point inside, everything else is public. */
+  const realisticResolver: HostResolver = async (hostname) => {
+    if (hostname === "localhost") return ["127.0.0.1"];
+    if (hostname === "intranet.example") return ["10.1.2.3"];
+    if (hostname === "metadata.example") return ["169.254.169.254"];
+    return ["93.184.216.34"];
+  };
+  const neverCalled = (() => {
+    throw new Error("the guard let a request through");
+  }) as unknown as typeof globalThis.fetch;
+
+  const refusedByGuard = [
+    "localhost",
+    "127.0.0.1",
+    "10.0.0.5",
+    "192.168.1.10",
+    "169.254.169.254",
+    "[::1]",
+    "[fc00::1]",
+    "[::ffff:127.0.0.1]",
+    "intranet.example",
+    "metadata.example",
+    "shop.example:22",
+  ];
+
+  it("refuses every non-public domain on GET /api/verify, without opening a connection", async () => {
+    const app = wizard({ fetchImpl: neverCalled, resolveHost: realisticResolver });
+    for (const domain of refusedByGuard) {
+      const res = await app.request(`/api/verify?domain=${encodeURIComponent(domain)}`);
+      expect(res.status, domain).toBe(400);
+      const error = await errorOf(res);
+      expect(error.code).toBe("CONFIG_INVALID");
+      expect(`${error.message} ${error.hint}`).toContain("público");
+    }
+  });
+
+  it("refuses a non-public store on POST /api/validate-woo", async () => {
+    const app = wizard({ fetchImpl: neverCalled, resolveHost: realisticResolver });
+    const res = await postJson(app, "/api/validate-woo", {
+      baseUrl: "http://192.168.1.10",
+      consumerKey: "ck_key",
+      consumerSecret: "cs_secret",
+    });
+    // Not SITE_UNREACHABLE: the merchant gets the reason, not "your store did not answer".
+    expect(res.status).toBe(400);
+    expect((await errorOf(res)).code).toBe("CONFIG_INVALID");
+  });
+
+  it("refuses a non-public store on the merchant-API probe too", async () => {
+    const app = wizard({ fetchImpl: neverCalled, resolveHost: realisticResolver });
+    const res = await postJson(app, "/api/verify", {
+      domain: "intranet.example",
+      merchantApiToken: PANEL_TOKEN,
+    });
+    expect(res.status).toBe(400);
+    expect((await errorOf(res)).code).toBe("CONFIG_INVALID");
+  });
+
+  it("refuses a store that redirects the checklist somewhere else", async () => {
+    const fetchImpl = (async () =>
+      new Response(null, {
+        status: 302,
+        headers: { location: "http://169.254.169.254/latest/meta-data/" },
+      })) as typeof globalThis.fetch;
+    const app = wizard({ fetchImpl, resolveHost: realisticResolver });
+    const res = await app.request("/api/verify?domain=shop.test");
+    expect(res.status).toBe(400);
+    expect((await errorOf(res)).code).toBe("CONFIG_INVALID");
+  });
+
+  it("answers 429 with Retry-After once one address asks too often", async () => {
+    const fetchImpl = (async () => new Response("ok", { status: 200 })) as typeof globalThis.fetch;
+    const app = wizard({ fetchImpl });
+    let limited: Response | undefined;
+    for (let i = 0; i < 20 && limited === undefined; i++) {
+      const res = await app.request("/api/verify?domain=shop.test");
+      if (res.status === 429) limited = res;
+    }
+    expect(limited).toBeDefined();
+    expect(Number(limited?.headers.get("Retry-After"))).toBeGreaterThan(0);
+    expect((await errorOf(limited as Response)).code).toBe("RATE_LIMITED");
+
+    // Per endpoint, not global: the WooCommerce probe has its own bucket and still answers.
+    const woo = await postJson(app, "/api/validate-woo", {
+      baseUrl: "https://wp.test",
+      consumerKey: "ck_key",
+      consumerSecret: "cs_secret",
+    });
+    expect(woo.status).not.toBe(429);
+  });
+
+  it("refuses an oversized body with 413", async () => {
+    const app = wizard();
+    const res = await app.request("/api/generate", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ displayName: "x".repeat(200 * 1024) }),
+    });
+    expect(res.status).toBe(413);
+  });
+
+  it("refuses an oversized field even inside a small body", async () => {
+    const app = wizard();
+    const res = await postJson(app, "/api/validate-woo", {
+      baseUrl: "https://wp.test",
+      consumerKey: "ck_".padEnd(500, "x"),
+      consumerSecret: "cs_secret",
+    });
+    expect(res.status).toBe(400);
+    expect((await errorOf(res)).code).toBe("CONFIG_INVALID");
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe("nothing the merchant types reaches a log line", () => {
+  it("keeps WooCommerce keys, the wallet address and the panel key out of every level", async () => {
+    const lines: string[] = [];
+    const logger = createLogger({ level: "debug", sink: (line) => lines.push(line) });
+    const consumerKey = "ck_0123456789abcdef0123456789abcdef01234567";
+    const consumerSecret = "cs_fedcba9876543210fedcba9876543210fedcba98";
+    const secret = Keypair.random().secret();
+    const fetchImpl = (async (input: string | URL | Request) =>
+      String(input).includes("/wp-json/")
+        ? new Response(JSON.stringify([{ id: 1 }]), { status: 200 })
+        : new Response("ok", { status: 200 })) as typeof globalThis.fetch;
+    const app = wizard({ logger, fetchImpl });
+
+    // The happy path...
+    await postJson(app, "/api/validate-woo", {
+      baseUrl: "https://wp.test",
+      consumerKey,
+      consumerSecret,
+    });
+    await postJson(app, "/api/validate-wallet", { address: payTo });
+    const generated = (await (
+      await postJson(app, "/api/generate", {
+        siteUrl: "https://shop.test",
+        displayName: "Faro Store",
+        payTo,
+        platform: "woocommerce",
+        wooConsumerKey: consumerKey,
+        wooConsumerSecret: consumerSecret,
+      })
+    ).json()) as { merchantApiToken: string };
+
+    // ...and every error path, which is the one that actually writes a line.
+    await postJson(app, "/api/validate-wallet", { address: secret });
+    await postJson(app, "/api/validate-woo", {
+      baseUrl: "http://10.0.0.5",
+      consumerKey,
+      consumerSecret,
+    });
+    await postJson(app, "/api/verify", {
+      domain: "   ",
+      merchantApiToken: generated.merchantApiToken,
+    });
+    await postJson(app, "/api/generate", { siteUrl: "not-a-url", payTo, displayName: "x" });
+
+    const log = lines.join("\n");
+    // The lines were written (this is a debug-level logger): they just say nothing useful.
+    expect(lines.length).toBeGreaterThan(0);
+    for (const value of [consumerKey, consumerSecret, secret, payTo, generated.merchantApiToken]) {
+      expect(log).not.toContain(value);
+    }
   });
 });

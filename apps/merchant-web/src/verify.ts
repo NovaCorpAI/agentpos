@@ -14,13 +14,13 @@ export type VerifyCheckId = "health" | "openapi" | "ucp" | "llms" | "merchantApi
 
 export const verifyRequestSchema = z.object({
   /** "shop.example" or a full URL; normalized by `normalizeDomain`. */
-  domain: z.string(),
+  domain: z.string().max(255),
   /**
    * The store owner's `MERCHANT_API_TOKEN`, when they also want the panel check. It arrives in
    * a request BODY (never a query string, which servers log), is used for two probes against
    * their own store, and is never stored or logged here.
    */
-  merchantApiToken: z.string().trim().min(1).optional(),
+  merchantApiToken: z.string().trim().min(1).max(512).optional(),
 });
 
 export type VerifyRequest = z.infer<typeof verifyRequestSchema>;
@@ -96,6 +96,10 @@ async function probe(
     });
     return { res };
   } catch (err) {
+    // The outbound guard refusing an address is not a failing check: it is a typed error for
+    // the merchant, so it interrupts the whole checklist instead of showing up as "did not
+    // answer" next to a URL we never called.
+    if (err instanceof AgentPOSError) throw err;
     return { error: String(err) };
   }
 }

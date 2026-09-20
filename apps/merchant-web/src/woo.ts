@@ -8,9 +8,11 @@ import { AgentPOSError } from "@agentpos/core";
 
 export const wooValidationRequestSchema = z.object({
   /** WordPress site URL, e.g. https://store.example */
-  baseUrl: z.url(),
-  consumerKey: z.string().trim().min(1),
-  consumerSecret: z.string().trim().min(1),
+  baseUrl: z.url().max(2048),
+  // Field caps: a WooCommerce key is ~43 characters. Anything near these bounds is not a key,
+  // and a public endpoint should say so before it opens a connection on the caller's behalf.
+  consumerKey: z.string().trim().min(1).max(256),
+  consumerSecret: z.string().trim().min(1).max(256),
 });
 
 export type WooValidationRequest = z.infer<typeof wooValidationRequestSchema>;
@@ -42,6 +44,10 @@ export async function validateWooCredentials(
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
   } catch (err) {
+    // A refusal from the outbound guard (a private address, a bad port, a redirect off the
+    // host) is not "the store is down": it is a typed answer the merchant can act on, so it
+    // travels as it is instead of being flattened into SITE_UNREACHABLE.
+    if (err instanceof AgentPOSError) throw err;
     throw new AgentPOSError("SITE_UNREACHABLE", `Could not reach ${base}`, {
       hint: "Check the store URL (https, no typo) and that the site is online. WooCommerce rejects Basic auth over plain http.",
       retryable: true,
