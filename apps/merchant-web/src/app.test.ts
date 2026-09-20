@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { Keypair } from "@stellar/stellar-sdk";
-import { resolveConfig, silentLogger, usdc } from "@agentpos/core";
+import { createLogger, resolveConfig, silentLogger, usdc } from "@agentpos/core";
 import type { CatalogItem, OrderConnector } from "@agentpos/core";
 import { createAgentPOSApp, parseSiteConfig, siteConfigSchema, SiteStorage } from "@agentpos/site";
 import { createMerchantWebApp } from "./app.js";
@@ -37,6 +37,20 @@ describe("the wizard page", () => {
     expect(html).not.toMatch(/<script[^>]+src=/);
     expect(html).not.toContain("<link");
     expect(html).not.toContain("https://cdn");
+  });
+
+  it("explains the panel key in merchant language and names the next step", async () => {
+    const app = createMerchantWebApp({ logger: silentLogger });
+    const html = await (await app.request("/")).text();
+    expect(html).toContain("la llave que deja al panel de AgentPOS leer tus órdenes");
+    expect(html).toContain("Es de solo lectura");
+    expect(html).toContain(
+      "Siguiente paso: conecta tu tienda al panel en app.agentposhq.com con la dirección de tu tienda y esta llave.",
+    );
+    // Losing it is recoverable, and the page says how.
+    expect(html).toContain("Si la pierdes no pasa nada");
+    // No internal vocabulary anywhere the merchant can see it.
+    expect(html.toLowerCase()).not.toContain("sidecar");
   });
 });
 
@@ -247,7 +261,8 @@ describe("GET /api/verify", () => {
   });
 
   it("fails with per-check hints when the proxy exposes nothing", async () => {
-    const fetchImpl = (async () => new Response("not found", { status: 404 })) as typeof globalThis.fetch;
+    const fetchImpl = (async () =>
+      new Response("not found", { status: 404 })) as typeof globalThis.fetch;
     const app = createMerchantWebApp({ fetchImpl, logger: silentLogger });
     const res = await app.request("/api/verify?domain=https://shop.test");
     const result = (await res.json()) as {
@@ -279,5 +294,130 @@ describe("GET /api/verify", () => {
     const bad = await app.request("/api/verify?domain=%20");
     expect(bad.status).toBe(400);
     expect((await errorOf(bad)).code).toBe("CONFIG_INVALID");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The merchant panel check: the store must answer 200 WITH the owner key and 401 WITHOUT it.
+const PANEL_TOKEN = "Zm9vYmFyYmF6cXV1eHF1dXhmb29iYXJiYXo";
+
+/**
+ * A store that serves the four discovery surfaces, and answers the merchant summary according
+ * to `summary`: "guarded" (200 for the right key, 401 otherwise), a fixed status for every
+ * caller (404 for an older AgentPOS, 200 for a store that leaks it to anyone).
+ */
+function storeWithPanel(summary: "guarded" | number): typeof globalThis.fetch {
+  return (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/agentpos/api/merchant/summary")) {
+      if (summary !== "guarded") return new Response("{}", { status: summary });
+      const auth = new Headers(init?.headers).get("authorization");
+      return auth === `Bearer ${PANEL_TOKEN}`
+        ? new Response(JSON.stringify({ store: { name: "Faro Demo Store" } }), { status: 200 })
+        : new Response(JSON.stringify({ error: { code: "MERCHANT_UNAUTHORIZED" } }), {
+            status: 401,
+          });
+    }
+    if (url.endsWith("/agentpos/health")) {
+      return new Response(JSON.stringify({ ok: true, name: "Faro Demo Store" }), { status: 200 });
+    }
+    return new Response("ok", { status: 200 });
+  }) as typeof globalThis.fetch;
+}
+
+interface VerifyBody {
+  ok: boolean;
+  checks: Array<{ id: string; ok: boolean; status?: number; hint?: string; url: string }>;
+}
+
+async function verifyPost(
+  fetchImpl: typeof globalThis.fetch,
+  payload: unknown,
+): Promise<VerifyBody> {
+  const app = createMerchantWebApp({ fetchImpl, logger: silentLogger });
+  const res = await postJson(app, "/api/verify", payload);
+  expect(res.status).toBe(200);
+  return (await res.json()) as VerifyBody;
+}
+
+describe("POST /api/verify, with the merchant panel key", () => {
+  it("passes when the store answers 200 with the key and 401 without it", async () => {
+    const body = await verifyPost(storeWithPanel("guarded"), {
+      domain: "shop.test",
+      merchantApiToken: PANEL_TOKEN,
+    });
+    const check = body.checks.find((c) => c.id === "merchantApi");
+    expect(check?.url).toBe("https://shop.test/agentpos/api/merchant/summary");
+    expect(check?.ok).toBe(true);
+    expect(check?.status).toBe(200);
+    expect(body.ok).toBe(true);
+  });
+
+  it("fails on a wrong key, pointing at MERCHANT_API_TOKEN in the .env", async () => {
+    const body = await verifyPost(storeWithPanel("guarded"), {
+      domain: "shop.test",
+      merchantApiToken: "not-the-one-in-the-env-file",
+    });
+    const check = body.checks.find((c) => c.id === "merchantApi");
+    expect(check?.ok).toBe(false);
+    expect(check?.status).toBe(401);
+    expect(check?.hint).toContain("MERCHANT_API_TOKEN");
+    expect(body.ok).toBe(false);
+  });
+
+  it("reads a 404 as an older AgentPOS and says how to update it", async () => {
+    const body = await verifyPost(storeWithPanel(404), {
+      domain: "shop.test",
+      merchantApiToken: PANEL_TOKEN,
+    });
+    const check = body.checks.find((c) => c.id === "merchantApi");
+    expect(check?.ok).toBe(false);
+    expect(check?.status).toBe(404);
+    expect(check?.hint).toContain("older version of AgentPOS");
+    expect(check?.hint).toContain("@agentpos/site@latest");
+  });
+
+  it("fails loudly when the orders answer without any key at all", async () => {
+    const body = await verifyPost(storeWithPanel(200), {
+      domain: "shop.test",
+      merchantApiToken: PANEL_TOKEN,
+    });
+    const check = body.checks.find((c) => c.id === "merchantApi");
+    expect(check?.ok).toBe(false);
+    expect(check?.hint).toContain("WITHOUT the key");
+  });
+
+  it("leaves the panel check out when no key is sent", async () => {
+    const body = await verifyPost(storeWithPanel("guarded"), { domain: "shop.test" });
+    expect(body.checks.map((c) => c.id)).toEqual(["health", "openapi", "ucp", "llms"]);
+    expect(body.ok).toBe(true);
+  });
+
+  it("never writes the key to a log line, on the happy path or on an error", async () => {
+    const lines: string[] = [];
+    const logger = createLogger({ level: "debug", sink: (line) => lines.push(line) });
+    const app = createMerchantWebApp({ fetchImpl: storeWithPanel("guarded"), logger });
+
+    const generated = (await (
+      await postJson(app, "/api/generate", {
+        siteUrl: "https://shop.test",
+        displayName: "Faro Store",
+        payTo,
+        platform: "generic",
+      })
+    ).json()) as { merchantApiToken: string };
+    expect(generated.merchantApiToken.length).toBeGreaterThanOrEqual(24);
+
+    await postJson(app, "/api/verify", {
+      domain: "shop.test",
+      merchantApiToken: generated.merchantApiToken,
+    });
+    // ...and the error path, which is the one that actually logs.
+    await postJson(app, "/api/verify", {
+      domain: "   ",
+      merchantApiToken: generated.merchantApiToken,
+    });
+
+    expect(lines.join("\n")).not.toContain(generated.merchantApiToken);
   });
 });

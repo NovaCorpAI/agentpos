@@ -1,12 +1,29 @@
 /**
  * Deployment verification: hits the merchant's domain the same way the reference buying agent
  * does its discovery step (packages/mcp-buyer/src/demo.ts), and renders the result as a
- * checklist. It proves the proxy rules and the sidecar are in place without trusting anyone's
- * word, ours included.
+ * checklist. It proves the proxy rules and the store's AgentPOS process are in place without
+ * trusting anyone's word, ours included.
+ *
+ * Hints are merchant-facing: they avoid internal vocabulary ("sidecar") and always say what to
+ * do next.
  */
+import { z } from "zod";
 import { AgentPOSError } from "@agentpos/core";
 
-export type VerifyCheckId = "health" | "openapi" | "ucp" | "llms";
+export type VerifyCheckId = "health" | "openapi" | "ucp" | "llms" | "merchantApi";
+
+export const verifyRequestSchema = z.object({
+  /** "shop.example" or a full URL; normalized by `normalizeDomain`. */
+  domain: z.string(),
+  /**
+   * The store owner's `MERCHANT_API_TOKEN`, when they also want the panel check. It arrives in
+   * a request BODY (never a query string, which servers log), is used for two probes against
+   * their own store, and is never stored or logged here.
+   */
+  merchantApiToken: z.string().trim().min(1).optional(),
+});
+
+export type VerifyRequest = z.infer<typeof verifyRequestSchema>;
 
 export interface VerifyCheck {
   id: VerifyCheckId;
@@ -70,10 +87,11 @@ interface HealthBody {
 async function probe(
   fetchImpl: typeof globalThis.fetch,
   url: string,
+  extraHeaders: Record<string, string> = {},
 ): Promise<{ res?: Response; error?: string }> {
   try {
     const res = await fetchImpl(url, {
-      headers: { accept: "application/json, */*" },
+      headers: { accept: "application/json, */*", ...extraHeaders },
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     return { res };
@@ -85,17 +103,74 @@ async function probe(
 const UNREACHABLE_HINT =
   "The URL did not answer. Check the domain, that the site is online, and the proxy rules (step 5 of the onboarding guide).";
 
-/** Runs the four discovery checks against the domain. Never throws for a failing store. */
+/** Where AgentPOS Cloud reads the store from: the one check that needs the owner's key. */
+const MERCHANT_SUMMARY_PATH = `${BASE_PATH}/api/merchant/summary`;
+
+/**
+ * The panel check, run only when the merchant supplied their key. Deliberately two probes: WITH
+ * the key the store must answer 200, and WITHOUT it the very same URL must answer 401. A store
+ * that answers both ways hands every order and buyer email to anyone who asks, so that case
+ * fails the checklist loudly instead of passing.
+ */
+async function merchantApiCheck(
+  origin: string,
+  token: string,
+  fetchImpl: typeof globalThis.fetch,
+): Promise<VerifyCheck> {
+  const url = `${origin}${MERCHANT_SUMMARY_PATH}`;
+  const [authed, anonymous] = await Promise.all([
+    probe(fetchImpl, url, { authorization: `Bearer ${token}` }),
+    probe(fetchImpl, url),
+  ]);
+  const res = authed.res;
+  if (!res) return { id: "merchantApi", url, ok: false, hint: UNREACHABLE_HINT };
+  const base = { id: "merchantApi" as const, url, status: res.status };
+  if (res.status === 404) {
+    return {
+      ...base,
+      ok: false,
+      hint: "Your store answers, but it does not know this address yet: it is running an older version of AgentPOS. Update it (`npm install -g @agentpos/site@latest`, or rebuild your Docker image), start `npx agentpos serve` again, and check once more.",
+    };
+  }
+  if (res.status === 401 || res.status === 403) {
+    return {
+      ...base,
+      ok: false,
+      hint: "Your store refused this key. Check that MERCHANT_API_TOKEN in the .env on your server is exactly the key the wizard shows, and start AgentPOS again so it reads the change.",
+    };
+  }
+  if (!res.ok) {
+    return {
+      ...base,
+      ok: false,
+      hint: "Your store answered with an error. Run `npx agentpos status` on your server and check what AgentPOS reports.",
+    };
+  }
+  if (anonymous.res?.status !== 401) {
+    return {
+      ...base,
+      ok: false,
+      hint: "Your orders answer WITHOUT the key, so anyone could read them. Check that your server is not passing its own Authorization header through, and that MERCHANT_API_TOKEN is set in the .env your store is running.",
+    };
+  }
+  return { ...base, ok: true };
+}
+
+/**
+ * Runs the four discovery checks against the domain, plus the panel check when the merchant
+ * supplied their key. Never throws for a failing store.
+ */
 export async function verifyDeployment(
   domain: string,
   fetchImpl: typeof globalThis.fetch = globalThis.fetch,
+  merchantApiToken?: string,
 ): Promise<VerifyResult> {
   const origin = normalizeDomain(domain);
   const targets: Array<{ id: VerifyCheckId; url: string; hint: string }> = [
     {
       id: "health",
       url: `${origin}${BASE_PATH}/health`,
-      hint: `The sidecar did not answer at ${BASE_PATH}/health. Is \`npx agentpos serve\` running, and does your proxy forward ${BASE_PATH}/ to it?`,
+      hint: `AgentPOS did not answer at ${BASE_PATH}/health. Is \`npx agentpos serve\` running on your server, and does your proxy forward ${BASE_PATH}/ to it?`,
     },
     {
       id: "openapi",
@@ -137,16 +212,16 @@ export async function verifyDeployment(
           ...(body.facilitator?.ok !== undefined ? { facilitatorOk: body.facilitator.ok } : {}),
         };
         if (!res.ok && body.ok === false) {
-          // The sidecar answered: the proxy is fine, the store itself reports a problem.
+          // AgentPOS answered: the proxy is fine, the store itself reports a problem.
           hint =
             body.facilitator?.ok === false
-              ? "The sidecar answers but cannot reach its facilitator. Check AGENTPOS_FACILITATOR_URL and AGENTPOS_FACILITATOR_API_KEY in .env."
-              : "The sidecar answers but reports a problem (see `npx agentpos status`).";
+              ? "AgentPOS answers but cannot reach the payment facilitator. Check AGENTPOS_FACILITATOR_URL and AGENTPOS_FACILITATOR_API_KEY in the .env on your server."
+              : "AgentPOS answers but reports a problem (run `npx agentpos status` on your server).";
         }
       } else if (res.ok) {
         ok = false;
         hint =
-          "Something answered at /agentpos/health but not with the sidecar's JSON. Check the proxy forwards to the sidecar port (8402 by default).";
+          "Something answered at /agentpos/health, but it was not AgentPOS. Check that your proxy forwards that path to the AgentPOS port (8402 by default).";
       }
     }
     checks.push({
@@ -158,7 +233,13 @@ export async function verifyDeployment(
     });
   }
 
-  // llms.txt is recommended, not required: the store is "ready" on the first three.
+  // Only when the merchant asked for it, and only against their own store.
+  if (merchantApiToken !== undefined && merchantApiToken !== "") {
+    checks.push(await merchantApiCheck(origin, merchantApiToken, fetchImpl));
+  }
+
+  // llms.txt is recommended, not required: the store is "ready" on the first three (plus the
+  // panel check, when the merchant supplied a key: they asked for it, so it counts).
   const required = checks.filter((c) => c.id !== "llms");
   return {
     origin,

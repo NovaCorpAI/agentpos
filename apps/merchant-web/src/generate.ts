@@ -5,8 +5,11 @@
  * construction: if `npx agentpos serve` refuses it, this endpoint would have refused it first.
  *
  * Statelessness: the WooCommerce keys the merchant typed come straight back inside the generated
- * `.env` content and are not written, logged or stored anywhere on this server.
+ * `.env` content and are not written, logged or stored anywhere on this server. The same holds
+ * for the `MERCHANT_API_TOKEN` minted here: it exists in this function's return value, travels
+ * to the browser once, and is never persisted or logged on our side.
  */
+import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { parseSiteConfig, SITE_CONFIG_FILE } from "@agentpos/site";
 import type { SiteConfigInput } from "@agentpos/site";
@@ -35,6 +38,22 @@ export interface GeneratedOutput {
   proxy: { nginx: string; caddy: string };
   /** The next commands, in order, exactly as docs/onboarding runs them. */
   commands: string[];
+  /**
+   * The store owner's token for the read-only merchant API (`MERCHANT_API_TOKEN`), minted fresh
+   * on every call and already written into the `.env` above. Returned separately so the wizard
+   * can show it, explain it and offer a copy button: it is what the merchant pastes into the
+   * AgentPOS Cloud panel, and nothing else in the flow ever produced it for them.
+   */
+  merchantApiToken: string;
+}
+
+/**
+ * 32 bytes of crypto randomness, base64url (43 characters, url-safe, no padding). Well above
+ * the 24-character minimum `secretsFromEnv` enforces, and generated per request: this server
+ * keeps no pool, no seed and no copy.
+ */
+function newMerchantApiToken(): string {
+  return randomBytes(32).toString("base64url");
 }
 
 /** Sidecar port and paths from docs/onboarding (the sidecar default). */
@@ -65,22 +84,27 @@ const COMMANDS = [
   "npx agentpos serve",
 ];
 
-function buildEnv(request: GenerateRequest): string {
+function buildEnv(request: GenerateRequest, merchantApiToken: string): string {
   const lines = [
-    "# AgentPOS sidecar secrets. This file stays on your server; never commit it.",
+    "# Claves de AgentPOS. Este archivo vive en tu servidor: nunca lo subas a un repositorio.",
     "AGENTPOS_NETWORK=testnet",
-    "# Facilitator API key (testnet, free): https://channels.openzeppelin.com/testnet/gen",
+    "# Llave del facilitador de pagos (testnet, gratis): https://channels.openzeppelin.com/testnet/gen",
     "AGENTPOS_FACILITATOR_API_KEY=",
+    // Merchant-facing line, so it is written in the merchant's language (project convention:
+    // no em dashes in Spanish text). It is the one value the Cloud panel asks for.
+    "# Llave del panel de AgentPOS: deja que el panel lea tus órdenes, tus comprobantes y tus",
+    "# reglas. Es de solo lectura: no puede mover dinero ni cambiar precios. No la compartas.",
+    `MERCHANT_API_TOKEN=${merchantApiToken}`,
   ];
   if (request.platform === "woocommerce") {
     lines.push(
-      "# WooCommerce REST key (WP Admin > WooCommerce > Settings > Advanced > REST API, Read/Write).",
+      "# Llave REST de WooCommerce (WP Admin > WooCommerce > Ajustes > Avanzado > API REST, Lectura/Escritura).",
       `AGENTPOS_WOO_CONSUMER_KEY=${request.wooConsumerKey ?? "ck_..."}`,
       `AGENTPOS_WOO_CONSUMER_SECRET=${request.wooConsumerSecret ?? "cs_..."}`,
     );
   }
   lines.push(
-    "# Mainnet: only when your first testnet purchase worked, and only deliberately.",
+    "# Mainnet: solo cuando tu primera compra de prueba haya funcionado, y solo a propósito.",
     "# AGENTPOS_NETWORK=mainnet",
     "# AGENTPOS_ALLOW_MAINNET=true",
     "# AGENTPOS_FACILITATOR_URL=",
@@ -111,15 +135,18 @@ export function generateFiles(request: GenerateRequest): GeneratedOutput {
   // including the refusal of any secret smuggled into the config.
   parseSiteConfig(config);
 
+  const merchantApiToken = newMerchantApiToken();
+
   return {
     files: {
       config: {
         filename: SITE_CONFIG_FILE,
         content: `${JSON.stringify(config, null, 2)}\n`,
       },
-      env: { filename: ".env", content: buildEnv(request) },
+      env: { filename: ".env", content: buildEnv(request, merchantApiToken) },
     },
     proxy: { nginx: NGINX_SNIPPET, caddy: CADDY_SNIPPET },
     commands: COMMANDS,
+    merchantApiToken,
   };
 }

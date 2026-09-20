@@ -14,7 +14,7 @@ import { buildWizardHtml } from "./page.js";
 import { generateFiles, generateRequestSchema } from "./generate.js";
 import { validateWalletAddress } from "./wallet.js";
 import { validateWooCredentials, wooValidationRequestSchema } from "./woo.js";
-import { verifyDeployment } from "./verify.js";
+import { verifyDeployment, verifyRequestSchema } from "./verify.js";
 
 export interface MerchantWebDeps {
   /** Tests inject a fake network; production uses global fetch. */
@@ -142,6 +142,15 @@ export function createMerchantWebApp(deps: MerchantWebDeps = {}): Hono {
       });
     }
     return c.json(await verifyDeployment(domain, fetchImpl));
+  });
+
+  // Same checklist, plus the merchant panel check. It is a POST because the store owner's key
+  // travels with it: a body is not written to access logs the way a query string is, and this
+  // app logs neither. The key is used for two probes against the merchant's own store and then
+  // dropped with the request.
+  app.post("/api/verify", async (c) => {
+    const request = parsed(verifyRequestSchema, await jsonBody(c));
+    return c.json(await verifyDeployment(request.domain, fetchImpl, request.merchantApiToken));
   });
 
   return app;
