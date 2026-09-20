@@ -31,3 +31,13 @@ agente.agentposhq.com {
 	reverse_proxy buyer-web:8788
 	encode gzip
 }
+
+# The merchant onboarding wizard. PUBLIC on purpose, unlike the buyer space above: this is the
+# link the landing page hands to a store owner, and there is no login because there is nothing
+# to log into (no accounts, no database, no volume; what a merchant types lives for one
+# request). The app carries its own controls for being public: an SSRF guard on every outbound
+# fetch and per-IP rate limits on the endpoints that fetch. See apps/merchant-web/README.md.
+conecta.agentposhq.com {
+	reverse_proxy merchant-web:8410
+	encode gzip
+}

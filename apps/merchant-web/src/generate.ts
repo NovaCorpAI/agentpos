@@ -17,15 +17,15 @@ import { validateWalletAddress } from "./wallet.js";
 
 export const generateRequestSchema = z.object({
   /** Public URL of the merchant's site, e.g. https://shop.example */
-  siteUrl: z.url(),
-  displayName: z.string().trim().min(1),
+  siteUrl: z.url().max(2048),
+  displayName: z.string().trim().min(1).max(120),
   /** Stellar PUBLIC address (validated separately, with its own error codes). */
-  payTo: z.string(),
+  payTo: z.string().max(120),
   /** "generic" is the custom-hook platform: the merchant implements createOrder themselves. */
   platform: z.enum(["woocommerce", "generic"]),
-  wooBaseUrl: z.url().optional(),
-  wooConsumerKey: z.string().trim().optional(),
-  wooConsumerSecret: z.string().trim().optional(),
+  wooBaseUrl: z.url().max(2048).optional(),
+  wooConsumerKey: z.string().trim().max(256).optional(),
+  wooConsumerSecret: z.string().trim().max(256).optional(),
 });
 
 export type GenerateRequest = z.infer<typeof generateRequestSchema>;

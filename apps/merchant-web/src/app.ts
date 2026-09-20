@@ -3,6 +3,10 @@
  * no session, nothing written server-side. Every endpoint takes what the browser sends, acts on
  * it once, and forgets it. The only state lives in the merchant's browser while they fill the
  * wizard, and in the files they download.
+ *
+ * Published on the open internet, three of those endpoints fetch a URL the caller chose. They
+ * do it through `createGuardedFetch` (see ssrf.ts), one instance per inbound request, so this
+ * server can only reach public addresses and only a bounded number of them per call.
  */
 import { Hono } from "hono";
 import type { Context } from "hono";
@@ -15,19 +19,31 @@ import { generateFiles, generateRequestSchema } from "./generate.js";
 import { validateWalletAddress } from "./wallet.js";
 import { validateWooCredentials, wooValidationRequestSchema } from "./woo.js";
 import { verifyDeployment, verifyRequestSchema } from "./verify.js";
+import { createGuardedFetch } from "./ssrf.js";
+import type { HostResolver } from "./ssrf.js";
+import { rateLimit, TokenBucketLimiter, VERIFY_RULE, WOO_RULE } from "./limits.js";
 
 export interface MerchantWebDeps {
-  /** Tests inject a fake network; production uses global fetch. */
+  /** Tests inject a fake network; production uses global fetch. Always wrapped by the guard. */
   fetchImpl?: typeof globalThis.fetch;
+  /** Hostname resolution for the SSRF guard. Tests inject a stub; production uses node:dns. */
+  resolveHost?: HostResolver;
   logger?: Logger;
 }
 
 const MAX_BODY_BYTES = 64 * 1024;
 const TRACE_HEADER = "x-agentpos-trace";
+/**
+ * Outbound requests one inbound request may trigger. The checklist makes four probes, six when
+ * the merchant also sends the panel key; anything above that is a redirect chain or a bug, and
+ * either way this server stops being a probe for somebody else's scan.
+ */
+const MAX_OUTBOUND_PER_REQUEST = 8;
 
 const STATUS_BY_CODE: Partial<Record<ErrorCode, number>> = {
   CONFIG_INVALID: 400,
   SECRET_IN_CONFIG: 400,
+  RATE_LIMITED: 429,
   SITE_UNREACHABLE: 502,
   INTERNAL: 502,
 };
@@ -75,6 +91,21 @@ export function createMerchantWebApp(deps: MerchantWebDeps = {}): Hono {
   const fetchImpl = deps.fetchImpl ?? globalThis.fetch;
   const logger = deps.logger ?? createLogger({ base: { service: "merchant-web" } });
 
+  /**
+   * One guarded fetch per inbound request: the guard refuses non-public addresses and the
+   * instance carries the probe budget, so the budget cannot leak from one merchant to the next.
+   */
+  const outbound = (): typeof globalThis.fetch =>
+    createGuardedFetch({
+      fetchImpl,
+      ...(deps.resolveHost !== undefined ? { resolve: deps.resolveHost } : {}),
+      maxRequests: MAX_OUTBOUND_PER_REQUEST,
+    });
+
+  // Fresh limiters per app instance (tests get their own; the server builds the app once).
+  const wooLimiter = new TokenBucketLimiter(WOO_RULE);
+  const verifyLimiter = new TokenBucketLimiter(VERIFY_RULE);
+
   const app = new Hono();
 
   app.onError((err, c) => {
@@ -110,8 +141,18 @@ export function createMerchantWebApp(deps: MerchantWebDeps = {}): Hono {
     }),
   );
 
+  // Per-IP limits on the endpoints that make this server open outbound connections. The page
+  // itself and the two pure-computation endpoints (wallet, generate) are not limited: they
+  // touch nothing but this process.
+  app.use("/api/validate-woo", rateLimit(wooLimiter, "validate-woo"));
+  app.use("/api/verify", rateLimit(verifyLimiter, "verify"));
+
   // The wizard itself: one self-contained page, no assets, no CDN.
   app.get("/", (c) => c.html(buildWizardHtml()));
+
+  // Liveness, for the container healthcheck and for an operator with curl. States nothing
+  // about the merchant, because this process knows nothing about any merchant.
+  app.get("/health", (c) => c.json({ ok: true, service: "merchant-web", stateless: true }));
 
   // Wallet check, so the wizard can refuse a secret key the moment it is pasted.
   app.post("/api/validate-wallet", async (c) => {
@@ -123,7 +164,7 @@ export function createMerchantWebApp(deps: MerchantWebDeps = {}): Hono {
   // One-shot WooCommerce credential probe. Keys are used here and forgotten.
   app.post("/api/validate-woo", async (c) => {
     const request = parsed(wooValidationRequestSchema, await jsonBody(c));
-    const result = await validateWooCredentials(request, fetchImpl);
+    const result = await validateWooCredentials(request, outbound());
     return c.json(result);
   });
 
@@ -141,7 +182,7 @@ export function createMerchantWebApp(deps: MerchantWebDeps = {}): Hono {
         hint: "Call /api/verify?domain=shop.example.",
       });
     }
-    return c.json(await verifyDeployment(domain, fetchImpl));
+    return c.json(await verifyDeployment(domain, outbound()));
   });
 
   // Same checklist, plus the merchant panel check. It is a POST because the store owner's key
@@ -150,7 +191,7 @@ export function createMerchantWebApp(deps: MerchantWebDeps = {}): Hono {
   // dropped with the request.
   app.post("/api/verify", async (c) => {
     const request = parsed(verifyRequestSchema, await jsonBody(c));
-    return c.json(await verifyDeployment(request.domain, fetchImpl, request.merchantApiToken));
+    return c.json(await verifyDeployment(request.domain, outbound(), request.merchantApiToken));
   });
 
   return app;

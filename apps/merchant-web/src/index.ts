@@ -14,4 +14,14 @@ export type { GenerateRequest, GeneratedOutput } from "./generate.js";
 export { validateWooCredentials, wooValidationRequestSchema } from "./woo.js";
 export type { WooValidationRequest, WooValidationResult } from "./woo.js";
 export { verifyDeployment, normalizeDomain, verifyRequestSchema } from "./verify.js";
+export {
+  assertPublicUrl,
+  createGuardedFetch,
+  ipRefusalReason,
+  systemResolver,
+  ALLOWED_PORTS,
+  MAX_RESPONSE_BYTES,
+} from "./ssrf.js";
+export type { GuardedFetchOptions, HostResolver } from "./ssrf.js";
+export { clientIp, rateLimit, TokenBucketLimiter, VERIFY_RULE, WOO_RULE } from "./limits.js";
 export type { VerifyCheck, VerifyCheckId, VerifyRequest, VerifyResult } from "./verify.js";

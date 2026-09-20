@@ -1,0 +1,22 @@
+# Paste this block into apps/facilitator/deploy/Caddyfile on the VPS (the single Caddy that
+# fronts every public hostname on the box over the shared `edge` network), then reload Caddy.
+# The same block is already checked in there; this file is the copy an operator can paste when
+# the Caddyfile on the box is older.
+#
+# The Cloudflare DNS record for conecta.agentposhq.com must be DNS-only (grey cloud), not
+# proxied: Caddy answers the ACME challenge itself to get the certificate.
+#
+# PUBLIC SURFACE, on purpose. Unlike agente.agentposhq.com (the owner's buyer space, which is
+# private and has its own login), this host is meant to be linked from the landing page and
+# opened by strangers: it is where a store owner connects their store in fifteen minutes. There
+# is no login and there is nothing to log into, because the wizard stores nothing: no accounts,
+# no database, no volume. What a merchant types lives for one request.
+#
+# Being public is also why the app itself carries the controls a gate would otherwise provide:
+# every outbound fetch goes through the SSRF guard (public addresses only, allowed ports only,
+# no redirect off the host, capped size and time, capped number of probes) and the endpoints
+# that fetch are rate limited per IP with 429 + Retry-After. See apps/merchant-web/README.md.
+conecta.agentposhq.com {
+	reverse_proxy merchant-web:8410
+	encode gzip
+}
