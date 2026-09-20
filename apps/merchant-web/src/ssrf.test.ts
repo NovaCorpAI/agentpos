@@ -3,7 +3,7 @@
  * stubs, which is also the point (a test that needs the internet is a test that cannot prove
  * the internet is unreachable).
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { AgentPOSError } from "@agentpos/core";
 import { assertPublicUrl, createGuardedFetch, ipRefusalReason } from "./ssrf.js";
 import type { HostResolver } from "./ssrf.js";
@@ -264,5 +264,61 @@ describe("createGuardedFetch", () => {
     await guarded("https://shop.example/2");
     expect(reasonOf(await refusalOf(guarded("https://shop.example/3")))).toBe("too-many-requests");
     expect(calls).toBe(2);
+  });
+});
+
+describe("apex and www are the same site", () => {
+  it("follows a redirect from the apex to www and back", async () => {
+    for (const [from, to] of [
+      ["https://mitienda.cl/agentpos/health", "https://www.mitienda.cl/agentpos/health"],
+      ["https://www.mitienda.cl/agentpos/health", "https://mitienda.cl/agentpos/health"],
+    ]) {
+      let hops = 0;
+      const inner = vi.fn(async (url: string) => {
+        hops += 1;
+        return hops === 1
+          ? new Response(null, { status: 301, headers: { location: to } })
+          : new Response(JSON.stringify({ ok: true, at: url }), { status: 200 });
+      });
+      const guarded = createGuardedFetch({
+        resolve: async () => ["93.184.216.34"],
+        fetchImpl: inner as unknown as typeof globalThis.fetch,
+      });
+      const res = await guarded(from);
+      expect(res.status, `${from} -> ${to}`).toBe(200);
+      expect(hops).toBe(2);
+    }
+  });
+
+  it("still refuses a redirect to a different domain", async () => {
+    const inner = vi.fn(
+      async () =>
+        new Response(null, { status: 302, headers: { location: "https://otra-tienda.cl/x" } }),
+    );
+    const guarded = createGuardedFetch({
+      resolve: async () => ["93.184.216.34"],
+      fetchImpl: inner as unknown as typeof globalThis.fetch,
+    });
+    await expect(guarded("https://mitienda.cl/agentpos/health")).rejects.toMatchObject({
+      details: { reason: "redirect-off-host" },
+    });
+    expect(inner).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses a www host that resolves to an internal address", async () => {
+    const inner = vi.fn(
+      async () =>
+        new Response(null, {
+          status: 301,
+          headers: { location: "https://www.mitienda.cl/agentpos/health" },
+        }),
+    );
+    const guarded = createGuardedFetch({
+      resolve: async (host: string) => (host.startsWith("www.") ? ["10.0.0.5"] : ["93.184.216.34"]),
+      fetchImpl: inner as unknown as typeof globalThis.fetch,
+    });
+    await expect(guarded("https://mitienda.cl/agentpos/health")).rejects.toMatchObject({
+      details: { reason: "private" },
+    });
   });
 });

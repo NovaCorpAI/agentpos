@@ -132,6 +132,10 @@ browser tab, and the tab keeps its own state.
 
 ## Operational notes
 
+Note (2026-09-20): the guard now treats apex and `www` as the same site, so a store that
+redirects `mitienda.cl` to `www.mitienda.cl` passes. Every hop is still resolved and
+address-checked, so a `www` pointing at an internal address is refused.
+
 - The container is never published to the host (`expose`, not `ports`): only Caddy reaches it,
   over `edge`. Do not add a port mapping, and do not add a basic-auth gate either: this host is
   supposed to be open, and a gate here would break the landing page's whole promise.

@@ -276,6 +276,16 @@ async function capBody(res: Response, maxBytes: number): Promise<Response> {
  * A `fetch` that only reaches public addresses. Create one per inbound request, so
  * `maxRequests` bounds how many probes that request can trigger.
  */
+/**
+ * Two hostnames the guard treats as the same site: identical, or the same name with and
+ * without a leading `www.`. Anything else (a different domain, a subdomain that is not www)
+ * is a different server and a redirect to it is refused.
+ */
+function sameSite(a: string, b: string): boolean {
+  const bare = (h: string) => h.toLowerCase().replace(/^www\./, "");
+  return a.toLowerCase() === b.toLowerCase() || bare(a) === bare(b);
+}
+
 export function createGuardedFetch(options: GuardedFetchOptions = {}): typeof globalThis.fetch {
   const inner = options.fetchImpl ?? globalThis.fetch;
   const resolve = options.resolve ?? systemResolver;
@@ -315,8 +325,12 @@ export function createGuardedFetch(options: GuardedFetchOptions = {}): typeof gl
       } catch {
         refuse("bad-location", "Esa dirección respondió con un redirect que no se entiende");
       }
-      if (next.host !== first.host) {
+      if (!sameSite(first.hostname, next.hostname)) {
         // The whole point of the guard: a public host must not hand us an internal one.
+        // Apex <-> www is allowed because most real stores redirect one way or the other and
+        // refusing it would fail the merchants we are trying to onboard; the destination is
+        // still resolved and address-checked like any other hop, so a `www` that points at an
+        // internal address is refused all the same.
         refuse("redirect-off-host", "Esa dirección redirige a otro servidor", { to: next.host });
       }
       target = next;
