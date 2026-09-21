@@ -57,7 +57,7 @@ function errorResponse(c: Context, err: unknown): Response {
       error: {
         code: "INTERNAL",
         message: String(err),
-        hint: "Unexpected error; check server logs.",
+        hint: "Error inesperado de nuestro lado. Vuelve a intentarlo en un momento.",
         retryable: true,
       },
     },
@@ -70,8 +70,8 @@ async function jsonBody(c: Context): Promise<unknown> {
   try {
     return await c.req.json();
   } catch {
-    throw new AgentPOSError("CONFIG_INVALID", "The request body is not valid JSON", {
-      hint: "Send a JSON object with content-type: application/json.",
+    throw new AgentPOSError("CONFIG_INVALID", "Lo que llegó no es JSON válido", {
+      hint: "Envía un objeto JSON con content-type: application/json.",
     });
   }
 }
@@ -79,8 +79,8 @@ async function jsonBody(c: Context): Promise<unknown> {
 function parsed<T>(schema: ZodType<T>, body: unknown): T {
   const result = schema.safeParse(body);
   if (!result.success) {
-    throw new AgentPOSError("CONFIG_INVALID", "Some fields are missing or invalid", {
-      hint: "Fix the fields listed in details and try again.",
+    throw new AgentPOSError("CONFIG_INVALID", "Falta completar algún dato, o alguno no es válido", {
+      hint: "Revisa la dirección de tu tienda, su nombre y la dirección de tu wallet, y vuelve a intentarlo.",
       details: { issues: result.error.issues },
     });
   }
@@ -131,8 +131,8 @@ export function createMerchantWebApp(deps: MerchantWebDeps = {}): Hono {
           {
             error: {
               code: "CONFIG_INVALID",
-              message: "Request body too large",
-              hint: `Keep requests under ${MAX_BODY_BYTES} bytes.`,
+              message: "Lo que enviaste es demasiado grande",
+              hint: `Cada envío tiene que pesar menos de ${MAX_BODY_BYTES} bytes.`,
               retryable: false,
             },
           },
@@ -178,8 +178,8 @@ export function createMerchantWebApp(deps: MerchantWebDeps = {}): Hono {
   app.get("/api/verify", async (c) => {
     const domain = c.req.query("domain");
     if (!domain) {
-      throw new AgentPOSError("CONFIG_INVALID", "Missing ?domain=", {
-        hint: "Call /api/verify?domain=shop.example.",
+      throw new AgentPOSError("CONFIG_INVALID", "Falta el parámetro ?domain=", {
+        hint: "Llama a /api/verify?domain=mitienda.cl.",
       });
     }
     return c.json(await verifyDeployment(domain, outbound()));

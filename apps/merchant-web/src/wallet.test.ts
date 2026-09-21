@@ -36,7 +36,7 @@ describe("validateWalletAddress", () => {
     expect(err.message).not.toContain(secret);
     expect(err.hint).not.toContain(secret);
     expect(JSON.stringify(err.toJSON())).not.toContain(secret);
-    expect(err.hint).toContain("PUBLIC");
+    expect(err.hint).toContain("PÚBLICA");
   });
 
   it("refuses anything that merely starts with S, even if it is not a valid seed", () => {
@@ -46,7 +46,7 @@ describe("validateWalletAddress", () => {
   it("refuses garbage with CONFIG_INVALID", () => {
     const err = caught(() => validateWalletAddress("not-an-address"));
     expect(err.code).toBe("CONFIG_INVALID");
-    expect(err.hint).toContain("56 characters");
+    expect(err.hint).toContain("56 caracteres");
   });
 
   it("refuses a G-prefixed string with a bad checksum", () => {

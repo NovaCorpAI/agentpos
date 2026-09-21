@@ -2,6 +2,9 @@
  * Wallet address validation for the wizard. One rule above all others (CLAUDE.md guardrail 1,
  * zero custody): only the PUBLIC address ever reaches us. A secret key pasted here is refused
  * loudly, with advice, and is never echoed back in the error.
+ *
+ * The messages are merchant-facing, so they are written in Spanish like the rest of the
+ * installer; the codes (`SECRET_IN_CONFIG`, `CONFIG_INVALID`) are what a machine reads.
  */
 import { StrKey } from "@stellar/stellar-sdk";
 import { AgentPOSError } from "@agentpos/core";
@@ -16,16 +19,16 @@ import { AgentPOSError } from "@agentpos/core";
  */
 export function validateWalletAddress(raw: unknown): string {
   if (typeof raw !== "string" || raw.trim() === "") {
-    throw new AgentPOSError("CONFIG_INVALID", "A Stellar address is required", {
-      hint: "Paste the public address from your wallet app. It starts with G and has 56 characters.",
+    throw new AgentPOSError("CONFIG_INVALID", "Falta la dirección de tu wallet", {
+      hint: "Pega la dirección pública que muestra tu wallet. Empieza con G y tiene 56 caracteres.",
     });
   }
   const address = raw.trim();
   // A Stellar address is 56 characters. Refuse anything long before it reaches StrKey, and
   // never put the value itself in the error: this function also sees pasted secrets.
   if (address.length > 120) {
-    throw new AgentPOSError("CONFIG_INVALID", "That is too long to be a Stellar address", {
-      hint: "A public address has 56 characters and starts with G. Copy it again from your wallet app.",
+    throw new AgentPOSError("CONFIG_INVALID", "Eso es demasiado largo para ser una dirección", {
+      hint: "Una dirección pública tiene 56 caracteres y empieza con G. Cópiala otra vez desde tu wallet.",
       details: { length: address.length },
     });
   }
@@ -33,17 +36,17 @@ export function validateWalletAddress(raw: unknown): string {
     // Deliberately not included in details: an error object must never carry the secret.
     throw new AgentPOSError(
       "SECRET_IN_CONFIG",
-      "That looks like a SECRET key, not a public address. It was not saved anywhere; do not paste it again.",
+      "Eso parece una llave SECRETA, no una dirección pública. No se guardó en ninguna parte; no la vuelvas a pegar.",
       {
-        hint: "Paste only your PUBLIC address, which starts with G. If anyone else saw this secret, move your funds to a new wallet now.",
+        hint: "Pega solo tu dirección PÚBLICA, la que empieza con G. Si alguien más pudo ver esa llave secreta, mueve tus fondos a una wallet nueva ahora.",
       },
     );
   }
   if (StrKey.isValidEd25519PublicKey(address) || StrKey.isValidContract(address)) {
     return address;
   }
-  throw new AgentPOSError("CONFIG_INVALID", "Not a valid Stellar address", {
-    hint: "A public address has 56 characters and starts with G (or C for a contract). Copy it again from your wallet app.",
+  throw new AgentPOSError("CONFIG_INVALID", "Esa no es una dirección válida de Stellar", {
+    hint: "Una dirección pública tiene 56 caracteres y empieza con G (o con C si es un contrato). Cópiala otra vez desde tu wallet.",
     details: { length: address.length },
   });
 }

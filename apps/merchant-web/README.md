@@ -1,12 +1,33 @@
 # @agentpos/merchant-web
 
-The seller's space: a single web page where a store owner connects their store in four guided
-steps, without reading docs. Step 1 "Tu tienda" (store URL, name, WooCommerce REST keys with a
-live probe), step 2 "Tu wallet" (public address only; a pasted secret is refused instantly),
-step 3 "Revisa y descarga" (generated `agentpos.config.json` and `.env`, testnet by default),
-step 4 "Instala y vende" (proxy rules, install commands, the panel key and the same verification
-checklist a real buying agent runs). Spanish first with an English toggle, mirroring
-`docs/onboarding.es.md`.
+The installer: a single web page where a store owner connects their store in four guided steps,
+without reading docs. Step 1 "Tu tienda" (store address, name, WooCommerce REST keys with a live
+probe and a collapsible click path for finding them), step 2 "Tu wallet" (public address only; a
+pasted secret is refused instantly), step 3 "Tus archivos" (generated `agentpos.config.json` and
+`.env`, testnet by default), step 4 "Listo para vender": the finish line, with the panel key
+presented as a certificate, the two files, the three places to go next, the proxy rules and
+install commands, and the same verification checklist a real buying agent runs. Spanish first
+with an English toggle, mirroring `docs/onboarding.es.md`.
+
+## Its own identity (docs/DISENO.md, surface 2: transformation)
+
+One brand, four temperaments. This surface is the one where a merchant turns an ordinary store
+into something new, so it carries momentum rather than the calm of the panel:
+
+- **Amber accent**, declared once as `--accent: #f2a33c` and read from that token everywhere
+  (its shades come from `color-mix`, so there is no second amber literal to drift). A test
+  asserts both.
+- **A progress rail that fills**, not four equal boxes: a finished step shows a check and a
+  one-line summary of what it captured ("mitienda.cl, WooCommerce", "GA7QYN...VSGZ") and can be
+  clicked to go back; the current step is the dominant element. The summaries come from
+  `summarizeStore` / `shortAddress` / `normalizeStoreUrl` in `src/page.ts`, which are unit
+  tested here and serialized into the page script, so page and tests cannot disagree.
+- **A before/after drawing** in the header: the same store dull, then lit with agents buying,
+  as inline SVG. It is drawn static by default and animates only inside
+  `@media (prefers-reduced-motion: no-preference)`.
+- **Spanish with its accents** and no em dashes, in the page and in every merchant-facing
+  message the server returns (`verify.ts`, `woo.ts`, `wallet.ts`, `ssrf.ts`). What stays in
+  machine vocabulary stays: error codes, check ids, paths, env var names and commands.
 
 ## Stateless, on purpose
 

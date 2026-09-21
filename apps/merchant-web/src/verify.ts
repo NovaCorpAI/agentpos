@@ -4,8 +4,10 @@
  * checklist. It proves the proxy rules and the store's AgentPOS process are in place without
  * trusting anyone's word, ours included.
  *
- * Hints are merchant-facing: they avoid internal vocabulary ("sidecar") and always say what to
- * do next.
+ * Hints are merchant-facing: they avoid internal vocabulary ("sidecar"), always say what to do
+ * next, and are written in the merchant's language (Spanish, correctly accented, no em dashes),
+ * exactly like the outbound guard's refusals in ssrf.ts. What stays untranslated is what a
+ * machine reads: the error codes, the check ids, the paths, the env var names and the commands.
  */
 import { z } from "zod";
 import { AgentPOSError } from "@agentpos/core";
@@ -55,8 +57,8 @@ const BASE_PATH = "/agentpos";
 export function normalizeDomain(raw: string): string {
   const trimmed = raw.trim();
   if (trimmed === "") {
-    throw new AgentPOSError("CONFIG_INVALID", "A domain is required", {
-      hint: "Enter your store's domain, e.g. shop.example or https://shop.example.",
+    throw new AgentPOSError("CONFIG_INVALID", "Falta la dirección de tu tienda", {
+      hint: "Escribe el dominio de tu tienda, por ejemplo mitienda.cl o https://mitienda.cl.",
     });
   }
   const withScheme = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
@@ -64,13 +66,13 @@ export function normalizeDomain(raw: string): string {
   try {
     url = new URL(withScheme);
   } catch {
-    throw new AgentPOSError("CONFIG_INVALID", `'${trimmed}' is not a valid domain`, {
-      hint: "Enter just the domain, e.g. shop.example, or the full https URL.",
+    throw new AgentPOSError("CONFIG_INVALID", `'${trimmed}' no se entiende como una dirección`, {
+      hint: "Escribe solo el dominio, por ejemplo mitienda.cl, o la dirección https completa.",
     });
   }
   if (url.protocol !== "https:" && url.protocol !== "http:") {
-    throw new AgentPOSError("CONFIG_INVALID", `Unsupported protocol '${url.protocol}'`, {
-      hint: "Only http(s) URLs can be verified.",
+    throw new AgentPOSError("CONFIG_INVALID", `Protocolo no admitido '${url.protocol}'`, {
+      hint: "Solo podemos comprobar direcciones http o https.",
     });
   }
   return url.origin;
@@ -105,7 +107,7 @@ async function probe(
 }
 
 const UNREACHABLE_HINT =
-  "The URL did not answer. Check the domain, that the site is online, and the proxy rules (step 5 of the onboarding guide).";
+  "Esa dirección no respondió. Revisa el dominio, que el sitio esté en línea y las rutas del proxy (paso 5 de la guía de instalación).";
 
 /** Where AgentPOS Cloud reads the store from: the one check that needs the owner's key. */
 const MERCHANT_SUMMARY_PATH = `${BASE_PATH}/api/merchant/summary`;
@@ -133,28 +135,28 @@ async function merchantApiCheck(
     return {
       ...base,
       ok: false,
-      hint: "Your store answers, but it does not know this address yet: it is running an older version of AgentPOS. Update it (`npm install -g @agentpos/site@latest`, or rebuild your Docker image), start `npx agentpos serve` again, and check once more.",
+      hint: "Tu tienda responde, pero todavía no conoce esta dirección: está corriendo una versión antigua de AgentPOS. Actualízala (`npm install -g @agentpos/site@latest`, o reconstruye tu imagen de Docker), vuelve a ejecutar `npx agentpos serve` y comprueba otra vez.",
     };
   }
   if (res.status === 401 || res.status === 403) {
     return {
       ...base,
       ok: false,
-      hint: "Your store refused this key. Check that MERCHANT_API_TOKEN in the .env on your server is exactly the key the wizard shows, and start AgentPOS again so it reads the change.",
+      hint: "Tu tienda rechazó esta llave. Revisa que MERCHANT_API_TOKEN, en el .env de tu servidor, sea exactamente la llave que muestra este instalador, y vuelve a iniciar AgentPOS para que lea el cambio.",
     };
   }
   if (!res.ok) {
     return {
       ...base,
       ok: false,
-      hint: "Your store answered with an error. Run `npx agentpos status` on your server and check what AgentPOS reports.",
+      hint: "Tu tienda respondió con un error. Ejecuta `npx agentpos status` en tu servidor y revisa lo que informa AgentPOS.",
     };
   }
   if (anonymous.res?.status !== 401) {
     return {
       ...base,
       ok: false,
-      hint: "Your orders answer WITHOUT the key, so anyone could read them. Check that your server is not passing its own Authorization header through, and that MERCHANT_API_TOKEN is set in the .env your store is running.",
+      hint: "Tus órdenes responden SIN la llave, así que cualquiera podría leerlas. Revisa que tu servidor no esté dejando pasar su propio encabezado Authorization, y que MERCHANT_API_TOKEN esté puesto en el .env con el que corre tu tienda.",
     };
   }
   return { ...base, ok: true };
@@ -174,22 +176,22 @@ export async function verifyDeployment(
     {
       id: "health",
       url: `${origin}${BASE_PATH}/health`,
-      hint: `AgentPOS did not answer at ${BASE_PATH}/health. Is \`npx agentpos serve\` running on your server, and does your proxy forward ${BASE_PATH}/ to it?`,
+      hint: `AgentPOS no respondió en ${BASE_PATH}/health. ¿Está corriendo \`npx agentpos serve\` en tu servidor, y tu proxy redirige ${BASE_PATH}/ hacia él?`,
     },
     {
       id: "openapi",
       url: `${origin}/openapi.json`,
-      hint: "Agents look for /openapi.json first. Add the proxy rule for it (step 5 of the onboarding guide).",
+      hint: "Los agentes buscan /openapi.json antes que nada. Agrega la regla del proxy para esa ruta (paso 5 de la guía de instalación).",
     },
     {
       id: "ucp",
       url: `${origin}/.well-known/ucp`,
-      hint: "The UCP manifest at /.well-known/ucp is missing. Add the proxy rule for it (step 5 of the onboarding guide).",
+      hint: "Falta el manifiesto UCP en /.well-known/ucp. Agrega la regla del proxy para esa ruta (paso 5 de la guía de instalación).",
     },
     {
       id: "llms",
       url: `${origin}/llms.txt`,
-      hint: "Optional but recommended: /llms.txt is what the x402 directories read. Add the proxy rule for it.",
+      hint: "Opcional pero recomendado: /llms.txt es lo que leen los directorios de x402. Agrega la regla del proxy para esa ruta.",
     },
   ];
 
@@ -219,13 +221,13 @@ export async function verifyDeployment(
           // AgentPOS answered: the proxy is fine, the store itself reports a problem.
           hint =
             body.facilitator?.ok === false
-              ? "AgentPOS answers but cannot reach the payment facilitator. Check AGENTPOS_FACILITATOR_URL and AGENTPOS_FACILITATOR_API_KEY in the .env on your server."
-              : "AgentPOS answers but reports a problem (run `npx agentpos status` on your server).";
+              ? "AgentPOS responde, pero no logra llegar al facilitador de pagos. Revisa AGENTPOS_FACILITATOR_URL y AGENTPOS_FACILITATOR_API_KEY en el .env de tu servidor."
+              : "AgentPOS responde, pero informa un problema (ejecuta `npx agentpos status` en tu servidor).";
         }
       } else if (res.ok) {
         ok = false;
         hint =
-          "Something answered at /agentpos/health, but it was not AgentPOS. Check that your proxy forwards that path to the AgentPOS port (8402 by default).";
+          "Algo respondió en /agentpos/health, pero no era AgentPOS. Revisa que tu proxy redirija esa ruta al puerto de AgentPOS (8402 salvo que lo hayas cambiado).";
       }
     }
     checks.push({

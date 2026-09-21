@@ -135,7 +135,7 @@ describe("POST /api/validate-woo", () => {
     expect(res.status).toBe(400);
     const error = await errorOf(res);
     expect(error.code).toBe("CONFIG_INVALID");
-    expect(error.hint).toContain("Read/Write");
+    expect(error.hint).toContain("Lectura/escritura");
   });
 
   it("maps a 404 to a permalinks/URL hint", async () => {
@@ -387,7 +387,7 @@ describe("POST /api/verify, with the merchant panel key", () => {
     const check = body.checks.find((c) => c.id === "merchantApi");
     expect(check?.ok).toBe(false);
     expect(check?.status).toBe(404);
-    expect(check?.hint).toContain("older version of AgentPOS");
+    expect(check?.hint).toContain("una versión antigua de AgentPOS");
     expect(check?.hint).toContain("@agentpos/site@latest");
   });
 
@@ -398,7 +398,7 @@ describe("POST /api/verify, with the merchant panel key", () => {
     });
     const check = body.checks.find((c) => c.id === "merchantApi");
     expect(check?.ok).toBe(false);
-    expect(check?.hint).toContain("WITHOUT the key");
+    expect(check?.hint).toContain("SIN la llave");
   });
 
   it("leaves the panel check out when no key is sent", async () => {
