@@ -64,7 +64,7 @@ async function main(): Promise<void> {
       "    the owner's.",
       "  - Only its scrypt hash is stored here. Nobody can read the link back out of the",
       "    database, so if you lose it, run this again and the old one stops working.",
-      "  - Prefer a recovery code (/cuenta -> Generar codigos nuevos) next time: it needs",
+      "  - Prefer a recovery code (/cuenta -> Generar códigos nuevos) next time: it needs",
       "    nobody with a shell on this server.",
       "",
     ].join("\n"),

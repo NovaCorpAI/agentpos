@@ -41,22 +41,22 @@ export interface ConversationDeps {
 const HELP_TEXT = [
   "Comandos disponibles:",
   "- buscar <texto> (search): busca productos en tus tiendas",
-  "- comprar <numero> [cantidad] (buy): pide una propuesta de compra del resultado indicado",
-  "- si / no (yes / no): aprueba o rechaza la propuesta pendiente",
-  "- estado (status): estado de tu ultima propuesta",
+  "- comprar <número> [cantidad] (buy): pide una propuesta de compra del resultado indicado",
+  "- sí / no (yes / no): aprueba o rechaza la propuesta pendiente",
+  "- estado (status): estado de tu última propuesta",
   "- ayuda (help): muestra esta lista",
   "",
-  "Aprobar por WhatsApp no paga: la firma ocurre en la maquina donde vive tu wallet.",
+  "Aprobar por WhatsApp no paga: la firma ocurre en la máquina donde vive tu wallet.",
 ].join("\n");
 
 const REFUSAL_TEXT =
-  "Hola. Este asistente de compras es privado y solo atiende a su propietario, asi que no puedo ayudarte. Que tengas un buen dia.";
+  "Hola. Este asistente de compras es privado y solo atiende a su propietario, así que no puedo ayudarte. Que tengas un buen día.";
 
 const UNSUPPORTED_TEXT =
   "Por ahora solo entiendo mensajes de texto. Escribe 'ayuda' para ver los comandos.";
 
 const STATUS_ES: Record<string, string> = {
-  pending: "pendiente de tu aprobacion",
+  pending: "pendiente de tu aprobación",
   approved: "aprobada, en espera de firma",
   rejected: "rechazada",
   expired: "expirada",
@@ -122,7 +122,7 @@ export class ConversationHandler {
         return `No se pudo: ${err.message}. ${err.hint}`;
       }
       this.log("whatsapp.command_failed", { sender: senderHash(msg.from) });
-      return "Algo salio mal de nuestro lado. Intenta de nuevo en un momento.";
+      return "Algo salió mal de nuestro lado. Intenta de nuevo en un momento.";
     }
   }
 
@@ -137,10 +137,10 @@ export class ConversationHandler {
 
   private async search(state: SenderState, query: string): Promise<string> {
     const q = query.trim();
-    if (!q) return "Dime que buscar. Por ejemplo: buscar taza";
+    if (!q) return "Dime qué buscar. Por ejemplo: buscar taza";
     const offers = await this.service.searchOffers(q);
     if (offers.length === 0) {
-      return `No encontre resultados para "${q}" en tus tiendas.`;
+      return `No encontré resultados para "${q}" en tus tiendas.`;
     }
     const top = offers.slice(0, MAX_RESULTS);
     state.offers = new Map(top.map((o, i) => [i + 1, { itemId: o.id, storeUrl: o.site }]));
@@ -151,7 +151,7 @@ export class ConversationHandler {
       `Resultados para "${q}":`,
       ...lines,
       "",
-      "Responde 'comprar <numero>' para pedir una propuesta (por ejemplo: comprar 1).",
+      "Responde 'comprar <número>' para pedir una propuesta (por ejemplo: comprar 1).",
     ].join("\n");
   }
 
@@ -159,7 +159,7 @@ export class ConversationHandler {
     const n = Number(args[0]);
     const ref = Number.isInteger(n) ? state.offers.get(n) : undefined;
     if (!ref) {
-      return "Ese numero no esta en tu ultima busqueda (los resultados duran 30 minutos). Usa 'buscar <texto>' y luego 'comprar <numero>'.";
+      return "Ese número no está en tu última búsqueda (los resultados duran 30 minutos). Usa 'buscar <texto>' y luego 'comprar <número>'.";
     }
     const quantity = args[1] === undefined ? 1 : Number(args[1]);
     if (!Number.isInteger(quantity) || quantity < 1 || quantity > 999) {
@@ -174,7 +174,7 @@ export class ConversationHandler {
       `Total: ${proposal.amount} USDC`,
       `Tienda: ${proposal.storeName} (${proposal.storeUrl})`,
       "",
-      "Responde 'si' para aprobar o 'no' para rechazar.",
+      "Responde 'sí' para aprobar o 'no' para rechazar.",
     ].join("\n");
   }
 
@@ -189,10 +189,10 @@ export class ConversationHandler {
       "Propuesta aprobada, en espera de firma.",
       `${proposal.title} por ${proposal.amount} USDC en ${proposal.storeName}.`,
       "",
-      "Este bot no guarda llaves y no puede pagar por ti. Para pagar, ejecuta en la maquina donde vive tu wallet:",
+      "Este bot no guarda llaves y no puede pagar por ti. Para pagar, ejecuta en la máquina donde vive tu wallet:",
       instructions.cli,
       "",
-      "Si en esa maquina corre 'agentpos-buyer watch', el pago se hara solo en unos segundos y aqui veras la propuesta como pagada.",
+      "Si en esa máquina corre 'agentpos-buyer watch', el pago se hará solo en unos segundos y aquí verás la propuesta como pagada.",
     ].join("\n");
   }
 
@@ -203,7 +203,7 @@ export class ConversationHandler {
     const proposal = this.service.reject(state.pendingProposalId);
     state.lastProposalId = proposal.id;
     state.pendingProposalId = undefined;
-    return `Propuesta rechazada (${proposal.title}). No se cobro nada.`;
+    return `Propuesta rechazada (${proposal.title}). No se cobró nada.`;
   }
 
   private status(state: SenderState): string {
@@ -211,13 +211,13 @@ export class ConversationHandler {
       const proposal = this.service.getProposal(state.lastProposalId);
       if (proposal) {
         const label = STATUS_ES[proposal.status] ?? proposal.status;
-        const lines = [`Tu ultima propuesta (${proposal.title}, ${proposal.amount} USDC): ${label}.`];
+        const lines = [`Tu última propuesta (${proposal.title}, ${proposal.amount} USDC): ${label}.`];
         if (proposal.status === "paid" && proposal.payment) {
-          lines.push(`Transaccion: ${proposal.payment.txHash}`);
+          lines.push(`Transacción: ${proposal.payment.txHash}`);
         }
         if (proposal.status === "approved" && proposal.failure) {
           lines.push(
-            `El ultimo intento de pago fallo (${proposal.failure.code}): ${proposal.failure.message}`,
+            `El último intento de pago falló (${proposal.failure.code}): ${proposal.failure.message}`,
           );
         }
         return lines.join("\n");
@@ -225,7 +225,7 @@ export class ConversationHandler {
     }
     const s = this.service.status();
     return [
-      "No hay propuestas en este chat todavia.",
+      "No hay propuestas en este chat todavía.",
       `Pendientes: ${s.pendingProposals}. Aprobadas en espera de firma: ${s.approvedAwaitingSignature}.`,
     ].join("\n");
   }

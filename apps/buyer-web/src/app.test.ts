@@ -82,7 +82,7 @@ describe("pages", () => {
     const res = await client.request("/");
     expect(res.status).toBe(200);
     const html = await res.text();
-    expect(html).toContain("Maximo por compra");
+    expect(html).toContain("Máximo por compra");
     expect(html).toContain("nunca guarda ni pide una llave secreta");
   });
 
@@ -128,7 +128,7 @@ describe("pages", () => {
 
   it("asks for the shipping address, revealed by the physical goods checkbox alone", async () => {
     const html = await (await client.request("/")).text();
-    expect(html).toContain("Direccion de despacho");
+    expect(html).toContain("Dirección de despacho");
     expect(html).toContain('name="shipName"');
     expect(html).toContain('name="shipLine1"');
     expect(html).toContain('name="shipCity"');
@@ -144,7 +144,7 @@ describe("pages", () => {
     expect(res.status).toBe(422);
     const html = await res.text();
     expect(html).toContain("SHIPPING_REQUIRED");
-    expect(html).toContain("Falta la direccion de despacho");
+    expect(html).toContain("Falta la dirección de despacho");
     // Nothing the human typed is lost on the way back.
     expect(html).toContain('value="25"');
     expect(html).toContain('value="buyer@example.com"');
@@ -158,7 +158,7 @@ describe("pages", () => {
     expect(post.status).toBe(303);
     const html = await (await client.request("/")).text();
     expect(html).toContain("Despacho a Santiago, CL");
-    expect(html).not.toContain("Sin direccion de despacho guardada");
+    expect(html).not.toContain("Sin dirección de despacho guardada");
     // The summary line says where, never the street.
     expect(html).not.toContain("Despacho a Santiago, CL · Avenida");
   });
@@ -185,8 +185,8 @@ describe("pages", () => {
     );
     const html = await (await broken.request("/")).text();
     expect(html).toContain("banner warn");
-    expect(html).toContain("no hay a donde despachar");
-    expect(html).toContain("Agrega tu direccion de despacho abajo o desactiva bienes fisicos");
+    expect(html).toContain("no hay a dónde despachar");
+    expect(html).toContain("Agrega tu dirección de despacho abajo o desactiva bienes físicos");
     // And the physical purchase is refused early, with the same reason.
     const res = await broken.request("/api/proposals", {
       method: "POST",
@@ -196,7 +196,7 @@ describe("pages", () => {
     expect(res.status).toBe(422);
     const body = (await res.json()) as { error: { code: string; message: string } };
     expect(body.error.code).toBe("SHIPPING_REQUIRED");
-    expect(body.error.message).toContain("No hay direccion de despacho guardada");
+    expect(body.error.message).toContain("No hay dirección de despacho guardada");
   });
 
   it("tells the human where a physical proposal will ship", async () => {
@@ -279,7 +279,7 @@ describe("market call from the home page", () => {
   it("says who answered and who did not, on the page", async () => {
     const client = await withMandate();
     const html = await (await client.request("/?q=lamina")).text();
-    expect(html).toContain("Quien respondio");
+    expect(html).toContain("Quién respondió");
     expect(html).toContain("no entiende los filtros");
     expect(html).toContain("error");
     expect(html).toContain("la tienda esta caida");
@@ -300,7 +300,7 @@ describe("market call from the home page", () => {
     const html = await (await client.request("/?q=lamina&qty=2")).text();
     // 20 x 2 = 40, over the 25 USDC per-payment limit. Listed, and labelled.
     expect(html).toContain("40 USDC");
-    expect(html).toContain("supera tu maximo por compra");
+    expect(html).toContain("supera tu máximo por compra");
     expect(html).toContain("tag rejected");
   });
 

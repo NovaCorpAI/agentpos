@@ -75,8 +75,8 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** The one refusal a caller gets for a wrong email and for a wrong password alike. */
 function wrongCredentials(): AuthError {
-  return new AuthError("INVALID_CREDENTIALS", "Correo o contrasena incorrectos", {
-    hint: "Revisa los dos campos. Este espacio tiene una sola cuenta, la del dueno.",
+  return new AuthError("INVALID_CREDENTIALS", "Correo o contraseña incorrectos", {
+    hint: "Revisa los dos campos. Esta sala de control tiene una sola cuenta, la del dueño.",
   });
 }
 
@@ -178,17 +178,17 @@ export class AuthService {
     const email = input.email.trim().toLowerCase();
     if (!EMAIL_RE.test(email)) {
       throw new AuthError("ACCOUNT_INVALID", "Ese correo no parece un correo", {
-        hint: "Escribe una direccion completa, por ejemplo tu@ejemplo.com.",
+        hint: "Escribe una dirección completa, por ejemplo tu@ejemplo.com.",
       });
     }
     if (input.password.length < MIN_PASSWORD_LENGTH) {
-      throw new AuthError("ACCOUNT_INVALID", "La contrasena es muy corta", {
-        hint: `Usa al menos ${String(MIN_PASSWORD_LENGTH)} caracteres. Esta clave protege tus limites de gasto.`,
+      throw new AuthError("ACCOUNT_INVALID", "La contraseña es muy corta", {
+        hint: `Usa al menos ${String(MIN_PASSWORD_LENGTH)} caracteres. Esta clave protege tus límites de gasto.`,
       });
     }
     if (input.password !== input.confirm) {
-      throw new AuthError("ACCOUNT_INVALID", "Las dos contrasenas no coinciden", {
-        hint: "Escribe la misma contrasena en los dos campos.",
+      throw new AuthError("ACCOUNT_INVALID", "Las dos contraseñas no coinciden", {
+        hint: "Escribe la misma contraseña en los dos campos.",
       });
     }
     const at = this.now().toISOString();
@@ -200,7 +200,7 @@ export class AuthService {
       updatedAt: at,
     });
     this.logger?.info("auth.setup", { emailHash: emailHash(email), ...origin });
-    this.record("setup", origin, emailHash(email), "cuenta del dueno creada");
+    this.record("setup", origin, emailHash(email), "cuenta del dueño creada");
     return this.openSession(origin);
   }
 
@@ -231,8 +231,8 @@ export class AuthService {
       { ipHash: "entorno", uaFamily: "servidor" },
       emailHash(email),
       current
-        ? "cuenta del dueno reemplazada desde el entorno; sesiones cerradas"
-        : "cuenta del dueno creada desde el entorno",
+        ? "cuenta del dueño reemplazada desde el entorno; sesiones cerradas"
+        : "cuenta del dueño creada desde el entorno",
     );
   }
 
@@ -264,13 +264,13 @@ export class AuthService {
     if (!account || !ok || account.email !== email) {
       const next = this.throttle.fail(keys);
       this.logger?.warn("auth.login_failed", { emailHash: hashed, ...origin });
-      this.record("login_failed", origin, hashed, "correo o contrasena incorrectos");
+      this.record("login_failed", origin, hashed, "correo o contraseña incorrectos");
       if (next > 0) throw rateLimited(next);
       throw wrongCredentials();
     }
     this.throttle.succeed(keys);
     this.logger?.info("auth.login_ok", { emailHash: hashed, ...origin });
-    this.record("login_ok", origin, hashed, "sesion iniciada");
+    this.record("login_ok", origin, hashed, "sesión iniciada");
     return this.openSession(origin);
   }
 
@@ -294,7 +294,7 @@ export class AuthService {
     const account = this.storage.getOwner();
     const hashed = account ? emailHash(account.email) : "";
     this.logger?.info("auth.logout", { emailHash: hashed, ...origin });
-    this.record("logout", origin, hashed, "sesion cerrada");
+    this.record("logout", origin, hashed, "sesión cerrada");
   }
 
   // --- sessions --------------------------------------------------------------
@@ -311,7 +311,7 @@ export class AuthService {
     if (session.expiresAt <= now.toISOString()) {
       this.storage.deleteSession(session.id);
       this.logger?.info("auth.session_expired", { ...origin });
-      this.record("session_expired", origin, "", "sesion expirada por inactividad");
+      this.record("session_expired", origin, "", "sesión expirada por inactividad");
       return undefined;
     }
     const account = this.storage.getOwner();
@@ -345,9 +345,9 @@ export class AuthService {
     const ok = expected.length === actual.length && timingSafeEqual(expected, actual);
     if (ok) return;
     this.logger?.warn("auth.csrf_invalid", { ...origin });
-    this.record("csrf_invalid", origin, "", "formulario sin token valido");
-    throw new AuthError("CSRF_INVALID", "El formulario no traia un token valido", {
-      hint: "Vuelve a cargar la pagina y repite la accion; no se cambio nada.",
+    this.record("csrf_invalid", origin, "", "formulario sin token válido");
+    throw new AuthError("CSRF_INVALID", "El formulario no traía un token válido", {
+      hint: "Vuelve a cargar la página y repite la acción; no se cambió nada.",
     });
   }
 
@@ -400,10 +400,10 @@ export class AuthService {
         "reauth_failed",
         origin,
         account ? emailHash(account.email) : "",
-        "contrasena actual incorrecta al cambiarla",
+        "contraseña actual incorrecta al cambiarla",
       );
-      throw new AuthError("REAUTH_FAILED", "Tu contrasena actual no es esa", {
-        hint: "Escribe la contrasena con la que entraste. Nada cambio.",
+      throw new AuthError("REAUTH_FAILED", "Tu contraseña actual no es esa", {
+        hint: "Escribe la contraseña con la que entraste. Nada cambió.",
       });
     }
     this.assertNewPassword(input.password, input.confirm);
@@ -419,7 +419,7 @@ export class AuthService {
       "password_changed",
       origin,
       emailHash(account.email),
-      "contrasena cambiada desde la sesion; las demas sesiones se cerraron",
+      "contraseña cambiada desde la sesión; las demás sesiones se cerraron",
     );
   }
 
@@ -451,7 +451,7 @@ export class AuthService {
       "recovery_codes_generated",
       origin,
       hashed,
-      `${String(codes.length)} codigos nuevos; los anteriores dejaron de servir`,
+      `${String(codes.length)} códigos nuevos; los anteriores dejaron de servir`,
     );
     return codes;
   }
@@ -509,7 +509,7 @@ export class AuthService {
     try {
       await this.notifier.send(
         [
-          `Codigo para recuperar tu espacio AgentPOS: ${code}`,
+          `Código para recuperar tu sala de control AgentPOS: ${code}`,
           "Vale 10 minutos y se usa una sola vez.",
           "Si no lo pediste tu, ignora este mensaje y revisa el panel Accesos: alguien intento entrar.",
         ].join("\n"),
@@ -522,7 +522,7 @@ export class AuthService {
       return { sent: false, reason: "send-failed" };
     }
     this.logger?.info("auth.recovery_code_sent", { emailHash: hashed, ...origin });
-    this.record("recovery_code_sent", origin, hashed, "codigo enviado al WhatsApp del dueno");
+    this.record("recovery_code_sent", origin, hashed, "código enviado al WhatsApp del dueño");
     return { sent: true };
   }
 
@@ -562,7 +562,7 @@ export class AuthService {
     if (!emailMatches || !matched) {
       const next = this.throttle.fail(keys);
       this.logger?.warn("auth.recovery_failed", { emailHash: hashed, ...origin });
-      this.record("recovery_failed", origin, hashed, "codigo de recuperacion rechazado");
+      this.record("recovery_failed", origin, hashed, "código de recuperación rechazado");
       if (next > 0) throw rateLimited(next);
       throw recoveryRefused();
     }
@@ -572,7 +572,7 @@ export class AuthService {
       "recovery_started",
       origin,
       hashed,
-      "codigo correcto: solo puede fijar una contrasena nueva",
+      "código correcto: solo puede fijar una contraseña nueva",
     );
     return this.openSession(origin, "recovery");
   }
@@ -599,7 +599,7 @@ export class AuthService {
     if (!ok) {
       const next = this.throttle.fail(keys);
       this.logger?.warn("auth.recovery_operator_failed", { ...origin });
-      this.record("recovery_failed", origin, "", "enlace de operador invalido o vencido");
+      this.record("recovery_failed", origin, "", "enlace de operador inválido o vencido");
       if (next > 0) throw rateLimited(next);
       throw recoveryRefused();
     }
@@ -611,7 +611,7 @@ export class AuthService {
       "recovery_started",
       origin,
       hashed,
-      "enlace de operador usado desde el servidor: salta la contrasena",
+      "enlace de operador usado desde el servidor: salta la contraseña",
     );
     return this.openSession(origin, "recovery");
   }
@@ -652,13 +652,13 @@ export class AuthService {
     origin: RequestOrigin,
   ): Promise<void> {
     if (session.scope !== "recovery") {
-      throw new AuthError("RECOVERY_REQUIRED", "Esta pagina necesita una recuperacion en curso", {
-        hint: "Empieza en /recuperar con tu correo y un codigo.",
+      throw new AuthError("RECOVERY_REQUIRED", "Esta página necesita una recuperación en curso", {
+        hint: "Empieza en /recuperar con tu correo y un código.",
       });
     }
     const account = this.storage.getOwner();
     if (!account) {
-      throw new AuthError("SETUP_REQUIRED", "Esta instalacion todavia no tiene dueno", {
+      throw new AuthError("SETUP_REQUIRED", "Esta sala de control todavía no tiene dueño", {
         hint: "Crea la cuenta en /setup.",
       });
     }
@@ -680,7 +680,7 @@ export class AuthService {
       "recovery_completed",
       origin,
       emailHash(account.email),
-      "contrasena nueva por recuperacion; todas las sesiones se cerraron",
+      "contraseña nueva por recuperación; todas las sesiones se cerraron",
     );
   }
 
@@ -695,13 +695,13 @@ export class AuthService {
   /** The rules a new password meets, wherever it comes from. */
   private assertNewPassword(password: string, confirm: string): void {
     if (password.length < MIN_PASSWORD_LENGTH) {
-      throw new AuthError("ACCOUNT_INVALID", "La contrasena es muy corta", {
-        hint: `Usa al menos ${String(MIN_PASSWORD_LENGTH)} caracteres. Esta clave protege tus limites de gasto.`,
+      throw new AuthError("ACCOUNT_INVALID", "La contraseña es muy corta", {
+        hint: `Usa al menos ${String(MIN_PASSWORD_LENGTH)} caracteres. Esta clave protege tus límites de gasto.`,
       });
     }
     if (password !== confirm) {
-      throw new AuthError("ACCOUNT_INVALID", "Las dos contrasenas no coinciden", {
-        hint: "Escribe la misma contrasena en los dos campos.",
+      throw new AuthError("ACCOUNT_INVALID", "Las dos contraseñas no coinciden", {
+        hint: "Escribe la misma contraseña en los dos campos.",
       });
     }
   }
@@ -794,7 +794,7 @@ export class AuthService {
 }
 
 export function setupDone(): AuthError {
-  return new AuthError("SETUP_DONE", "Esta instalacion ya tiene dueno", {
+  return new AuthError("SETUP_DONE", "Esta sala de control ya tiene dueño", {
     hint: "La cuenta se crea una sola vez. Entra en /login con ella.",
   });
 }
@@ -804,8 +804,8 @@ export function setupDone(): AuthError {
  * and an email with no account here all read exactly the same.
  */
 export function recoveryRefused(): AuthError {
-  return new AuthError("RECOVERY_INVALID", "Ese codigo no sirve", {
-    hint: "Revisa el correo y el codigo. Cada codigo impreso se usa una sola vez, y el codigo de WhatsApp vence a los 10 minutos.",
+  return new AuthError("RECOVERY_INVALID", "Ese código no sirve", {
+    hint: "Revisa el correo y el código. Cada código impreso se usa una sola vez, y el código de WhatsApp vence a los 10 minutos.",
   });
 }
 
@@ -814,7 +814,7 @@ function rateLimited(seconds: number): AuthError {
     "LOGIN_RATE_LIMITED",
     `Demasiados intentos. Espera ${String(seconds)} segundos y vuelve a probar.`,
     {
-      hint: "El limite cuenta por direccion y por cuenta, y sube con cada intento fallido.",
+      hint: "El límite cuenta por dirección y por cuenta, y sube con cada intento fallido.",
       retryAfter: seconds,
     },
   );

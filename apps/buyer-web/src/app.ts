@@ -189,12 +189,12 @@ function marketCallInput(values: MarketFormValues): MarketCallInput {
   const quantity = Number(values.quantity);
   if (!Number.isInteger(quantity) || quantity < 1 || quantity > 999) {
     throw new AgentPOSError("CONFIG_INVALID", `Cantidad invalida: '${values.quantity}'`, {
-      hint: "Usa un numero entero entre 1 y 999.",
+      hint: "Usa un número entero entre 1 y 999.",
     });
   }
   if (values.physical !== "" && values.physical !== "true" && values.physical !== "false") {
-    throw new AgentPOSError("CONFIG_INVALID", `Tipo de producto invalido`, {
-      hint: "Elige cualquiera, solo fisicos o solo digitales.",
+    throw new AgentPOSError("CONFIG_INVALID", `Tipo de producto inválido`, {
+      hint: "Elige cualquiera, solo físicos o solo digitales.",
     });
   }
   return {
@@ -269,7 +269,7 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
   const sessionOf = (c: Context<BuyerWebEnv>): AuthenticatedSession => {
     const authed = c.get("auth");
     if (!authed) {
-      throw new AuthError("AUTH_REQUIRED", "Tu sesion no esta activa", {
+      throw new AuthError("AUTH_REQUIRED", "Tu sesión no está activa", {
         hint: "Entra de nuevo en /login.",
       });
     }
@@ -325,9 +325,9 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
     if (authed?.session.scope === "recovery" && !isRecoverySessionPath(path)) {
       throw new AuthError(
         "RECOVERY_SCOPE_LIMITED",
-        "Estas en una recuperacion: lo unico que puedes hacer es fijar una contrasena nueva",
+        "Estás en una recuperación: lo único que puedes hacer es fijar una contraseña nueva",
         {
-          hint: "Termina en /recuperar/nueva-clave y despues entra normalmente en /login.",
+          hint: "Termina en /recuperar/nueva-clave y después entra normalmente en /login.",
         },
       );
     }
@@ -339,8 +339,8 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
           {
             error: {
               code: "AUTH_REQUIRED",
-              message: "Esta ruta necesita la sesion del dueno",
-              hint: "Entra en /login con la cuenta del dueno; el navegador guarda la cookie de sesion.",
+              message: "Esta ruta necesita la sesión del dueño",
+              hint: "Entra en /login con la cuenta del dueño; el navegador guarda la cookie de sesión.",
             },
           },
           401,
@@ -401,7 +401,7 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
         ...(c.req.query("recuperada") === "1"
           ? {
               notice:
-                "Contrasena cambiada. Todas las sesiones se cerraron: entra con la nueva. Si generaste codigos de recuperacion, el que usaste ya no sirve.",
+                "Contraseña cambiada. Todas las sesiones se cerraron: entra con la nueva. Si generaste códigos de recuperación, el que usaste ya no sirve.",
             }
           : {}),
       }),
@@ -504,7 +504,7 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
         whatsapp: auth.whatsappRecoveryAvailable,
         email,
         notice:
-          "Si la cuenta existe, enviamos el codigo al WhatsApp del dueno. Vale 10 minutos y se escribe en el campo de arriba.",
+          "Si la cuenta existe, enviamos el código al WhatsApp del dueño. Vale 10 minutos y se escribe en el campo de arriba.",
       }),
     );
   });
@@ -777,8 +777,8 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
     if (password.length === 0) {
       return new AuthError(
         "REAUTH_REQUIRED",
-        `Escribe tu contrasena para aprobar ${proposal.amount} ${proposal.asset} en ${proposal.storeName}.`,
-        { hint: "Aprobar un pago pide la contrasena de nuevo, aunque la sesion siga abierta." },
+        `Escribe tu contraseña para aprobar ${proposal.amount} ${proposal.asset} en ${proposal.storeName}.`,
+        { hint: "Aprobar un pago pide la contraseña de nuevo, aunque la sesión siga abierta." },
       );
     }
     if (await auth.verifyOwnerPassword(password)) return undefined;
@@ -786,8 +786,8 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
       originIn(c),
       `${proposal.amount} ${proposal.asset} en ${proposal.storeName}`,
     );
-    return new AuthError("REAUTH_FAILED", "Contrasena incorrecta: la propuesta sigue pendiente.", {
-      hint: "Vuelve a escribirla. Nada se aprobo y nada se cobro.",
+    return new AuthError("REAUTH_FAILED", "Contraseña incorrecta: la propuesta sigue pendiente.", {
+      hint: "Vuelve a escribirla. Nada se aprobó y nada se cobró.",
     });
   };
 
@@ -1014,9 +1014,9 @@ export function createBuyerWebApp(deps: BuyerWebAppDeps): BuyerWebApp {
           hint: err.hint,
           backHref: recovering ? "/recuperar/nueva-clave" : authed ? "/proposals" : "/login",
           backLabel: recovering
-            ? "Volver a elegir tu contrasena"
+            ? "Volver a elegir tu contraseña"
             : authed
-              ? "Volver a propuestas"
+              ? "Volver a las decisiones"
               : "Volver a entrar",
           ...(authed
             ? { session: { email: authed.account.email, csrf: authed.session.csrfToken } }

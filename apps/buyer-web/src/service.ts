@@ -95,8 +95,8 @@ export function parseAttributePairs(rows: string[]): Record<string, string> {
     const name = index > 0 ? text.slice(0, index).trim() : "";
     const value = index > 0 ? text.slice(index + 1).trim() : "";
     if (name.length === 0 || value.length === 0) {
-      throw new AgentPOSError("CONFIG_INVALID", `Filtro invalido: '${text.slice(0, 40)}'`, {
-        hint: "Escribe cada filtro como clave=valor, por ejemplo Fondo=blanco. Deja la fila vacia si no quieres filtrar.",
+      throw new AgentPOSError("CONFIG_INVALID", `Filtro inválido: '${text.slice(0, 40)}'`, {
+        hint: "Escribe cada filtro como clave=valor, por ejemplo Fondo=blanco. Deja la fila vacía si no quieres filtrar.",
         details: { pair: text.slice(0, 40) },
       });
     }
@@ -125,17 +125,17 @@ const REQUIRED_SHIPPING_FIELDS = [
     what: "el nombre de quien recibe",
     why: "saber a nombre de quien va el paquete",
   },
-  { key: "line1", what: "la direccion (linea 1)", why: "una calle y un numero" },
+  { key: "line1", what: "la dirección (línea 1)", why: "una calle y un número" },
   { key: "city", what: "la ciudad", why: "la ciudad de destino" },
-  { key: "postalCode", what: "el codigo postal", why: "el codigo postal" },
-  { key: "country", what: "el pais", why: "el pais de destino" },
+  { key: "postalCode", what: "el código postal", why: "el código postal" },
+  { key: "country", what: "el país", why: "el país de destino" },
 ] as const;
 
 /** The two ways out, spelled the same everywhere the human meets this refusal. */
 const HINT_PHYSICAL_ON =
-  "Completa la direccion de despacho en el mandato, o desactiva 'Permitir bienes fisicos' si solo compras cosas digitales.";
+  "Completa la dirección de despacho en el mandato, o desactiva 'Permitir bienes físicos' si solo compras cosas digitales.";
 const HINT_PHYSICAL_OFF =
-  "Completa el campo que falta o deja toda la direccion de despacho vacia: con bienes fisicos desactivados no hace falta.";
+  "Completa el campo que falta o deja toda la dirección de despacho vacía: con bienes físicos desactivados no hace falta.";
 
 /** Trimmed form values, country normalized to uppercase ISO-2 as stores expect it. */
 type TrimmedShipping = Record<keyof ShippingInput, string>;
@@ -180,8 +180,8 @@ export class BuyerWebService {
   saveProfile(input: SaveProfileInput): BuyerWebProfile {
     const wallet = input.walletAddress?.trim();
     if (wallet && wallet.startsWith("S")) {
-      throw new AgentPOSError("SECRET_IN_CONFIG", "That looks like a SECRET key, not an address", {
-        hint: "This service stores public addresses only (they start with G). Keep the secret on your own machine; never paste it into any website, including this one.",
+      throw new AgentPOSError("SECRET_IN_CONFIG", "Eso parece una llave SECRETA, no una dirección", {
+        hint: "Esta plataforma guarda solo direcciones públicas (empiezan con G). Deja la llave secreta en tu propia máquina; nunca la pegues en un sitio web, ni siquiera en este.",
       });
     }
     const stores = (input.stores ?? []).map((s) => s.trim()).filter((s) => s.length > 0);
@@ -190,8 +190,8 @@ export class BuyerWebService {
       try {
         hosts.push(new URL(url).host);
       } catch {
-        throw new AgentPOSError("CONFIG_INVALID", `'${url}' is not a valid store URL`, {
-          hint: "Use full URLs, one per line, e.g. https://shop.example",
+        throw new AgentPOSError("CONFIG_INVALID", `'${url}' no es una URL de tienda válida`, {
+          hint: "Escribe URLs completas, una por línea, por ejemplo https://tienda.ejemplo",
         });
       }
     }
@@ -646,7 +646,7 @@ export class BuyerWebService {
       if (allowPhysicalGoods) {
         throw new AgentPOSError(
           "SHIPPING_REQUIRED",
-          "Falta la direccion de despacho: la tienda no puede despachar sin una direccion a donde enviar el paquete.",
+          "Falta la dirección de despacho: la tienda no puede despachar sin una dirección a dónde enviar el paquete.",
           {
             hint: HINT_PHYSICAL_ON,
             details: { missing: REQUIRED_SHIPPING_FIELDS.map((f) => f.key) },
@@ -670,8 +670,8 @@ export class BuyerWebService {
     if (!/^[A-Z]{2}$/.test(t.country)) {
       throw new AgentPOSError(
         allowPhysicalGoods ? "SHIPPING_REQUIRED" : "CONFIG_INVALID",
-        "El pais debe ser un codigo ISO de dos letras: la tienda no puede despachar sin saber a que pais.",
-        { hint: "Por ejemplo CL para Chile, US para Estados Unidos, MX para Mexico." },
+        "El país debe ser un código ISO de dos letras: la tienda no puede despachar sin saber a qué país.",
+        { hint: "Por ejemplo CL para Chile, US para Estados Unidos, MX para México." },
       );
     }
     return {
@@ -695,7 +695,7 @@ export class BuyerWebService {
     if (!profile.shipping) {
       return new AgentPOSError(
         "SHIPPING_REQUIRED",
-        "No hay direccion de despacho guardada: la tienda no puede despachar sin una direccion a donde enviar el paquete.",
+        "No hay dirección de despacho guardada: la tienda no puede despachar sin una dirección a dónde enviar el paquete.",
         { hint: HINT_PHYSICAL_ON },
       );
     }
