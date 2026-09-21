@@ -74,14 +74,14 @@ describe("commands", () => {
     const reply = await conversation.handle(msg("buscar mug"));
     expect(reply).toContain('Resultados para "mug"');
     expect(reply).toContain("1. Ceramic Mug - 9.9 USDC - Faro Demo Store");
-    expect(reply).toContain("comprar <numero>");
+    expect(reply).toContain("comprar <número>");
   });
 
   it("search (English alias) works and an empty result is honest", async () => {
     const { conversation } = makeConversation();
     expect(await conversation.handle(msg("search mug"))).toContain("Ceramic Mug");
     expect(await conversation.handle(msg("buscar nothing-here"))).toContain(
-      "No encontre resultados",
+      "No encontré resultados",
     );
   });
 
@@ -93,7 +93,7 @@ describe("commands", () => {
     expect(reply).toContain("1 x Ceramic Mug");
     expect(reply).toContain("Total: 9.9 USDC");
     expect(reply).toContain("Faro Demo Store");
-    expect(reply).toContain("Responde 'si' para aprobar o 'no' para rechazar.");
+    expect(reply).toContain("Responde 'sí' para aprobar o 'no' para rechazar.");
     expect(service.pendingProposals()).toHaveLength(1);
   });
 
@@ -108,7 +108,7 @@ describe("commands", () => {
   it("comprar without a prior search points back to buscar", async () => {
     const { conversation } = makeConversation();
     const reply = await conversation.handle(msg("comprar 1"));
-    expect(reply).toContain("ultima busqueda");
+    expect(reply).toContain("última búsqueda");
     expect(reply).toContain("buscar");
   });
 
@@ -118,7 +118,7 @@ describe("commands", () => {
     await conversation.handle(msg("buscar mug"));
     nowMs += 31 * 60 * 1000;
     const reply = await conversation.handle(msg("comprar 1"));
-    expect(reply).toContain("ultima busqueda");
+    expect(reply).toContain("última búsqueda");
   });
 
   it("si approves: awaiting signature, with the exact local payment command", async () => {
@@ -150,7 +150,7 @@ describe("commands", () => {
     await conversation.handle(msg("comprar 1"));
     const reply = await conversation.handle(msg("no"));
     expect(reply).toContain("rechazada");
-    expect(reply).toContain("No se cobro nada");
+    expect(reply).toContain("No se cobró nada");
     expect(service.proposalHistory().at(0)?.status).toBe("rejected");
   });
 
@@ -164,7 +164,7 @@ describe("commands", () => {
     const { conversation } = makeConversation();
     await conversation.handle(msg("buscar mug"));
     await conversation.handle(msg("comprar 1"));
-    expect(await conversation.handle(msg("estado"))).toContain("pendiente de tu aprobacion");
+    expect(await conversation.handle(msg("estado"))).toContain("pendiente de tu aprobación");
     await conversation.handle(msg("si"));
     expect(await conversation.handle(msg("status"))).toContain("aprobada, en espera de firma");
   });
@@ -178,7 +178,7 @@ describe("commands", () => {
     service.markPaid(proposal!.id, { txHash: "tx_wa_1", orderId: "order-9" });
     const reply = await conversation.handle(msg("estado"));
     expect(reply).toContain("pagada");
-    expect(reply).toContain("Transaccion: tx_wa_1");
+    expect(reply).toContain("Transacción: tx_wa_1");
   });
 
   it("estado explains why an approved proposal has not been paid after a failed attempt", async () => {
@@ -193,7 +193,7 @@ describe("commands", () => {
     });
     const reply = await conversation.handle(msg("estado"));
     expect(reply).toContain("aprobada, en espera de firma");
-    expect(reply).toContain("fallo (MANDATE_EXCEEDED)");
+    expect(reply).toContain("falló (MANDATE_EXCEEDED)");
   });
 
   it("estado with no proposals falls back to the service status", async () => {
@@ -209,7 +209,7 @@ describe("commands", () => {
       const reply = await conversation.handle(msg(text));
       expect(reply).toContain("Comandos disponibles");
       expect(reply).toContain("buscar <texto>");
-      expect(reply).toContain("la firma ocurre en la maquina donde vive tu wallet");
+      expect(reply).toContain("la firma ocurre en la máquina donde vive tu wallet");
     }
   });
 });

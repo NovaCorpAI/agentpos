@@ -123,7 +123,7 @@ describe("recovery codes", () => {
     const client = await setUpOwner(app);
     const res = await client.request("/cuenta/codigos", { method: "POST" });
     const html = await res.text();
-    expect(html).toContain("Guardalas ahora: no se vuelven a mostrar");
+    expect(html).toContain("Guárdalas ahora: no se vuelven a mostrar");
     const codes = [...html.matchAll(/<li>([A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4})<\/li>/g)].map(
       (m) => m[1] as string,
     );
@@ -208,7 +208,7 @@ describe("the reminder for an account with no codes", () => {
     const client = await setUpOwner(app);
     for (const path of ["/", "/proposals", "/activity"]) {
       const html = await (await client.request(path)).text();
-      expect([path, html.includes("Todavia no tienes codigos de recuperacion")]).toEqual([
+      expect([path, html.includes("Todavía no tienes códigos de recuperación")]).toEqual([
         path,
         true,
       ]);
@@ -216,7 +216,7 @@ describe("the reminder for an account with no codes", () => {
     await generateCodes(client);
     for (const path of ["/", "/proposals", "/activity"]) {
       const html = await (await client.request(path)).text();
-      expect([path, html.includes("Todavia no tienes codigos de recuperacion")]).toEqual([
+      expect([path, html.includes("Todavía no tienes códigos de recuperación")]).toEqual([
         path,
         false,
       ]);
@@ -233,12 +233,12 @@ describe("the reminder for an account with no codes", () => {
     expect(away.status).toBe(303);
     expect(away.headers.get("location")).toBe("/proposals");
     expect(await (await client.request("/")).text()).not.toContain(
-      "Todavia no tienes codigos de recuperacion",
+      "Todavía no tienes códigos de recuperación",
     );
     // A new session has not dismissed anything: the nudge is back.
     const second = await logIn(app);
     expect(await (await second.request("/")).text()).toContain(
-      "Todavia no tienes codigos de recuperacion",
+      "Todavía no tienes códigos de recuperación",
     );
   });
 
@@ -281,7 +281,7 @@ describe("the recovery session", () => {
       const html = await res.text();
       expect(html).toContain("RECOVERY_SCOPE_LIMITED");
       // Nothing of the guarded pages leaks through the refusal.
-      expect(html).not.toContain("Maximo por compra");
+      expect(html).not.toContain("Máximo por compra");
       expect(html).not.toContain(OWNER_EMAIL);
     }
     // The JSON API says the same thing in its own shape.
@@ -415,7 +415,7 @@ describe("completing a recovery", () => {
     const codes = await generateCodes(client);
     await recoverWith(app, codes[0] as string);
     const login = await (await app.request("/login?recuperada=1")).text();
-    expect(login).toContain("Contrasena cambiada");
+    expect(login).toContain("Contraseña cambiada");
   });
 });
 
@@ -478,12 +478,12 @@ describe("the WhatsApp code", () => {
     const off = build();
     await setUpOwner(off.app);
     const plain = await (await off.app.request("/recuperar")).text();
-    expect(plain).not.toContain("Enviar codigo a mi WhatsApp");
+    expect(plain).not.toContain("Enviar código a mi WhatsApp");
 
     const on = build({ whatsapp: true });
     await setUpOwner(on.app);
     const withChannel = await (await on.app.request("/recuperar")).text();
-    expect(withChannel).toContain("Enviar codigo a mi WhatsApp");
+    expect(withChannel).toContain("Enviar código a mi WhatsApp");
   });
 
   it("sends six digits to the owner's number and lets them set a new password", async () => {
@@ -494,7 +494,7 @@ describe("the WhatsApp code", () => {
       body: new URLSearchParams({ email: OWNER_EMAIL }),
     });
     expect(asked.status).toBe(200);
-    expect(await asked.text()).toContain("Si la cuenta existe, enviamos el codigo");
+    expect(await asked.text()).toContain("Si la cuenta existe, enviamos el código");
     expect(sent).toHaveLength(1);
     // Meta wants bare digits, and the number is the allowlisted one.
     expect(sent[0]?.to).toBe("56911111111");
@@ -514,7 +514,7 @@ describe("the WhatsApp code", () => {
       body: new URLSearchParams({ email: "nadie@ejemplo.com" }),
     });
     expect(stranger.status).toBe(200);
-    expect(await stranger.text()).toContain("Si la cuenta existe, enviamos el codigo");
+    expect(await stranger.text()).toContain("Si la cuenta existe, enviamos el código");
     expect(sent).toHaveLength(0);
   });
 
@@ -532,7 +532,7 @@ describe("the WhatsApp code", () => {
     const throttled = await ask();
     // Same page, same words: the throttle is invisible from outside.
     expect(throttled.status).toBe(200);
-    expect(await throttled.text()).toContain("Si la cuenta existe, enviamos el codigo");
+    expect(await throttled.text()).toContain("Si la cuenta existe, enviamos el código");
     expect(sent).toHaveLength(1);
     clock = new Date("2026-09-19T10:01:30.000Z");
     expect((await ask()).status).toBe(200);
@@ -630,7 +630,7 @@ describe("the operator link printed on the server", () => {
     // The GET only confirms: a link preview cannot burn the token.
     const page = await app.request(`/recuperar/operador?t=${token}`);
     expect(page.status).toBe(200);
-    expect(await page.text()).toContain("Salta la contrasena");
+    expect(await page.text()).toContain("Salta la contraseña");
     expect(storage.getRecoveryChallenge("operator")).toBeDefined();
 
     const used = await app.request("/recuperar/operador", {
@@ -688,9 +688,9 @@ describe("the operator link printed on the server", () => {
     await setNewPassword(app, cookieFrom(used));
     const back = await logIn(app, { password: NEW_PASSWORD });
     const html = await (await back.request("/activity")).text();
-    expect(html).toContain("enlace de recuperacion del servidor");
-    expect(html).toContain("recuperacion iniciada");
-    expect(html).toContain("contrasena recuperada");
+    expect(html).toContain("enlace de recuperación del servidor");
+    expect(html).toContain("recuperación iniciada");
+    expect(html).toContain("contraseña recuperada");
     expect(html).toContain("enlace de operador usado desde el servidor");
     expect(client.cookie).not.toBe("");
   });
@@ -721,7 +721,7 @@ describe("changing the password while signed in", () => {
     expect(res.status).toBe(403);
     const html = await res.text();
     expect(html).toContain("REAUTH_FAILED");
-    expect(html).toContain("Tu contrasena actual no es esa");
+    expect(html).toContain("Tu contraseña actual no es esa");
     // Nothing changed: the old password still opens the door.
     expect((await logIn(app)).cookie).not.toBe("");
   });
@@ -745,7 +745,7 @@ describe("changing the password while signed in", () => {
     // This session is untouched: nobody is thrown out of the page they are standing on.
     const still = await client.request("/cuenta?saved=1");
     expect(still.status).toBe(200);
-    expect(await still.text()).toContain("Contrasena cambiada");
+    expect(await still.text()).toContain("Contraseña cambiada");
     // The other one is gone.
     const dead = await other.request("/");
     expect(dead.status).toBe(302);
@@ -766,8 +766,8 @@ describe("changing the password while signed in", () => {
     const client = await setUpOwner(app);
     await change(client);
     const html = await (await client.request("/activity")).text();
-    expect(html).toContain("contrasena cambiada");
-    expect(html).toContain("las demas sesiones se cerraron");
+    expect(html).toContain("contraseña cambiada");
+    expect(html).toContain("las demás sesiones se cerraron");
   });
 });
 
@@ -814,11 +814,11 @@ describe("what recovery writes down", () => {
     const back = await logIn(app, { password: NEW_PASSWORD });
     const html = await (await back.request("/activity")).text();
     for (const line of [
-      "codigos de recuperacion nuevos",
-      "codigo enviado por WhatsApp",
-      "codigo de recuperacion rechazado",
-      "recuperacion iniciada",
-      "contrasena recuperada",
+      "códigos de recuperación nuevos",
+      "código enviado por WhatsApp",
+      "código de recuperación rechazado",
+      "recuperación iniciada",
+      "contraseña recuperada",
     ]) {
       expect([line, html.includes(line)]).toEqual([line, true]);
     }

@@ -4,18 +4,35 @@ The buyer-side web platform: a human configures their buying agent's **mandate**
 limits, allowed stores, physical goods or not) and then watches and decides what the agent
 does. The agent proposes purchases with real quotes; the human approves or rejects them.
 
-Server-rendered pages (Spanish-first UI, "Espacio del comprador"), zero frontend framework,
+Server-rendered pages (Spanish-first UI, "Sala de control"), zero frontend framework,
 zero CDN assets, no client JavaScript:
 
 | Page         | What it does                                                                                                                                                                                                                                                                    |
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/`          | Home: mandate state (limits, period, approved vs available with a budget bar, shipping city and country), the **market call** (below) that can turn any offer into a proposal, the mandate editor with its shipping section, and the channel status (WhatsApp, signing bridge). |
-| `/proposals` | Proposal cards by state: pendiente (Aprobar / Rechazar), aprobada **esperando firma** (with the exact payment instructions and any failed-attempt reason), pagada (transaction link + order id). A physical proposal says which city and country it ships to.                   |
+| `/`          | The **mandate** as a contract: a sealed card with the limits in large type and a period-consumption bar (approved vs available, with the real numbers). Editing it is folded away in a `<details>` below it. Then the **market call** (below) that can turn any offer into a proposal, and the channel status (WhatsApp, signing bridge). |
+| `/proposals` | Decisiones. One card per proposal, coloured by state: esperando tu decisión (amber), esperando firma (violet, with the exact payment instructions and any failed-attempt reason), pagada (green, transaction link + order id). Approve and reject are both full-width, both repeat the amount and the store, and a separator always stands between them: they are never adjacent in the DOM. A physical proposal says which city and country it ships to. |
 | `/activity`  | Proposal history, the append-only activity log as a readable timeline, and the **Accesos** panel (logins, refusals and approvals).                                                                                                                                              |
-| `/cuenta`    | The account: change the password (current + new twice), and generate the ten recovery codes. Shows how many are left, never a code.                                                                                                                                            |
+| `/cuenta`    | The account: change the password (current + new twice), and generate the ten recovery codes. Shows how many are left, never a code. The codes themselves render as a printable sheet (monospace grid, `@media print`).                                                          |
 | `/setup`     | First run only: creates the one owner account. Answers 404 forever after that.                                                                                                                                                                                                  |
 | `/login`     | The way in. `/logout` (POST) destroys the session row.                                                                                                                                                                                                                          |
 | `/recuperar` | The way back in: email plus a recovery code, or a six-digit code over WhatsApp. `/recuperar/nueva-clave` is the only page a recovery session reaches.                                                                                                                          |
+
+## Its own identity
+
+One brand, four temperaments (`docs/DISENO.md`). This one is "poder con límites": a personal
+control room for money, not another admin site.
+
+- **Violet `#9a7cf5`** for anything agentic, **green `#26d0a0`** only for money and settled
+  facts, **amber** for what is waiting on a human decision, **muted red** for a mandate block
+  or a failed attempt. Every state colour resolves through a token in `STATE_TOKENS`
+  (`src/pages.ts`); no page writes a colour of its own, and `identity.test.ts` enforces it.
+- **The mandate is the centrepiece**, editing it is secondary.
+- **Decisions have weight**: the password confirmation is presented as step 1 of 2, the
+  approve button as step 2, and the destructive button never sits next to it.
+- **Spanish with its accents.** "contraseña", "máquina", "dueño". `identity.test.ts` scans the
+  rendered text of every page for the usual unaccented spellings and fails on any of them.
+- Accessible and self-contained: AA contrast, visible focus, 44 px targets, responsive, and
+  motion only where it clarifies (and none at all under `prefers-reduced-motion`).
 
 ## The custody rule, plainly
 

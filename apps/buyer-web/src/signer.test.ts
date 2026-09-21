@@ -238,7 +238,7 @@ describe("failure reports", () => {
 
     const html = await (await client.request("/proposals")).text();
     expect(html).toContain("MANDATE_EXCEEDED");
-    expect(html).toContain("El ultimo intento de pago fallo");
+    expect(html).toContain("El último intento de pago falló");
     expect(service.activity().some((e) => e.kind === "proposal.payment_failed")).toBe(true);
   });
 

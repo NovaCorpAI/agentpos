@@ -124,7 +124,7 @@ describe("first run: the one owner account", () => {
     expect(login.headers.get("location")).toBe("/setup");
     const setup = await app.request("/setup");
     expect(setup.status).toBe(200);
-    expect(await setup.text()).toContain("Crea tu cuenta de dueno");
+    expect(await setup.text()).toContain("Crea tu cuenta de dueño");
   });
 
   it("creates the account once and then answers 404 to /setup forever", async () => {
@@ -295,8 +295,8 @@ describe("login", () => {
     expect(unknown.status).toBe(401);
     const a = await unknown.text();
     const b = await wrong.text();
-    expect(a).toContain("Correo o contrasena incorrectos");
-    expect(b).toContain("Correo o contrasena incorrectos");
+    expect(a).toContain("Correo o contraseña incorrectos");
+    expect(b).toContain("Correo o contraseña incorrectos");
     // Neither answer carries a hint about which of the two fields was wrong.
     expect(a).not.toContain("no existe");
     expect(b).not.toContain("no existe");
@@ -647,7 +647,7 @@ describe("approving asks for the password again", () => {
     await withMandate(client);
     const proposal = await propose(client);
     const html = await (await client.request("/proposals")).text();
-    expect(html).toContain("Confirma con tu contrasena");
+    expect(html).toContain("Confirma con tu contraseña");
     expect(html).toContain("1.5 USDC");
     expect(html).toContain("Faro Demo Store");
     expect(html).toContain('type="password"');
@@ -657,7 +657,7 @@ describe("approving asks for the password again", () => {
       body: new URLSearchParams({}),
     });
     expect(naked.status).toBe(403);
-    expect(await naked.text()).toContain("Escribe tu contrasena para aprobar");
+    expect(await naked.text()).toContain("Escribe tu contraseña para aprobar");
     // Nothing moved: the proposal is still waiting.
     const still = (await (await client.request("/api/proposals")).json()) as {
       proposals: Proposal[];
@@ -673,7 +673,7 @@ describe("approving asks for the password again", () => {
     const res = await client.approve(proposal.id, { password: "no-es-la-clave" });
     expect(res.status).toBe(403);
     const html = await res.text();
-    expect(html).toContain("Contrasena incorrecta");
+    expect(html).toContain("Contraseña incorrecta");
     const still = (await (await client.request("/api/proposals")).json()) as {
       proposals: Proposal[];
     };
@@ -692,7 +692,7 @@ describe("approving asks for the password again", () => {
     // 1.5 USDC, under the threshold: approved with the session alone.
     const small = await propose(client, "sticker");
     const cheapHtml = await (await client.request("/proposals")).text();
-    expect(cheapHtml).not.toContain("Confirma con tu contrasena");
+    expect(cheapHtml).not.toContain("Confirma con tu contraseña");
     const approvedSmall = await client.request(`/proposals/${small.id}/approve`, {
       method: "POST",
       body: new URLSearchParams({}),

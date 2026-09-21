@@ -173,10 +173,10 @@ describe("shipping address (server side, authoritative)", () => {
 
   const required: Array<{ field: keyof ShippingInput; says: string }> = [
     { field: "name", says: "el nombre de quien recibe" },
-    { field: "line1", says: "la direccion (linea 1)" },
+    { field: "line1", says: "la dirección (línea 1)" },
     { field: "city", says: "la ciudad" },
-    { field: "postalCode", says: "el codigo postal" },
-    { field: "country", says: "el pais" },
+    { field: "postalCode", says: "el código postal" },
+    { field: "country", says: "el país" },
   ];
   for (const { field, says } of required) {
     it(`refuses physical goods without ${field}, naming that field and why`, () => {
@@ -190,7 +190,7 @@ describe("shipping address (server side, authoritative)", () => {
       expect(problem.code).toBe("SHIPPING_REQUIRED");
       expect(problem.message).toContain(says);
       expect(problem.message).toContain("la tienda no puede despachar sin");
-      expect(problem.hint).toContain("Permitir bienes fisicos");
+      expect(problem.hint).toContain("Permitir bienes físicos");
       // Nothing half-saved: a mandate that could never ship is never stored.
       expect(storage.getProfile()).toBeUndefined();
     });
@@ -202,7 +202,7 @@ describe("shipping address (server side, authoritative)", () => {
       service.saveProfile({ ...baseProfile, allowPhysicalGoods: true, email: "ana@example.com" }),
     );
     expect(problem.code).toBe("SHIPPING_REQUIRED");
-    expect(problem.message).toContain("Falta la direccion de despacho");
+    expect(problem.message).toContain("Falta la dirección de despacho");
   });
 
   it("refuses physical goods without a contact email", () => {
@@ -219,7 +219,7 @@ describe("shipping address (server side, authoritative)", () => {
       service.saveProfile({ ...physicalProfile, shipping: { ...SHIPPING, country: "Chile" } }),
     );
     expect(problem.code).toBe("SHIPPING_REQUIRED");
-    expect(problem.message).toContain("codigo ISO de dos letras");
+    expect(problem.message).toContain("código ISO de dos letras");
   });
 
   it("saves with physical goods off and no address at all", () => {
@@ -244,7 +244,7 @@ describe("shipping address (server side, authoritative)", () => {
     );
     expect(problem.code).toBe("CONFIG_INVALID");
     expect(problem.message).toContain("el nombre de quien recibe");
-    expect(problem.hint).toContain("vacia");
+    expect(problem.hint).toContain("vacía");
   });
 
   it("hands the address and the contact to the store, so a physical purchase is quotable", async () => {
@@ -280,8 +280,8 @@ describe("shipping address (server side, authoritative)", () => {
     expect(service.status().physicalWithoutShipping).toBe(true);
     const problem = await err2(() => service.propose("poster", STORE_URL));
     expect(problem.code).toBe("SHIPPING_REQUIRED");
-    expect(problem.message).toContain("No hay direccion de despacho guardada");
-    expect(problem.hint).toContain("Permitir bienes fisicos");
+    expect(problem.message).toContain("No hay dirección de despacho guardada");
+    expect(problem.hint).toContain("Permitir bienes físicos");
     // Refused before the cart existed: nothing to approve, nothing to fail at payment time.
     expect(service.proposalHistory()).toHaveLength(0);
     // A digital item on the same broken profile still works.
