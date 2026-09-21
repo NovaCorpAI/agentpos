@@ -269,10 +269,11 @@ describe("createGuardedFetch", () => {
 
 describe("apex and www are the same site", () => {
   it("follows a redirect from the apex to www and back", async () => {
-    for (const [from, to] of [
-      ["https://mitienda.cl/agentpos/health", "https://www.mitienda.cl/agentpos/health"],
-      ["https://www.mitienda.cl/agentpos/health", "https://mitienda.cl/agentpos/health"],
-    ]) {
+    const hops2: Array<{ from: string; to: string }> = [
+      { from: "https://mitienda.cl/agentpos/health", to: "https://www.mitienda.cl/agentpos/health" },
+      { from: "https://www.mitienda.cl/agentpos/health", to: "https://mitienda.cl/agentpos/health" },
+    ];
+    for (const { from, to } of hops2) {
       let hops = 0;
       const inner = vi.fn(async (url: string) => {
         hops += 1;
