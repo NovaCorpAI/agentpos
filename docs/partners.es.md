@@ -21,7 +21,8 @@ nos conoce, pero a ti te conoce hace años.
   referencia; tu mercado es tuyo y no pedimos parte.
 - **El servicio operado lo cobramos nosotros**, US$19 al mes por tienda, y tienes dos formas de
   participar: precio de reventa con descuento (le facturas tú al comercio) o comisión recurrente
-  por referido (le facturamos nosotros). Los números vigentes están en el correo del programa,
+  por referido, que se paga mientras la tienda siga activa y tú sigas siendo su primera línea
+  (le facturamos nosotros y te transferimos en USDC). Los números vigentes están en el correo del programa,
   porque todavía son borrador.
 - **Nunca un porcentaje de la venta del comercio**, ni tuyo ni nuestro. La comisión de partner
   sale de nuestra tarifa.

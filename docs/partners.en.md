@@ -20,8 +20,9 @@ does not know us, but they have known you for years.
 - **You charge for the setup, at your own price.** We publish US$99 as a reference; your market
   is yours and we take no cut.
 - **We charge for the operated service**, US$19 per store per month, and you can take part in
-  two ways: a discounted resale price (you invoice the merchant) or a recurring referral fee (we
-  invoice them). The current figures live in the programme email, because they are still a
+  two ways: a discounted resale price (you invoice the merchant) or a recurring referral fee, paid
+  for as long as the store stays active and you remain its first line of support (we invoice
+  them and transfer to you in USDC). The current figures live in the programme email, because they are still a
   draft.
 - **Never a percentage of the merchant's sale**, neither yours nor ours. A partner fee comes out
   of our own fee.
