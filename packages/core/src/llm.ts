@@ -14,11 +14,24 @@ export interface LlmCompletionRequest {
   effort?: "low" | "medium" | "high";
 }
 
+/**
+ * Tokens as the provider reported them, never estimated. Zero when the provider does not report
+ * a field: a guess here becomes a wrong number in a price table later.
+ */
+export interface LlmUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+}
+
 export interface LlmCompletionResult {
   text: string;
   json?: unknown;
   provider: string;
   model: string;
+  /** What the call cost in tokens. Feed it to `@agentpos/measure` to turn it into money. */
+  usage: LlmUsage;
 }
 
 export interface LlmProvider {
@@ -32,22 +45,104 @@ type FetchLike = typeof globalThis.fetch;
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
 
+/**
+ * Removes the reasoning of a reasoning model. Nemotron, DeepSeek R1 and friends wrap their
+ * thinking in `<think>...</think>`; parsing with it still in place fails every time, and an
+ * unclosed block at the end of a truncated response has to go too.
+ */
+function stripReasoning(text: string): string {
+  return text
+    .replace(/<think>[\s\S]*?<\/think>/gi, "")
+    .replace(/<think>[\s\S]*$/i, "")
+    .trim();
+}
+
+/**
+ * The last top-level JSON object of a response, or null. A reasoning model writes example JSON
+ * while it thinks, so the first object in the text is usually a draft and the last one is the
+ * answer. Quoted braces are ignored so a `{` inside a string does not shift the span.
+ */
+function lastJsonSpan(text: string): string | null {
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escaped = false;
+  let last: string | null = null;
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === "{") {
+      if (depth === 0) start = i;
+      depth += 1;
+    } else if (ch === "}") {
+      depth -= 1;
+      if (depth === 0 && start >= 0) last = text.slice(start, i + 1);
+      if (depth < 0) depth = 0;
+    }
+  }
+  return last;
+}
+
 function extractJson(text: string): unknown {
-  const trimmed = text.trim();
+  const trimmed = stripReasoning(text);
   const candidate = trimmed.startsWith("```")
     ? trimmed.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "")
     : trimmed;
+  let cause: unknown;
   try {
     return JSON.parse(candidate);
-  } catch (cause) {
-    throw new AgentPOSError("LLM_INVALID_JSON", "LLM response is not valid JSON", {
-      hint: "Retry with a stricter schema or lower effort; inspect details.text.",
-      retryable: true,
-      details: { text: text.slice(0, 500) },
-      cause,
-    });
+  } catch (err) {
+    cause = err;
   }
+  // A reasoning model surrounds its answer with prose: the last complete object is the answer.
+  const span = lastJsonSpan(candidate);
+  if (span !== null && span !== candidate) {
+    try {
+      return JSON.parse(span);
+    } catch {
+      // keep the first failure as the cause: it describes the whole response, not a fragment
+    }
+  }
+  throw new AgentPOSError("LLM_INVALID_JSON", "LLM response is not valid JSON", {
+    hint: "Retry with a stricter schema or lower effort; inspect details.text.",
+    retryable: true,
+    details: { text: text.slice(0, 500) },
+    cause,
+  });
 }
+
+/** Zero usage, for a provider that reported none. Never a guess. */
+const NO_USAGE: LlmUsage = {
+  inputTokens: 0,
+  outputTokens: 0,
+  cacheReadTokens: 0,
+  cacheWriteTokens: 0,
+};
+
+function count(v: unknown): number {
+  return typeof v === "number" && Number.isFinite(v) && v >= 0 ? Math.trunc(v) : 0;
+}
+
+/** Reads the `usage` block of either provider shape, tolerating its absence. */
+function readUsage(data: Record<string, unknown>): LlmUsage {
+  const usage = data.usage as Record<string, unknown> | undefined;
+  if (!usage) return { ...NO_USAGE };
+  const details = usage.prompt_tokens_details as Record<string, unknown> | undefined;
+  return {
+    // Anthropic names them input/output; OpenAI-compatible, prompt/completion.
+    inputTokens: count(usage.input_tokens ?? usage.prompt_tokens),
+    outputTokens: count(usage.output_tokens ?? usage.completion_tokens),
+    cacheReadTokens: count(usage.cache_read_input_tokens ?? details?.cached_tokens),
+    cacheWriteTokens: count(usage.cache_creation_input_tokens),
+  };
+}
+
 
 async function readJsonResponse(res: Response, provider: string): Promise<Record<string, unknown>> {
   const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
@@ -111,6 +206,7 @@ export class AnthropicProvider implements LlmProvider {
       ...(req.jsonSchema ? { json: extractJson(text) } : {}),
       provider: this.name,
       model: this.model,
+      usage: readUsage(data),
     };
   }
 }
@@ -161,6 +257,7 @@ export class OpenAICompatibleProvider implements LlmProvider {
       ...(req.jsonSchema ? { json: extractJson(text) } : {}),
       provider: this.name,
       model: this.model,
+      usage: readUsage(data),
     };
   }
 }

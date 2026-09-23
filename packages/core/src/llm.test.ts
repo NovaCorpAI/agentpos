@@ -63,3 +63,114 @@ describe("llm router", () => {
     );
   });
 });
+
+describe("reasoning models", () => {
+  it("drops <think> blocks and keeps the last JSON object, not the draft one", async () => {
+    const answer = [
+      "<think>",
+      'Maybe the shape is {"items":[]} ... no, it needs the price.',
+      "</think>",
+      'Here is the result: {"items":[{"id":"mug","price":"9.90"}]}',
+    ].join("\n");
+    const llm = new OpenAICompatibleProvider(
+      "nvidia/nemotron",
+      undefined,
+      "https://llm.local/v1",
+      fakeFetch(200, { choices: [{ message: { content: answer } }] }),
+    );
+    const res = await llm.complete({ prompt: "x", jsonSchema: { type: "object" } });
+    expect(res.json).toEqual({ items: [{ id: "mug", price: "9.90" }] });
+  });
+
+  it("survives a truncated response that never closes its <think> block", async () => {
+    const llm = new OpenAICompatibleProvider(
+      "nvidia/nemotron",
+      undefined,
+      "https://llm.local/v1",
+      fakeFetch(200, {
+        choices: [{ message: { content: '{"a":1}\n<think>and then I would check' } }],
+      }),
+    );
+    const res = await llm.complete({ prompt: "x", jsonSchema: { type: "object" } });
+    expect(res.json).toEqual({ a: 1 });
+  });
+
+  it("does not split an object on a brace inside a string", async () => {
+    const llm = new OpenAICompatibleProvider(
+      "m",
+      undefined,
+      "https://llm.local/v1",
+      fakeFetch(200, { choices: [{ message: { content: 'note: {"name":"a { b","ok":true}' } }] }),
+    );
+    const res = await llm.complete({ prompt: "x", jsonSchema: { type: "object" } });
+    expect(res.json).toEqual({ name: "a { b", ok: true });
+  });
+
+  it("still fails loudly when there is no JSON at all", async () => {
+    const llm = new OpenAICompatibleProvider(
+      "m",
+      undefined,
+      "https://llm.local/v1",
+      fakeFetch(200, { choices: [{ message: { content: "<think>only prose</think> sorry" } }] }),
+    );
+    await expect(llm.complete({ prompt: "x", jsonSchema: { type: "object" } })).rejects.toMatchObject(
+      { code: "LLM_INVALID_JSON" },
+    );
+  });
+});
+
+describe("usage reporting", () => {
+  it("reads Anthropic token counts, including the cache ones", async () => {
+    const llm = new AnthropicProvider(
+      "claude-opus-5",
+      "key",
+      fakeFetch(200, {
+        content: [{ type: "text", text: "ok" }],
+        usage: {
+          input_tokens: 120,
+          output_tokens: 30,
+          cache_read_input_tokens: 400,
+          cache_creation_input_tokens: 10,
+        },
+      }),
+    );
+    const res = await llm.complete({ prompt: "hi" });
+    expect(res.usage).toEqual({
+      inputTokens: 120,
+      outputTokens: 30,
+      cacheReadTokens: 400,
+      cacheWriteTokens: 10,
+    });
+  });
+
+  it("reads the openai-compatible names and never invents a number", async () => {
+    const withUsage = new OpenAICompatibleProvider(
+      "m",
+      undefined,
+      "https://llm.local/v1",
+      fakeFetch(200, {
+        choices: [{ message: { content: "ok" } }],
+        usage: { prompt_tokens: 7, completion_tokens: 2, prompt_tokens_details: { cached_tokens: 5 } },
+      }),
+    );
+    expect((await withUsage.complete({ prompt: "x" })).usage).toEqual({
+      inputTokens: 7,
+      outputTokens: 2,
+      cacheReadTokens: 5,
+      cacheWriteTokens: 0,
+    });
+
+    const silent = new OpenAICompatibleProvider(
+      "m",
+      undefined,
+      "https://llm.local/v1",
+      fakeFetch(200, { choices: [{ message: { content: "ok" } }] }),
+    );
+    expect((await silent.complete({ prompt: "x" })).usage).toEqual({
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+    });
+  });
+});
