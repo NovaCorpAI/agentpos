@@ -23,7 +23,8 @@
     "test": "vitest run",
     "lint": "eslint src scripts",
     "e2e:smoke": "tsx scripts/e2e-smoke.ts",
-    "vendor:schemas": "tsx scripts/vendor-schemas.ts"
+    "vendor:schemas": "tsx scripts/vendor-schemas.ts",
+    "e2e:transbank": "tsx scripts/e2e-transbank.ts"
   },
   "dependencies": {
     "@agentpos/measure": "workspace:*",

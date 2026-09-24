@@ -19,6 +19,8 @@ export const ERROR_CODES = [
   "RAIL_DUPLICATE",
   "RAIL_UNSUPPORTED",
   "RAIL_UNAVAILABLE",
+  /** The rail has the charge but is waiting for a human step (a card redirect, an enrolment). */
+  "PAYMENT_PENDING",
   // catalog / checkout
   "ITEM_NOT_FOUND",
   "ITEM_NOT_PUBLISHED",

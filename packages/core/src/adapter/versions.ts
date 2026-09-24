@@ -18,8 +18,14 @@ export const PAYMENT_RAIL_INTERFACE_VERSION = "1.0.0";
  * implementation yet and must not be registered.
  */
 export const PAYMENT_RAIL_IDS = {
-  /** x402 + exact scheme over Stellar. The only rail implemented today. */
+  /** x402 + exact scheme over Stellar. */
   x402Stellar: "org.x402.stellar",
+  /**
+   * Transbank (Chile) card rail over the merchant's OWN commerce code: Webpay Plus for a first
+   * purchase (the human pays on Transbank's page) and Oneclick Mall for repeat purchases (the
+   * agent charges an enrolled card without the human present). Credentials are the merchant's.
+   */
+  transbankWebpay: "cl.transbank.webpay",
 } as const;
 
 /**
@@ -80,11 +86,25 @@ export const PROTOCOL_VERSIONS = {
     /** Interface version of adapter/rails.ts (see PAYMENT_RAIL_INTERFACE_VERSION). */
     interface: PAYMENT_RAIL_INTERFACE_VERSION,
     /** Rail ids with an implementation behind them today. */
-    implemented: [PAYMENT_RAIL_IDS.x402Stellar],
-    checkedAt: "2026-09-17",
+    implemented: [PAYMENT_RAIL_IDS.x402Stellar, PAYMENT_RAIL_IDS.transbankWebpay],
+    checkedAt: "2026-09-24",
     source: "plan/RIELES.md",
     notes:
-      "One rail today (x402 on Stellar). Adding a rail is additive: it never changes the catalog or order surfaces. Routing between rails belongs to packages/policy, not here.",
+      "Two rails: x402 on Stellar (settles on ledger) and Transbank Webpay/Oneclick (Chile, cards, settles at the acquirer). Adding a rail is additive: it never changes the catalog or order surfaces. Routing between rails belongs to packages/policy, not here.",
+  },
+  transbank: {
+    /** Webpay Plus and Oneclick Mall REST API version, part of every endpoint path. */
+    version: "1.2",
+    hosts: {
+      integration: "https://webpay3gint.transbank.cl",
+      production: "https://webpay3g.transbank.cl",
+    },
+    /** Integration credentials are public (no contract needed); listed in the docs repo below. */
+    checkedAt: "2026-09-24",
+    source:
+      "https://github.com/TransbankDevelopers/transbank-developers-docs (documentacion/webpay-plus, documentacion/oneclick)",
+    notes:
+      "Verified 2026-09-24 against the integration environment: create transaction and start inscription both answer 200 with the public credentials. Approved means status AUTHORIZED and response_code 0. A Webpay Plus token lives 5 minutes; commit exactly once.",
   },
   agentpos: {
     /** Our own namespaced identifiers inside UCP registries. */

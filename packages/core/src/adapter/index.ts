@@ -6,3 +6,4 @@ export * from "./conformance.js";
 export * from "./openapi.js";
 export * from "./rails.js";
 export * from "./rails/x402-stellar.js";
+export * from "./rails/transbank-webpay.js";

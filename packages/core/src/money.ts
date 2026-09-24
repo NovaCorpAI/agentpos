@@ -55,6 +55,21 @@ export function usdc(value: string | number): UsdcMinor {
   return parseDecimalToMinor(value, USDC_DECIMALS, "USDC") as UsdcMinor;
 }
 
+/**
+ * A fiat amount as an integer in its ISO 4217 minor unit: "14990" CLP (0 decimals) is 14990n,
+ * "12.50" USD (2 decimals) is 1250n. Same strictness as {@link usdc}: no floats, no rounding,
+ * more decimals than the currency has is an error rather than a silent truncation.
+ */
+export function fiatMinor(value: string | number, decimals: number, currency: string): bigint {
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > 18) {
+    throw new AgentPOSError("INVALID_AMOUNT", `Invalid decimals for ${currency}: ${decimals}`, {
+      hint: "ISO 4217 minor units: CLP has 0 decimals, USD has 2.",
+      details: { currency, decimals },
+    });
+  }
+  return parseDecimalToMinor(value, decimals, currency);
+}
+
 export function usdcFromMinor(value: bigint | string | number): UsdcMinor {
   const big = typeof value === "bigint" ? value : BigInt(value);
   if (big < 0n) {
