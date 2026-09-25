@@ -606,3 +606,34 @@ describe("nothing the merchant types reaches a log line", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+describe("the held door (gate: waitlist)", () => {
+  it("serves the invitation instead of the wizard, and keeps liveness honest", async () => {
+    const app = wizard({ gate: "waitlist" });
+    const page = await (await app.request("/")).text();
+    expect(page).toContain("lista de espera");
+    expect(page).toContain("https://agentposhq.com/lista");
+    expect(page).not.toContain("Tu wallet");
+    const health = (await (await app.request("/health")).json()) as { ok: boolean; gate: string };
+    expect(health).toMatchObject({ ok: true, gate: "waitlist" });
+  });
+
+  it("refuses every API call with INSTALLER_CLOSED, a hint and a Retry-After", async () => {
+    const app = wizard({ gate: "waitlist" });
+    for (const path of ["/api/validate-wallet", "/api/validate-woo", "/api/generate", "/api/verify"]) {
+      const res = await postJson(app, path, { address: payTo });
+      expect(res.status).toBe(503);
+      expect(res.headers.get("retry-after")).toMatch(/^\d+$/);
+      const err = await errorOf(res);
+      expect(err.code).toBe("INSTALLER_CLOSED");
+      expect(err.hint).toContain("agentposhq.com/lista");
+    }
+  });
+
+  it("stays open by default, so a laptop run is unchanged", async () => {
+    const page = await (await wizard().request("/")).text();
+    expect(page).not.toContain("El instalador abre");
+    expect((await (await wizard().request("/health")).json()) as object).toMatchObject({ gate: "open" });
+  });
+});

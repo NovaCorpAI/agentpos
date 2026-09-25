@@ -15,6 +15,7 @@ import type { ZodType } from "zod";
 import { AgentPOSError, createLogger, newTraceId } from "@agentpos/core";
 import type { ErrorCode, Logger } from "@agentpos/core";
 import { buildWizardHtml } from "./page.js";
+import { buildHoldingHtml } from "./hold.js";
 import { generateFiles, generateRequestSchema } from "./generate.js";
 import { validateWalletAddress } from "./wallet.js";
 import { validateWooCredentials, wooValidationRequestSchema } from "./woo.js";
@@ -29,7 +30,15 @@ export interface MerchantWebDeps {
   /** Hostname resolution for the SSRF guard. Tests inject a stub; production uses node:dns. */
   resolveHost?: HostResolver;
   logger?: Logger;
+  /**
+   * "open" serves the wizard. "waitlist" holds the door: the page becomes an invitation to the
+   * waitlist and every /api endpoint answers 503 INSTALLER_CLOSED, so nothing can be generated
+   * around the page. The container sets it (INSTALLER_GATE); a laptop run stays open.
+   */
+  gate?: InstallerGate;
 }
+
+export type InstallerGate = "open" | "waitlist";
 
 const MAX_BODY_BYTES = 64 * 1024;
 const TRACE_HEADER = "x-agentpos-trace";
@@ -141,6 +150,33 @@ export function createMerchantWebApp(deps: MerchantWebDeps = {}): Hono {
     }),
   );
 
+  // Liveness stays answerable behind the gate: the healthcheck must not report a held door as
+  // a dead container.
+  app.get("/health", (c) =>
+    c.json({ ok: true, service: "merchant-web", stateless: true, gate: deps.gate ?? "open" }),
+  );
+
+  // The held door. Registered before the wizard and the API so it wins every match: the page
+  // invites to the waitlist and the API refuses in our error vocabulary, with a Retry-After so
+  // a script that finds the door closed knows it is not broken.
+  if (deps.gate === "waitlist") {
+    app.get("/", (c) => c.html(buildHoldingHtml()));
+    app.use("/api/*", async (c) => {
+      c.header("retry-after", String(7 * 24 * 3600));
+      return c.json(
+        {
+          error: {
+            code: "INSTALLER_CLOSED",
+            message: "El instalador todavía no está abierto al público",
+            hint: "Súmate a la lista de espera en https://agentposhq.com/lista y te avisamos cuando abra.",
+            retryable: true,
+          },
+        },
+        503,
+      );
+    });
+  }
+
   // Per-IP limits on the endpoints that make this server open outbound connections. The page
   // itself and the two pure-computation endpoints (wallet, generate) are not limited: they
   // touch nothing but this process.
@@ -149,10 +185,6 @@ export function createMerchantWebApp(deps: MerchantWebDeps = {}): Hono {
 
   // The wizard itself: one self-contained page, no assets, no CDN.
   app.get("/", (c) => c.html(buildWizardHtml()));
-
-  // Liveness, for the container healthcheck and for an operator with curl. States nothing
-  // about the merchant, because this process knows nothing about any merchant.
-  app.get("/health", (c) => c.json({ ok: true, service: "merchant-web", stateless: true }));
 
   // Wallet check, so the wizard can refuse a secret key the moment it is pasted.
   app.post("/api/validate-wallet", async (c) => {

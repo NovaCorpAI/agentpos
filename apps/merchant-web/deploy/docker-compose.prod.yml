@@ -6,8 +6,8 @@
 #   docker compose -f apps/merchant-web/deploy/docker-compose.prod.yml up -d --build
 #
 # There is no env file and no secret to pass: this service is stateless. No database, no
-# volume, no wallet key, no facilitator key, no account. It reads exactly one variable, PORT,
-# and that one is pinned here because the Caddy block proxies to it. The container is never
+# volume, no wallet key, no facilitator key, no account. It reads PORT, pinned here because the
+# Caddy block proxies to it, and INSTALLER_GATE, which holds the door until launch. The container is never
 # published to the host: the single Caddy from the facilitator deploy fronts it over the shared
 # external `edge` network and terminates TLS.
 #
@@ -25,6 +25,9 @@ services:
       # The only variable apps/merchant-web/src/server.ts reads. Pinned, not operator-tunable:
       # the Dockerfile EXPOSEs it and the Caddy block proxies to it.
       PORT: "8410"
+      # The public door is held until launch: the page invites to the waitlist and every
+      # /api endpoint answers 503 INSTALLER_CLOSED. Remove the line (or set "open") to open it.
+      INSTALLER_GATE: "waitlist"
     expose:
       - "8410"
     networks: [edge]

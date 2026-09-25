@@ -6,7 +6,8 @@
  * the app in any fetch-compatible server.
  */
 export { createMerchantWebApp } from "./app.js";
-export type { MerchantWebDeps } from "./app.js";
+export type { MerchantWebDeps, InstallerGate } from "./app.js";
+export { buildHoldingHtml, WAITLIST_URL } from "./hold.js";
 export { buildWizardHtml } from "./page.js";
 export { validateWalletAddress } from "./wallet.js";
 export { generateFiles, generateRequestSchema } from "./generate.js";
