@@ -112,8 +112,13 @@ export const PROTOCOL_VERSIONS = {
     /** Same string as the x402 rail id: the UCP payment handler IS that rail. */
     paymentHandlerName: PAYMENT_RAIL_IDS.x402Stellar,
     paymentHandlerId: "x402-stellar",
-    spec: "https://agentpos.novacorplabs.com/spec/agentpos-service",
-    serviceSchema: "https://agentpos.novacorplabs.com/schemas/agentpos-service.openapi.json",
-    handlerSchema: "https://agentpos.novacorplabs.com/schemas/x402-stellar-handler.json",
+    /**
+     * Published on the public site (apps/landing/schemas, served at agentposhq.com/schemas).
+     * The previous host, agentpos.novacorplabs.com, never existed in DNS; corrected 2026-09-25.
+     * The machine-readable spec IS the OpenAPI document.
+     */
+    spec: "https://agentposhq.com/schemas/agentpos-service.openapi.json",
+    serviceSchema: "https://agentposhq.com/schemas/agentpos-service.openapi.json",
+    handlerSchema: "https://agentposhq.com/schemas/x402-stellar-handler.json",
   },
 } as const;

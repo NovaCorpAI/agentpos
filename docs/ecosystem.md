@@ -10,15 +10,15 @@ All four directories investigated cover Base and Solana, some also Polygon, Arbi
 Avalanche. **None lists a Stellar network.** From `GET https://x402-list.com/api/v1/networks`
 (2026-08-29):
 
-| CAIP-2 | Network | Services |
-| --- | --- | --- |
-| `eip155:8453` | Base | 541 |
-| `solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp` | Solana | 205 |
-| `eip155:137` | Polygon | 53 |
-| `eip155:42161` | Arbitrum One | 36 |
-| `eip155:84532` | Base Sepolia | 7 |
-| `eip155:43114` | Avalanche | 7 |
-| plus four testnets with 1 service each | | |
+| CAIP-2                                    | Network      | Services |
+| ----------------------------------------- | ------------ | -------- |
+| `eip155:8453`                             | Base         | 541      |
+| `solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp` | Solana       | 205      |
+| `eip155:137`                              | Polygon      | 53       |
+| `eip155:42161`                            | Arbitrum One | 36       |
+| `eip155:84532`                            | Base Sepolia | 7        |
+| `eip155:43114`                            | Avalanche    | 7        |
+| plus four testnets with 1 service each    |              |          |
 
 x402scan states its scope plainly in its own `llms.txt`: it "indexes x402 servers, transactions,
 buyers, merchants, and facilitators **across Base and Solana**".
@@ -41,14 +41,14 @@ Two consequences worth acting on:
 
 Served by the sidecar, no configuration required:
 
-| Location | What it is |
-| --- | --- |
-| `{origin}/openapi.json` | OpenAPI 3.1 with `x-payment-info` on the paid checkout and `security: []` on everything free. This is the canonical discovery format for the ecosystem's crawlers. |
-| `{origin}/llms.txt` | The same facts as plain text, in the order an agent has to act on them. |
-| `{origin}/.well-known/ucp` | UCP business profile (see `docs/adapter-versions.md` for the pinned release). |
-| `{base}/feed` | ACP product feed. |
-| `{base}/mcp` | MCP endpoint. |
-| `{base}/health` | Facilitator reachability and stuck orders. |
+| Location                   | What it is                                                                                                                                                         |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `{origin}/openapi.json`    | OpenAPI 3.1 with `x-payment-info` on the paid checkout and `security: []` on everything free. This is the canonical discovery format for the ecosystem's crawlers. |
+| `{origin}/llms.txt`        | The same facts as plain text, in the order an agent has to act on them.                                                                                            |
+| `{origin}/.well-known/ucp` | UCP business profile (see `docs/adapter-versions.md` for the pinned release).                                                                                      |
+| `{base}/feed`              | ACP product feed.                                                                                                                                                  |
+| `{base}/mcp`               | MCP endpoint.                                                                                                                                                      |
+| `{base}/health`            | Facilitator reachability and stuck orders.                                                                                                                         |
 
 Two conventions the crawlers care about, and that are easy to get wrong:
 
@@ -131,7 +131,7 @@ Two conventions the crawlers care about, and that are easy to get wrong:
 
 ## An index of AgentPOS stores is opt-in, and is not a marketplace
 
-The "For agents" page on `agentpos.novacorplabs.com` lists stores that have **explicitly asked**
+The "For agents" page on `agentposhq.com` lists stores that have **explicitly asked**
 to appear. That is a discovery index, not a central listing: no commission, no funds routed
 through us, no store listed without its own request. A merchant appearing there is still the
 merchant of record and still sells from its own domain (guardrail 7). A store that never opts in
