@@ -75,6 +75,14 @@ export async function verifyPaymentOnChain(
 ): Promise<OnChainResult> {
   const { payment, terms } = receipt.body;
   if (!payment) return { confirmed: false, reason: "This receipt records no payment" };
+  // A card rail settles at the acquirer, not on a ledger: there is nothing to look up. The
+  // offline verification (4.1) is the whole proof; say so instead of failing a lookup.
+  if (payment.rail !== undefined && !payment.network.startsWith("stellar:"))
+    return {
+      confirmed: false,
+      reason: `Rail '${payment.rail}' does not settle on a ledger; offline verification is the proof`,
+      txHash: payment.txHash,
+    };
 
   const base = horizonFor(payment.network, options.horizonUrl);
   if (!base)

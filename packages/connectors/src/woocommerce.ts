@@ -40,7 +40,10 @@ const wooProductSchema = z.object({
   description: z.string().optional().default(""),
   short_description: z.string().optional().default(""),
   // Boolean on products; variations that inherit parent stock answer the string "parent".
-  manage_stock: z.union([z.boolean(), z.literal("parent")]).optional().default(false),
+  manage_stock: z
+    .union([z.boolean(), z.literal("parent")])
+    .optional()
+    .default(false),
   stock_quantity: z.number().nullable().optional(),
   stock_status: z.string().optional().default("instock"),
   // GET /products/<variation_id> answers with type "variation" plus the parent product id.
@@ -77,7 +80,10 @@ const wooVariationSchema = z.object({
   price: z.string().optional().default(""),
   regular_price: z.string().optional().default(""),
   description: z.string().optional().default(""),
-  manage_stock: z.union([z.boolean(), z.literal("parent")]).optional().default(false),
+  manage_stock: z
+    .union([z.boolean(), z.literal("parent")])
+    .optional()
+    .default(false),
   stock_quantity: z.number().nullable().optional(),
   stock_status: z.string().optional().default("instock"),
   image: z.object({ src: z.string() }).nullable().optional(),
@@ -106,6 +112,17 @@ export function stripHtml(html: string): string {
     .replace(/&gt;/g, ">")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/** Human name of a card rail for the merchant's order screen. */
+function railLabel(railId: string): string {
+  return railId === "cl.transbank.webpay" ? "Transbank Webpay" : railId;
+}
+
+/** Integer minor units to a decimal string with the given exponent (CLP 0, USD 2). */
+function formatMinor(amount: bigint, decimals: number): string {
+  const s = amount.toString().padStart(decimals + 1, "0");
+  return decimals === 0 ? s : `${s.slice(0, -decimals)}.${s.slice(-decimals)}`;
 }
 
 export class WooCommerceConnector implements OrderConnector {
@@ -209,7 +226,8 @@ export class WooCommerceConnector implements OrderConnector {
     const optionSummary = v.attributes.map((a) => `${a.name}: ${a.option}`).join(" — ");
     const attributes: Record<string, string> = {};
     // Parent attributes first (full option lists), then each selected option overrides its own.
-    for (const a of parent.attributes) if (a.options.length) attributes[a.name] = a.options.join(", ");
+    for (const a of parent.attributes)
+      if (a.options.length) attributes[a.name] = a.options.join(", ");
     for (const a of v.attributes) attributes[a.name] = a.option;
     // Traceability back to the variable product the variation belongs to.
     attributes.parent_id = String(parent.id);
@@ -416,14 +434,24 @@ export class WooCommerceConnector implements OrderConnector {
           phone: input.shipping.phone ?? "",
         }
       : undefined;
+    // What the merchant reads on the order screen depends on how it was paid: a card rail names
+    // the acquirer and its reference; the original rail names the stablecoin and its tx hash.
+    const card = input.payment.rail !== undefined && input.payment.rail !== "org.x402.stellar";
+    const paidAmount = card
+      ? formatMinor(input.payment.amountMinor, input.payment.decimals ?? 2)
+      : formatUsdc(input.totalUsdc);
     const body = {
       status: "processing",
       set_paid: true,
       payment_method: "agentpos",
-      payment_method_title: `Stablecoin (${input.payment.asset} on Stellar) via AgentPOS`,
+      payment_method_title: card
+        ? `Tarjeta (${railLabel(input.payment.rail as string)}) via AgentPOS`
+        : `Stablecoin (${input.payment.asset} on Stellar) via AgentPOS`,
       transaction_id: input.payment.txHash,
       created_via: "agentpos",
-      customer_note: `Paid by an AI agent via AgentPOS. Total ${formatUsdc(input.totalUsdc)} ${input.payment.asset}. tx ${input.payment.txHash}`,
+      customer_note: card
+        ? `Paid by an AI agent via AgentPOS. Total ${paidAmount} ${input.payment.asset}. ref ${input.payment.txHash}`
+        : `Paid by an AI agent via AgentPOS. Total ${paidAmount} ${input.payment.asset}. tx ${input.payment.txHash}`,
       billing: {
         ...(address ?? { first_name: first, last_name: last }),
         email: input.buyer?.email ?? "",
@@ -450,6 +478,7 @@ export class WooCommerceConnector implements OrderConnector {
         { key: "_agentpos_asset", value: input.payment.asset },
         { key: "_agentpos_amount_minor", value: input.payment.amountMinor.toString() },
         { key: "_agentpos_payer", value: input.payment.payer ?? "" },
+        { key: "_agentpos_rail", value: input.payment.rail ?? "org.x402.stellar" },
       ],
     };
     const order = await this.request("POST", "/orders", body, wooOrderSchema);

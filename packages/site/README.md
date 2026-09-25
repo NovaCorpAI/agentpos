@@ -42,7 +42,8 @@ Discovery (served automatically, nothing to configure): `/openapi.json` and `/ll
 site root, which is where the x402 directories and crawlers look. See `docs/ecosystem.md`.
 
 Surfaces: `/.well-known/ucp`, `/agentpos/catalog`, `/agentpos/feed`, `/agentpos/mcp`,
-`POST /agentpos/cart`, `POST /agentpos/checkout?cart=`, `/agentpos/orders/:id`,
+`POST /agentpos/cart`, `POST /agentpos/checkout?cart=` (x402), `POST /agentpos/checkout/card?cart=`
+and `/agentpos/checkout/card/return` (card rail, when `transbank` is configured), `/agentpos/orders/:id`,
 `/agentpos/approvals/:id`, `/agentpos/orders/:id/receipt`, `/agentpos/receipts/:hash`,
 `/agentpos/health`.
 

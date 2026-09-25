@@ -47,13 +47,27 @@ export interface PublicMetrics {
   byDay: Array<{ day: string; orders: number; totalMinor: string }>;
 }
 
+/** A fiat amount comes back from JSON with its minor as a string; make it a bigint again. */
+function reviveFiat(v: unknown) {
+  if (!v || typeof v !== "object") return {};
+  const f = v as { minor: unknown; currency: string; decimals: number };
+  return { minor: BigInt(String(f.minor)), currency: f.currency, decimals: f.decimals };
+}
+
 function reviveQuote(q: Record<string, unknown>) {
   const lines = (q.lines as Array<Record<string, unknown>>).map((l) => ({
     ...l,
     unitPriceUsdc: usdcFromMinor(String(l.unitPriceUsdc)),
     lineTotalUsdc: usdcFromMinor(String(l.lineTotalUsdc)),
+    ...(l.unitPriceFiat ? { unitPriceFiat: reviveFiat(l.unitPriceFiat) } : {}),
+    ...(l.lineTotalFiat ? { lineTotalFiat: reviveFiat(l.lineTotalFiat) } : {}),
   }));
-  return { ...q, lines, totalUsdc: usdcFromMinor(String(q.totalUsdc)) };
+  return {
+    ...q,
+    lines,
+    totalUsdc: usdcFromMinor(String(q.totalUsdc)),
+    ...(q.totalFiat ? { totalFiat: reviveFiat(q.totalFiat) } : {}),
+  };
 }
 
 function reviveCart(json: string): Cart {
@@ -179,7 +193,9 @@ export class SiteStorage {
     const percentile = (p: number): number | undefined =>
       latencies.length === 0
         ? undefined
-        : (latencies[Math.min(latencies.length - 1, Math.floor((p / 100) * latencies.length))] as number);
+        : (latencies[
+            Math.min(latencies.length - 1, Math.floor((p / 100) * latencies.length))
+          ] as number);
 
     return {
       since: since.toISOString(),
@@ -442,8 +458,7 @@ export class SiteStorage {
   /** One receipt by chain position (merchant API detail). */
   getReceiptBySeq(seq: number): Receipt | undefined {
     const row = this.db.prepare("select json from receipts where seq = ?").get(seq) as
-      | Row
-      | undefined;
+      Row | undefined;
     return row ? (JSON.parse(row.json) as Receipt) : undefined;
   }
 
@@ -563,17 +578,30 @@ export class SiteStorage {
       save(record: AgentRecord): void {
         db.prepare(
           "insert into agents (agent_key, owner, status, json, registered_at) values (?, ?, ?, ?, ?) on conflict(agent_key) do update set owner = excluded.owner, status = excluded.status, json = excluded.json",
-        ).run(record.agentKey, record.owner, record.status, JSON.stringify(record), record.registeredAt);
+        ).run(
+          record.agentKey,
+          record.owner,
+          record.status,
+          JSON.stringify(record),
+          record.registeredAt,
+        );
       },
       get(agentKey: string): AgentRecord | undefined {
-        const row = db.prepare("select json from agents where agent_key = ?").get(agentKey) as Row | undefined;
+        const row = db.prepare("select json from agents where agent_key = ?").get(agentKey) as
+          Row | undefined;
         return row ? (JSON.parse(row.json) as AgentRecord) : undefined;
       },
       list(options: { status?: AgentStatus; limit?: number } = {}): AgentRecord[] {
         const rows = (
           options.status
-            ? db.prepare("select json from agents where status = ? order by registered_at desc limit ?").all(options.status, options.limit ?? 200)
-            : db.prepare("select json from agents order by registered_at desc limit ?").all(options.limit ?? 200)
+            ? db
+                .prepare(
+                  "select json from agents where status = ? order by registered_at desc limit ?",
+                )
+                .all(options.status, options.limit ?? 200)
+            : db
+                .prepare("select json from agents order by registered_at desc limit ?")
+                .all(options.limit ?? 200)
         ) as Row[];
         return rows.map((r) => JSON.parse(r.json) as AgentRecord);
       },
@@ -603,21 +631,17 @@ export class SiteStorage {
       },
       last(): Receipt | undefined {
         const row = db.prepare("select json from receipts order by seq desc limit 1").get() as
-          | Row
-          | undefined;
+          Row | undefined;
         return row ? (JSON.parse(row.json) as Receipt) : undefined;
       },
       get(hash: string): Receipt | undefined {
         const row = db.prepare("select json from receipts where hash = ?").get(hash) as
-          | Row
-          | undefined;
+          Row | undefined;
         return row ? (JSON.parse(row.json) as Receipt) : undefined;
       },
       list(options: { from?: string; to?: string; limit?: number } = {}): Receipt[] {
         const rows = db
-          .prepare(
-            "select json from receipts where at >= ? and at <= ? order by seq asc limit ?",
-          )
+          .prepare("select json from receipts where at >= ? and at <= ? order by seq asc limit ?")
           .all(options.from ?? "", options.to ?? "9999", options.limit ?? 100_000) as Row[];
         return rows.map((r) => JSON.parse(r.json) as Receipt);
       },

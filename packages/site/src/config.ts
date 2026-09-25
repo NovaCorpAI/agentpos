@@ -59,6 +59,30 @@ export const siteConfigSchema = z.object({
     })
     .optional(),
   locale: z.enum(["en", "es"]).default("en"),
+  /**
+   * ISO 4217 currency the store sells in (source prices). Card rails quote and settle in it.
+   * Omitted means: no fiat quote, x402 only.
+   */
+  fiatCurrency: z
+    .string()
+    .length(3)
+    .transform((s) => s.toUpperCase())
+    .optional(),
+  /**
+   * Transbank card rail (Chile). Credentials are the MERCHANT's, from TRANSBANK_COMMERCE_CODE and
+   * TRANSBANK_API_KEY; this block only says which environment and, for repeat purchases without
+   * the buyer present, which Oneclick Mall codes. Absent means the store takes no cards.
+   */
+  transbank: z
+    .object({
+      environment: z.enum(["integration", "production"]).default("integration"),
+      oneclick: z
+        .object({ mallCode: z.string().min(1), childCommerceCode: z.string().min(1) })
+        .optional(),
+      /** Largest charge in whole pesos the store accepts by card. */
+      maxAmountClp: z.string().regex(/^\d+$/).optional(),
+    })
+    .optional(),
   /** Merchant policy over agentic sales (M1). Omitted means: sell everything, no limits. */
   policy: merchantPolicySchema.default(OPEN_POLICY),
   /**
@@ -130,6 +154,9 @@ export interface SiteSecrets {
   receiptSecret: string | undefined;
   twilioAccountSid: string | undefined;
   twilioAuthToken: string | undefined;
+  /** The merchant's own Transbank credentials (never ours). Both required to mount the rail. */
+  transbankCommerceCode: string | undefined;
+  transbankApiKey: string | undefined;
   /**
    * The STORE OWNER's bearer token for the read-only merchant API (`{base}/api/merchant/*`),
    * the surface AgentPOS Cloud reads. Min 24 chars. Unset means the routes are not mounted.
@@ -187,6 +214,8 @@ export function secretsFromEnv(env: Record<string, string | undefined> = process
     receiptSecret: env.AGENTPOS_RECEIPT_SECRET,
     twilioAccountSid: env.AGENTPOS_TWILIO_ACCOUNT_SID,
     twilioAuthToken: env.AGENTPOS_TWILIO_AUTH_TOKEN,
+    transbankCommerceCode: env.TRANSBANK_COMMERCE_CODE,
+    transbankApiKey: env.TRANSBANK_API_KEY,
     merchantApiToken,
   };
 }

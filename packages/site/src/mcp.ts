@@ -28,6 +28,8 @@ export interface McpDeps {
   catalog: CatalogService;
   checkout: CheckoutService;
   routes: SiteRoutes;
+  /** Other ways to pay this store publishes (card rails), for payment instructions. */
+  paymentAlternatives?: (cart: ReturnType<CheckoutService["getCart"]>) => unknown[];
 }
 
 function ok(payload: unknown) {
@@ -198,7 +200,7 @@ export function buildMcpServer(deps: McpDeps): McpServer {
     {
       title: "Payment instructions",
       description:
-        "How to pay a cart: x402 exact scheme on Stellar. Use an x402-capable HTTP client against the checkout URL.",
+        "How to pay a cart. Default: x402 exact scheme on Stellar with an x402-capable HTTP client against the checkout URL. `alternatives` lists other rails the store accepts (a card rail hands the payment step to the human).",
       inputSchema: { cartId: z.string() },
     },
     async ({ cartId }) => {
@@ -219,6 +221,7 @@ export function buildMcpServer(deps: McpDeps): McpServer {
             "Sign the Stellar auth entry with your wallet and retry with PAYMENT-SIGNATURE",
             "Read PAYMENT-RESPONSE for the tx hash, then poll get_order",
           ],
+          alternatives: deps.paymentAlternatives?.(cart) ?? [],
         });
       } catch (err) {
         return fail(err);

@@ -7,6 +7,7 @@
  * x402 Stellar payment handler are real; dev.ucp.shopping capabilities are not declared until the
  * UCP checkout semantics ship (Build phase).
  */
+import type { PaymentRailDescription } from "./rails.js";
 import { ADAPTER_VERSION, PROTOCOL_VERSIONS } from "./versions.js";
 
 export interface UcpProfileInput {
@@ -27,6 +28,11 @@ export interface UcpProfileInput {
     returns?: string | undefined;
     contact?: string | undefined;
   };
+  /**
+   * Other rails the store accepts besides x402, as their `describe()` reports them. Each becomes
+   * one more payment handler; the x402 handler is unchanged (adding a rail is additive).
+   */
+  rails?: PaymentRailDescription[];
 }
 
 export interface UcpServiceEntry {
@@ -99,6 +105,35 @@ export function buildUcpProfile(input: UcpProfileInput): UcpBusinessProfile {
             },
           },
         ],
+        // A card rail is a second handler under its own rail id. No secrets, no commerce codes:
+        // only what the rail itself publishes, plus where a card checkout starts.
+        ...Object.fromEntries(
+          (input.rails ?? []).map((rail) => [
+            rail.id,
+            [
+              {
+                id: rail.id.split(".").join("-"),
+                version: v,
+                spec: rail.spec ?? ag.spec,
+                // Our own schema for this handler's config, published next to the x402 one.
+                schema: ag.handlerSchema.replace(
+                  /[^/]+\.json$/,
+                  `${rail.id.split(".").join("-")}-handler.json`,
+                ),
+                available_instruments: [{ type: "card" }],
+                config: {
+                  protocol: rail.protocol,
+                  protocolVersion: rail.protocolVersion,
+                  networks: rail.capabilities.networks,
+                  currencies: rail.capabilities.currencies,
+                  settlesOnLedger: rail.capabilities.settlesOnLedger,
+                  checkout: `${base}/checkout/card`,
+                  cart: `${base}/cart`,
+                },
+              },
+            ],
+          ]),
+        ),
       },
       "com.novacorplabs.agentpos": {
         adapterVersion: ADAPTER_VERSION,

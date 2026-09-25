@@ -57,7 +57,20 @@ function csvField(value: string): string {
  */
 export function railOf(network: string): string {
   const chain = network.split(":")[0];
-  return chain ? `x402-${chain}` : "";
+  if (!chain) return "";
+  // Ledger networks are x402 rails; an acquirer's network names the acquirer's rail.
+  if (chain === "transbank") return "transbank-webpay";
+  return `x402-${chain}`;
+}
+
+/** Amount column: minor units formatted with the payment's own decimals (USDC 7, CLP 0). */
+export function formatPaid(order: Order): string {
+  const payment = order.payment;
+  if (!payment) return formatUsdc(order.quote.totalUsdc);
+  if (payment.decimals === undefined) return formatUsdc(payment.amountMinor);
+  const d = payment.decimals;
+  const s = payment.amountMinor.toString().padStart(d + 1, "0");
+  return d === 0 ? s : `${s.slice(0, -d)}.${s.slice(-d)}`;
 }
 
 function rowOf(order: Order): string[] {
@@ -68,7 +81,7 @@ function rowOf(order: Order): string[] {
     order.externalOrderId ?? "",
     order.status,
     order.quote.lines.map((l) => `${l.title} x ${l.quantity}`).join("; "),
-    formatUsdc(payment?.amountMinor ?? order.quote.totalUsdc),
+    formatPaid(order),
     payment ? railOf(payment.network) : "",
     payment?.asset ?? "",
     payment?.txHash ?? "",

@@ -142,7 +142,7 @@ describe("Transbank rail: Webpay Plus (first purchase, the human pays)", () => {
         return_url: "https://tienda.cl/agentpos/return",
       },
     });
-    expect(Number.isInteger(calls[0]?.body.amount)).toBe(true);
+    expect(Number.isInteger((calls[0]?.body as { amount: unknown }).amount)).toBe(true);
     expect(quote.terms).toEqual({
       mode: "webpay-plus",
       token: "tok_1",

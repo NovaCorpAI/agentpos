@@ -24,9 +24,36 @@ const route = buildRouteConfig(cfg, { payTo: "G...", amount: usdc("1.25"), refer
 
 ## Payment rails
 
-A **rail** is one way a store can be paid. Today there is exactly one: x402 / USDC over Stellar
-(`org.x402.stellar`). The `PaymentRail` interface exists so the next one, a merchant fiat acquirer
-or a network agentic credential (plan/RIELES.md), is an addition rather than a rewrite.
+A **rail** is one way a store can be paid. There are two: x402 / USDC over Stellar
+(`org.x402.stellar`, settles on the ledger) and Transbank Webpay / Oneclick for cards in Chile
+(`cl.transbank.webpay`, settles at the merchant's own acquirer). The `PaymentRail` interface is
+what makes the second an addition rather than a rewrite, and what the next one (a network agentic
+credential, plan/RIELES.md) will implement too.
+
+```ts
+import { createTransbankRail, fiatMinor, minorAmount } from "@agentpos/core";
+
+// The merchant's own commerce code and API key: never ours (guardrail 7).
+const card = createTransbankRail({
+  environment: "integration",
+  commerceCode: process.env.TRANSBANK_COMMERCE_CODE!,
+  apiKey: process.env.TRANSBANK_API_KEY!,
+  oneclick: { mallCode: "597055555541", childCommerceCode: "597055555542" },
+});
+const clp = minorAmount(fiatMinor("14990", 0, "CLP"), "CLP", 0); // whole pesos, no floats
+
+// Webpay Plus: a first purchase. The human pays on Transbank's page; verify reports
+// PAYMENT_PENDING until then; settle commits the token exactly once.
+const first = await card.quote({ payTo: returnUrl, amount: clp, reference: "cart_1" });
+// Oneclick: a repeat purchase on a card the buyer enrolled once. No human step.
+const again = card.quoteOneclick({ payTo: "store", amount: clp, reference: "cart_2" });
+await card.settle({ mode: "oneclick", username: "buyer-42", tbkUser: "tbk_..." }, again.terms);
+```
+
+A card settlement produces no transaction hash: its `reference` is the store's buy order, and the
+acquirer's authorization code travels in `raw`. `fiatMinor(decimal, decimals, currency)` turns a
+source price into an integer minor amount (CLP 0 decimals, USD 2); `fiatDecimals(code)` knows the
+exponent.
 
 ```ts
 import { createX402StellarRail, PaymentRailRegistry, usdcAmount, usdc } from "@agentpos/core";

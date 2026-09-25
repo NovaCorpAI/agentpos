@@ -101,10 +101,10 @@ export const PROTOCOL_VERSIONS = {
     },
     /** Integration credentials are public (no contract needed); listed in the docs repo below. */
     checkedAt: "2026-09-24",
-    source:
-      "https://github.com/TransbankDevelopers/transbank-developers-docs (documentacion/webpay-plus, documentacion/oneclick)",
+    /** A plain URI: it is published as the handler's `spec` in the UCP profile (format: uri). */
+    source: "https://github.com/TransbankDevelopers/transbank-developers-docs",
     notes:
-      "Verified 2026-09-24 against the integration environment: create transaction and start inscription both answer 200 with the public credentials. Approved means status AUTHORIZED and response_code 0. A Webpay Plus token lives 5 minutes; commit exactly once.",
+      "Webpay Plus: documentacion/webpay-plus; Oneclick Mall: documentacion/oneclick. Verified 2026-09-24 against the integration environment: create transaction and start inscription both answer 200 with the public credentials. Approved means status AUTHORIZED and response_code 0. A Webpay Plus token lives 5 minutes; commit exactly once.",
   },
   agentpos: {
     /** Our own namespaced identifiers inside UCP registries. */

@@ -18,13 +18,13 @@ En inglés: [quickstart-merchant.en.md](quickstart-merchant.en.md)
 
 ## Antes de empezar (5 min)
 
-| Necesitas | Dónde |
-| --- | --- |
-| Una máquina que pueda correr un proceso junto a tu tienda | Node.js >= 22.5, o Docker |
-| Una tienda WooCommerce con HTTPS | tuya |
-| Una llave REST de WooCommerce, Lectura/Escritura | ver paso 1 |
-| Una dirección Stellar que controles (`G...` o `C...`) | Lobstr, Freighter, xBull... |
-| Una API key del facilitador | testnet: <https://channels.openzeppelin.com/testnet/gen> (sin registro); mainnet: <https://channels.openzeppelin.com/gen> (con cuenta GitHub) |
+| Necesitas                                                 | Dónde                                                                                                                                         |
+| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Una máquina que pueda correr un proceso junto a tu tienda | Node.js >= 22.5, o Docker                                                                                                                     |
+| Una tienda WooCommerce con HTTPS                          | tuya                                                                                                                                          |
+| Una llave REST de WooCommerce, Lectura/Escritura          | ver paso 1                                                                                                                                    |
+| Una dirección Stellar que controles (`G...` o `C...`)     | Lobstr, Freighter, xBull...                                                                                                                   |
+| Una API key del facilitador                               | testnet: <https://channels.openzeppelin.com/testnet/gen> (sin registro); mainnet: <https://channels.openzeppelin.com/gen> (con cuenta GitHub) |
 
 > **De dónde se instala.** Los paquetes todavía no están publicados en npm (el repositorio es
 > privado hasta la semana del lanzamiento). Hasta entonces se instala desde el repo:
@@ -136,24 +136,26 @@ arrancar si `agentpos.config.json` contiene una llave secreta de Stellar (`SECRE
 `init` escribe los primeros cinco. El resto tiene valores por defecto que funcionan y solo los
 tocas si quieres.
 
-| Campo | Por defecto | Para qué sirve |
-| --- | --- | --- |
-| `siteUrl` | (se pregunta) | La URL pública de tu tienda. Todas las URLs para agentes se construyen desde ella. |
-| `displayName` | (se pregunta) | El nombre que ven los agentes. |
-| `payTo` | (se pregunta) | La dirección Stellar que recibe cada pago. Solo dirección pública. |
-| `platform` | `none` | `woocommerce`, `generic` (tu propio hook `createOrder`) o `none` (órdenes solo locales). |
-| `woocommerce.baseUrl` | (se pregunta) | Tu URL de WordPress. Exige HTTPS (`allowInsecureHttp` es para demos locales). |
-| `basePath` | `/agentpos` | Prefijo de todas las rutas de AgentPOS. |
-| `cartTtlMinutes` | `15` | Cuánto vive una cotización antes de expirar. |
-| `dataDir` | `.agentpos` | Base SQLite local, borradores y la llave que firma los comprobantes. |
-| `locale` | `en` | Idioma del panel y de los encabezados del CSV de conciliación (`en` o `es`). |
-| `policies` | (sin valor) | Tus textos de despacho, devoluciones, cancelación y contacto, publicados en el manifiesto UCP. |
-| `policy` | vender todo | Límites para las ventas a agentes: ver [operación](operations.es.md#reglas-para-las-ventas-a-agentes). |
-| `approvals` | activado, 30 min | Deja las órdenes grandes esperando tu decisión en vez de rechazarlas. |
-| `identity` | `open` | Si los agentes deben probar quiénes son. |
-| `receipts` | activado | Comprobante firmado de cada venta y de cada rechazo. |
-| `rateLimit` | 60/min carritos y checkouts | Límites por IP, más 10 intentos de pago por carrito. |
-| `facilitators` | (sin valor) | Lista ordenada, el primero es el principal, para respaldo. Ver [operación](operations.es.md#respaldo-de-facilitador). |
+| Campo                 | Por defecto                 | Para qué sirve                                                                                                                                                                                                                                                                                                           |
+| --------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `siteUrl`             | (se pregunta)               | La URL pública de tu tienda. Todas las URLs para agentes se construyen desde ella.                                                                                                                                                                                                                                       |
+| `displayName`         | (se pregunta)               | El nombre que ven los agentes.                                                                                                                                                                                                                                                                                           |
+| `payTo`               | (se pregunta)               | La dirección Stellar que recibe cada pago. Solo dirección pública.                                                                                                                                                                                                                                                       |
+| `platform`            | `none`                      | `woocommerce`, `generic` (tu propio hook `createOrder`) o `none` (órdenes solo locales).                                                                                                                                                                                                                                 |
+| `woocommerce.baseUrl` | (se pregunta)               | Tu URL de WordPress. Exige HTTPS (`allowInsecureHttp` es para demos locales).                                                                                                                                                                                                                                            |
+| `basePath`            | `/agentpos`                 | Prefijo de todas las rutas de AgentPOS.                                                                                                                                                                                                                                                                                  |
+| `cartTtlMinutes`      | `15`                        | Cuánto vive una cotización antes de expirar.                                                                                                                                                                                                                                                                             |
+| `dataDir`             | `.agentpos`                 | Base SQLite local, borradores y la llave que firma los comprobantes.                                                                                                                                                                                                                                                     |
+| `locale`              | `en`                        | Idioma del panel y de los encabezados del CSV de conciliación (`en` o `es`).                                                                                                                                                                                                                                             |
+| `policies`            | (sin valor)                 | Tus textos de despacho, devoluciones, cancelación y contacto, publicados en el manifiesto UCP.                                                                                                                                                                                                                           |
+| `policy`              | vender todo                 | Límites para las ventas a agentes: ver [operación](operations.es.md#reglas-para-las-ventas-a-agentes).                                                                                                                                                                                                                   |
+| `approvals`           | activado, 30 min            | Deja las órdenes grandes esperando tu decisión en vez de rechazarlas.                                                                                                                                                                                                                                                    |
+| `identity`            | `open`                      | Si los agentes deben probar quiénes son.                                                                                                                                                                                                                                                                                 |
+| `receipts`            | activado                    | Comprobante firmado de cada venta y de cada rechazo.                                                                                                                                                                                                                                                                     |
+| `rateLimit`           | 60/min carritos y checkouts | Límites por IP, más 10 intentos de pago por carrito.                                                                                                                                                                                                                                                                     |
+| `facilitators`        | (sin valor)                 | Lista ordenada, el primero es el principal, para respaldo. Ver [operación](operations.es.md#respaldo-de-facilitador).                                                                                                                                                                                                    |
+| `fiatCurrency`        | (sin valor)                 | Moneda ISO 4217 de tus precios de origen (`CLP`, `USD`). Con ella cada carrito lleva también su total en pesos, sumado de los precios que el escáner leyó, sin ninguna conversión. Es lo que cobra un riel de tarjeta.                                                                                                   |
+| `transbank`           | (sin valor)                 | Riel de tarjeta para Chile, con TUS credenciales de Transbank en `.env` (`TRANSBANK_COMMERCE_CODE`, `TRANSBANK_API_KEY`). `environment` (`integration` o `production`) y, para recompras sin el comprador presente, `oneclick.mallCode` y `oneclick.childCommerceCode`. Sin este bloque la tienda cobra solo con wallet. |
 
 ## 5. Escanear, confirmar, publicar (10 min)
 
@@ -278,11 +280,11 @@ que una compra ahí sin `--dry-run` gasta dinero real.
 Todos los errores de AgentPOS traen un código legible por máquina, un mensaje y una sugerencia.
 Los tres más comunes durante la instalación:
 
-| Síntoma | Causa habitual | Solución |
-| --- | --- | --- |
-| `401` al escanear | llave REST mal pegada, o sin permiso de escritura | revisa `AGENTPOS_WOO_CONSUMER_KEY` / `_SECRET` en `.env` |
-| `publish` falla en el riel de pago | falta la llave del facilitador o es de otra red | revisa `AGENTPOS_FACILITATOR_API_KEY` y `AGENTPOS_NETWORK` |
-| los agentes no encuentran la tienda | faltan las rutas en el proxy | paso 6, después `curl https://TU-TIENDA/agentpos/health` |
+| Síntoma                             | Causa habitual                                    | Solución                                                   |
+| ----------------------------------- | ------------------------------------------------- | ---------------------------------------------------------- |
+| `401` al escanear                   | llave REST mal pegada, o sin permiso de escritura | revisa `AGENTPOS_WOO_CONSUMER_KEY` / `_SECRET` en `.env`   |
+| `publish` falla en el riel de pago  | falta la llave del facilitador o es de otra red   | revisa `AGENTPOS_FACILITATOR_API_KEY` y `AGENTPOS_NETWORK` |
+| los agentes no encuentran la tienda | faltan las rutas en el proxy                      | paso 6, después `curl https://TU-TIENDA/agentpos/health`   |
 
 Para una tienda que ya vende (órdenes en revisión, liquidaciones trabadas, respaldo de
 facilitador, conciliación, comprobantes) sigue con la **[guía de operación](operations.es.md)**.

@@ -17,18 +17,18 @@ Related: [buyer quickstart](quickstart-buyer.en.md) · [operations guide](operat
 
 ## Before you start (5 min)
 
-| You need | Where |
-| --- | --- |
-| A machine that can run a process next to your store | Node.js >= 22.5, or Docker |
-| A WooCommerce store over HTTPS | yours |
-| A WooCommerce REST API key, Read/Write | see step 1 |
-| A Stellar address you control (`G...` or `C...`) | Lobstr, Freighter, xBull... |
-| A facilitator API key | testnet: <https://channels.openzeppelin.com/testnet/gen> (no login); mainnet: <https://channels.openzeppelin.com/gen> (GitHub sign-in) |
+| You need                                            | Where                                                                                                                                  |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| A machine that can run a process next to your store | Node.js >= 22.5, or Docker                                                                                                             |
+| A WooCommerce store over HTTPS                      | yours                                                                                                                                  |
+| A WooCommerce REST API key, Read/Write              | see step 1                                                                                                                             |
+| A Stellar address you control (`G...` or `C...`)    | Lobstr, Freighter, xBull...                                                                                                            |
+| A facilitator API key                               | testnet: <https://channels.openzeppelin.com/testnet/gen> (no login); mainnet: <https://channels.openzeppelin.com/gen> (GitHub sign-in) |
 
 > **Install source.** The packages are not published to npm yet (the repository is private until
 > launch week). Until then you install from the repo: `pnpm install && pnpm build`, and run
 > `node packages/site/bin/agentpos.js <command>` where this guide writes `npx @agentpos/site
-> <command>`. After launch both forms are identical, and the installed binary is called
+<command>`. After launch both forms are identical, and the installed binary is called
 > `agentpos`.
 
 ## 1. WooCommerce REST key (3 min)
@@ -134,24 +134,26 @@ if it contains a Stellar secret seed (`SECRET_IN_CONFIG`).
 `init` writes the first five. The rest have working defaults, and you only touch them when you
 want to.
 
-| Field | Default | What it does |
-| --- | --- | --- |
-| `siteUrl` | (asked) | Your public store URL. Every agent-facing URL is built from it. |
-| `displayName` | (asked) | The store name agents see. |
-| `payTo` | (asked) | The Stellar address that receives every payment. Public address only. |
-| `platform` | `none` | `woocommerce`, `generic` (your own `createOrder` hook) or `none` (orders recorded locally only). |
-| `woocommerce.baseUrl` | (asked) | Your WordPress URL. HTTPS required (`allowInsecureHttp` is for local demos). |
-| `basePath` | `/agentpos` | Path prefix for every AgentPOS route. |
-| `cartTtlMinutes` | `15` | How long a quote stays payable. |
-| `dataDir` | `.agentpos` | Local SQLite database, drafts and the receipt signing key. |
-| `locale` | `en` | Language of the dashboard and the reconciliation CSV headers (`en` or `es`). |
-| `policies` | (unset) | Your shipping, returns, cancellation and contact text, published in the UCP manifest. |
-| `policy` | sell everything | Limits on agentic sales: see [operations](operations.en.md#rules-for-agentic-sales). |
-| `approvals` | enabled, 30 min | Park large orders for your decision instead of refusing them. |
-| `identity` | `open` | Whether agents must prove who they are. |
-| `receipts` | enabled | Signed proof of every sale and every refusal. |
-| `rateLimit` | 60/min carts and checkouts | Per-IP limits, plus 10 checkout attempts per cart. |
-| `facilitators` | (unset) | Ordered list, primary first, for failover. See [operations](operations.en.md#facilitator-failover). |
+| Field                 | Default                    | What it does                                                                                                                                                                                                                                                                                                                       |
+| --------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `siteUrl`             | (asked)                    | Your public store URL. Every agent-facing URL is built from it.                                                                                                                                                                                                                                                                    |
+| `displayName`         | (asked)                    | The store name agents see.                                                                                                                                                                                                                                                                                                         |
+| `payTo`               | (asked)                    | The Stellar address that receives every payment. Public address only.                                                                                                                                                                                                                                                              |
+| `platform`            | `none`                     | `woocommerce`, `generic` (your own `createOrder` hook) or `none` (orders recorded locally only).                                                                                                                                                                                                                                   |
+| `woocommerce.baseUrl` | (asked)                    | Your WordPress URL. HTTPS required (`allowInsecureHttp` is for local demos).                                                                                                                                                                                                                                                       |
+| `basePath`            | `/agentpos`                | Path prefix for every AgentPOS route.                                                                                                                                                                                                                                                                                              |
+| `cartTtlMinutes`      | `15`                       | How long a quote stays payable.                                                                                                                                                                                                                                                                                                    |
+| `dataDir`             | `.agentpos`                | Local SQLite database, drafts and the receipt signing key.                                                                                                                                                                                                                                                                         |
+| `locale`              | `en`                       | Language of the dashboard and the reconciliation CSV headers (`en` or `es`).                                                                                                                                                                                                                                                       |
+| `policies`            | (unset)                    | Your shipping, returns, cancellation and contact text, published in the UCP manifest.                                                                                                                                                                                                                                              |
+| `policy`              | sell everything            | Limits on agentic sales: see [operations](operations.en.md#rules-for-agentic-sales).                                                                                                                                                                                                                                               |
+| `approvals`           | enabled, 30 min            | Park large orders for your decision instead of refusing them.                                                                                                                                                                                                                                                                      |
+| `identity`            | `open`                     | Whether agents must prove who they are.                                                                                                                                                                                                                                                                                            |
+| `receipts`            | enabled                    | Signed proof of every sale and every refusal.                                                                                                                                                                                                                                                                                      |
+| `rateLimit`           | 60/min carts and checkouts | Per-IP limits, plus 10 checkout attempts per cart.                                                                                                                                                                                                                                                                                 |
+| `facilitators`        | (unset)                    | Ordered list, primary first, for failover. See [operations](operations.en.md#facilitator-failover).                                                                                                                                                                                                                                |
+| `fiatCurrency`        | (unset)                    | ISO 4217 currency of your source prices (`CLP`, `USD`). With it every cart also carries its total in that currency, summed from the prices the scanner read, never converted. It is what a card rail charges.                                                                                                                      |
+| `transbank`           | (unset)                    | Card rail for Chile, with YOUR Transbank credentials in `.env` (`TRANSBANK_COMMERCE_CODE`, `TRANSBANK_API_KEY`). `environment` (`integration` or `production`) and, for repeat purchases without the buyer present, `oneclick.mallCode` and `oneclick.childCommerceCode`. Without this block the store takes wallet payments only. |
 
 ## 5. Scan, confirm, publish (10 min)
 
@@ -272,11 +274,11 @@ there without `--dry-run` spends real money.
 Every AgentPOS error carries a machine-readable code, a message and a hint. The three most common
 at setup:
 
-| Symptom | Usual cause | Fix |
-| --- | --- | --- |
-| `401` while scanning | REST key pasted wrong, or not Read/Write | check `AGENTPOS_WOO_CONSUMER_KEY` / `_SECRET` in `.env` |
+| Symptom                             | Usual cause                                      | Fix                                                         |
+| ----------------------------------- | ------------------------------------------------ | ----------------------------------------------------------- |
+| `401` while scanning                | REST key pasted wrong, or not Read/Write         | check `AGENTPOS_WOO_CONSUMER_KEY` / `_SECRET` in `.env`     |
 | `publish` fails on the payment rail | facilitator key missing or for the wrong network | check `AGENTPOS_FACILITATOR_API_KEY` and `AGENTPOS_NETWORK` |
-| agents cannot find the store | proxy missing the routes | step 6, then `curl https://YOUR-STORE/agentpos/health` |
+| agents cannot find the store        | proxy missing the routes                         | step 6, then `curl https://YOUR-STORE/agentpos/health`      |
 
 For a store that is already selling (orders on hold, stuck settlements, facilitator failover,
 reconciliation, receipts), go to the **[operations guide](operations.en.md)**. Merchant questions

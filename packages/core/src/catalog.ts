@@ -72,17 +72,62 @@ export interface CartLine {
   note?: string | undefined;
 }
 
+/**
+ * Minor-unit exponents of the fiat currencies a store may sell in (ISO 4217). Anything not listed
+ * is treated as 2 decimals, the ISO default. Used to turn a source price like "14990" CLP into an
+ * integer without ever touching a float.
+ */
+export const FIAT_DECIMALS: Readonly<Record<string, number>> = {
+  CLP: 0,
+  JPY: 0,
+  KRW: 0,
+  PYG: 0,
+  VND: 0,
+  USD: 2,
+  EUR: 2,
+  ARS: 2,
+  BRL: 2,
+  COP: 2,
+  MXN: 2,
+  PEN: 2,
+  UYU: 2,
+  GBP: 2,
+};
+
+/** Decimals of a fiat currency's minor unit. */
+export function fiatDecimals(currency: string): number {
+  return FIAT_DECIMALS[currency.toUpperCase()] ?? 2;
+}
+
+/**
+ * A fiat amount as the store sells it: an integer in the currency's minor unit. Summed from each
+ * item's source price, never converted from USDC (guardrail 4: no conversion at settlement time).
+ */
+export interface FiatAmount {
+  minor: bigint;
+  currency: string;
+  decimals: number;
+}
+
 export interface QuoteLine extends CartLine {
   title: string;
   externalId?: string;
   unitPriceUsdc: UsdcMinor;
   lineTotalUsdc: UsdcMinor;
+  /** The item's source price in the store's fiat currency, when it has one. */
+  unitPriceFiat?: FiatAmount;
+  lineTotalFiat?: FiatAmount;
   physical: boolean;
 }
 
 export interface Quote {
   lines: QuoteLine[];
   totalUsdc: UsdcMinor;
+  /**
+   * The same cart in the store's fiat currency, for card rails. Present only when every line has
+   * a source price in one currency; a card rail cannot quote a cart without it.
+   */
+  totalFiat?: FiatAmount;
   /** Address that receives the payment for this cart (single payTo per cart in v1). */
   payTo: string;
   requiresShipping: boolean;
@@ -136,10 +181,21 @@ export const ORDER_STATUSES = [
 export type OrderStatus = (typeof ORDER_STATUSES)[number];
 
 export interface PaymentRecord {
+  /**
+   * The rail's settlement reference. A transaction hash on a ledger rail; on a card rail, the
+   * rail's own reference (Transbank: our buy order). Unique per payment either way: it is the
+   * idempotency key (guardrail 6).
+   */
   txHash: string;
   network: string;
+  /** Asset or ISO 4217 code the payment was made in. */
   asset: string;
+  /** Integer in `asset`'s minor unit (USDC 7 decimals, CLP 0). */
   amountMinor: UsdcMinor;
+  /** Decimals of `asset`'s minor unit. Absent means the checkout asset's (7). */
+  decimals?: number;
+  /** Rail that settled it (adapter/versions.ts ids). Absent means x402 on Stellar. */
+  rail?: string;
   payer?: string;
   ts: string;
 }
@@ -167,6 +223,11 @@ export interface Order {
    * The payment is kept, the platform order is NOT created, and an alert is raised (G1).
    */
   hold?: { reason: "PAYMENT_MISMATCH"; details: Record<string, unknown>; at: string };
+  /**
+   * The rail this order is being paid on when it is not x402, with the terms the rail quoted
+   * (a card rail's transaction token, for instance). Set when the order begins on that rail.
+   */
+  rail?: { id: string; terms: unknown; quotedAt: string };
   /** Identity of the agent that placed the order (M3), as verified at cart time. */
   agent?: AgentIdentityRecord;
   /** Correlates logs across scan, cart, checkout, settle and order creation. */

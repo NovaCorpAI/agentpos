@@ -10,6 +10,7 @@ import type {
   BuyerContact,
   Cart,
   CartLine,
+  FiatAmount,
   Logger,
   Order,
   OrderConnector,
@@ -23,8 +24,11 @@ import type {
 import {
   ADAPTER_VERSION,
   AgentPOSError,
+  X402_STELLAR_RAIL_ID,
   addUsdc,
   compareUsdc,
+  fiatDecimals,
+  fiatMinor,
   mulUsdc,
   silentLogger,
   usdcFromMinor,
@@ -57,6 +61,10 @@ export interface SettledTerms {
   asset: string;
   amountMinor: UsdcMinor;
   network: string;
+  /** Rail the settlement came from. Absent means x402 on Stellar, the original rail. */
+  rail?: string;
+  /** Decimals of `asset`'s minor unit when it is not the checkout asset. */
+  decimals?: number;
 }
 
 export interface CheckoutOptions {
@@ -69,6 +77,11 @@ export interface CheckoutOptions {
   asset: string;
   /** Contract id of the checkout asset; settled asset must match it exactly. */
   assetAddress: string;
+  /**
+   * ISO 4217 currency of the store's source prices. When set, every cart whose lines all carry a
+   * source price in it also gets a fiat total, which is what a card rail quotes. Never converted.
+   */
+  fiatCurrency?: string | undefined;
   /** Merchant policy over agentic sales (M1). Defaults to no restrictions. */
   policy?: MerchantPolicy;
   /** Human approval queue (M2). Without it, flagged orders are refused instead of parked. */
@@ -151,7 +164,34 @@ export class CheckoutService {
   }
 
   /** Terms exactly as they were offered, in the shape a receipt records them. */
-  private termsOf(quote: Quote): ReceiptTerms {
+  /** Network of a rail-quoted order before it is paid, read from the terms the rail stored. */
+  private railNetworkOf(order: Order): string {
+    const terms = order.rail?.terms as { environment?: string } | undefined;
+    return terms?.environment ? `transbank:${terms.environment}` : this.opts.network;
+  }
+
+  private termsOf(quote: Quote, rail?: { id: string; network: string }): ReceiptTerms {
+    // On a card rail the terms the buyer saw were the fiat ones: same lines, fiat amounts, the
+    // rail's network and an `iso4217:` asset address (SPEC 4.4). The store's wallet stays as
+    // `payTo`: it is the store's identity in the chain, not where the card money lands.
+    const fiat = quote.totalFiat;
+    if (rail && rail.id !== X402_STELLAR_RAIL_ID && fiat) {
+      return {
+        lines: quote.lines.map((l) => ({
+          itemId: l.itemId,
+          title: l.title,
+          quantity: l.quantity,
+          unitPriceMinor: (l.unitPriceFiat?.minor ?? 0n).toString(),
+          lineTotalMinor: (l.lineTotalFiat?.minor ?? 0n).toString(),
+        })),
+        totalMinor: fiat.minor.toString(),
+        payTo: quote.payTo,
+        network: rail.network,
+        asset: fiat.currency,
+        assetAddress: `iso4217:${fiat.currency}`,
+        rail: rail.id,
+      };
+    }
     return {
       lines: quote.lines.map((l) => ({
         itemId: l.itemId,
@@ -166,6 +206,22 @@ export class CheckoutService {
       asset: this.opts.asset,
       assetAddress: this.opts.assetAddress,
     };
+  }
+
+  /**
+   * Records which rail an order is being paid on and the terms that rail quoted, so a later
+   * return (a card redirect, a poll) can verify and settle against exactly what was offered.
+   */
+  beginOrderOnRail(cartId: string, rail: { id: string; terms: unknown }): Order {
+    const order = this.beginOrder(cartId);
+    if (order.status !== "pending_payment") return order;
+    const withRail: Order = {
+      ...order,
+      rail: { id: rail.id, terms: rail.terms, quotedAt: new Date().toISOString() },
+      updatedAt: new Date().toISOString(),
+    };
+    this.opts.storage.saveOrder(withRail);
+    return withRail;
   }
 
   /**
@@ -205,7 +261,12 @@ export class CheckoutService {
         status: order.status,
         ...(order.externalOrderId ? { externalOrderId: order.externalOrderId } : {}),
       },
-      terms: this.termsOf(order.quote),
+      terms: this.termsOf(
+        order.quote,
+        order.rail
+          ? { id: order.rail.id, network: order.payment?.network ?? this.railNetworkOf(order) }
+          : undefined,
+      ),
       ...(order.agent ? { agent: order.agent } : {}),
       ...(order.payment
         ? {
@@ -265,7 +326,12 @@ export class CheckoutService {
    */
   private assertNotDenied(
     decision: PolicyDecision,
-    context?: { quote: Quote; agent?: AgentIdentityRecord | undefined; traceId?: string | undefined; cartId?: string },
+    context?: {
+      quote: Quote;
+      agent?: AgentIdentityRecord | undefined;
+      traceId?: string | undefined;
+      cartId?: string;
+    },
   ): void {
     if (decision.decision !== "denied") return;
     if (context) {
@@ -352,18 +418,26 @@ export class CheckoutService {
 
     const payTos = new Set(items.map(({ item }) => item.payTo ?? this.opts.defaultPayTo));
     if (payTos.size > 1) {
-      throw new AgentPOSError(
-        "MIXED_PAYTO",
-        "Items in this cart are paid to different addresses",
-        {
-          hint: "Create one cart per seller wallet (v1 limitation).",
-        },
-      );
+      throw new AgentPOSError("MIXED_PAYTO", "Items in this cart are paid to different addresses", {
+        hint: "Create one cart per seller wallet (v1 limitation).",
+      });
     }
     const [payTo] = payTos;
 
+    const fiat = this.opts.fiatCurrency;
     const quoteLines: QuoteLine[] = items.map(({ item, quantity, note }) => {
       const unit = item.priceUsdc as UsdcMinor;
+      // The source price, when the item has one in the store's currency: integer minor units,
+      // straight from the decimal string the scanner recorded. Never derived from USDC.
+      const src = item.priceSrc;
+      const unitFiat: FiatAmount | undefined =
+        fiat && src && src.currency.toUpperCase() === fiat
+          ? {
+              minor: fiatMinor(src.amount, fiatDecimals(fiat), fiat),
+              currency: fiat,
+              decimals: fiatDecimals(fiat),
+            }
+          : undefined;
       return {
         itemId: item.id,
         ...(item.externalId ? { externalId: item.externalId } : {}),
@@ -372,6 +446,12 @@ export class CheckoutService {
         ...(note !== undefined ? { note } : {}),
         unitPriceUsdc: unit,
         lineTotalUsdc: mulUsdc(unit, quantity),
+        ...(unitFiat
+          ? {
+              unitPriceFiat: unitFiat,
+              lineTotalFiat: { ...unitFiat, minor: unitFiat.minor * BigInt(quantity) },
+            }
+          : {}),
         physical: item.physical,
       };
     });
@@ -379,6 +459,15 @@ export class CheckoutService {
       (acc, l) => addUsdc(acc, l.lineTotalUsdc),
       usdcFromMinor(0n),
     );
+    // A fiat total exists only when EVERY line has one: a partial sum would be a wrong price.
+    const totalFiat: FiatAmount | undefined =
+      fiat && quoteLines.every((l) => l.lineTotalFiat)
+        ? {
+            minor: quoteLines.reduce((acc, l) => acc + (l.lineTotalFiat as FiatAmount).minor, 0n),
+            currency: fiat,
+            decimals: fiatDecimals(fiat),
+          }
+        : undefined;
     const requiresShipping = quoteLines.some((l) => l.physical);
     if (requiresShipping && !shipping) {
       throw new AgentPOSError("SHIPPING_REQUIRED", "Physical items need a shipping address", {
@@ -395,7 +484,13 @@ export class CheckoutService {
       );
     }
 
-    const quote: Quote = { lines: quoteLines, totalUsdc, payTo: payTo as string, requiresShipping };
+    const quote: Quote = {
+      lines: quoteLines,
+      totalUsdc,
+      ...(totalFiat ? { totalFiat } : {}),
+      payTo: payTo as string,
+      requiresShipping,
+    };
 
     // Merchant policy, first pass (M1). A denial stops the quote here: the agent gets a typed
     // reason instead of a cart it could never pay.
@@ -530,14 +625,10 @@ export class CheckoutService {
     if (drift.length > 0) {
       this.opts.storage.saveCart({ ...cart, expiresAt: new Date(0).toISOString() });
       this.logger.warn("cart.requote_required", { traceId: cart.traceId, cartId: id, drift });
-      throw new AgentPOSError(
-        "REQUOTE_REQUIRED",
-        "Price or availability changed since the quote",
-        {
-          hint: "Create a new cart to get current terms; nothing was charged.",
-          details: { cartId: id, drift },
-        },
-      );
+      throw new AgentPOSError("REQUOTE_REQUIRED", "Price or availability changed since the quote", {
+        hint: "Create a new cart to get current terms; nothing was charged.",
+        details: { cartId: id, drift },
+      });
     }
 
     // Merchant policy, second pass (M1): suspension, exclusions and period volume can have
@@ -661,11 +752,13 @@ export class CheckoutService {
       cartId,
       txHash: receipt.txHash,
     });
+    const onCardRail = settled?.rail !== undefined && settled.rail !== X402_STELLAR_RAIL_ID;
     const payment: PaymentRecord = {
       txHash: receipt.txHash,
       network: receipt.network,
-      asset: this.opts.asset,
+      asset: onCardRail ? settled.asset : this.opts.asset,
       amountMinor: receipt.amount ?? settled?.amountMinor ?? order.quote.totalUsdc,
+      ...(onCardRail ? { rail: settled.rail as string, decimals: settled.decimals ?? 2 } : {}),
       ...(receipt.payer ? { payer: receipt.payer } : {}),
       ts: new Date().toISOString(),
     };
@@ -714,9 +807,7 @@ export class CheckoutService {
       ...this.receiptContext(final),
       event: "order.settled",
       at: new Date().toISOString(),
-      ...(final.connectorError
-        ? { discrepancy: { connectorError: final.connectorError } }
-        : {}),
+      ...(final.connectorError ? { discrepancy: { connectorError: final.connectorError } } : {}),
     });
     return final;
   }
@@ -727,6 +818,25 @@ export class CheckoutService {
     receipt: SettlementReceipt,
   ): Array<Record<string, unknown>> {
     const out: Array<Record<string, unknown>> = [];
+    // A card rail settles the fiat quote, in the fiat currency, at the rail's own network. Its
+    // `payTo` is not a wallet, so the wallet comparison does not apply; the amount comparison is
+    // against the fiat total and is exact, like everything else here.
+    if (settled.rail !== undefined && settled.rail !== X402_STELLAR_RAIL_ID) {
+      const fiat = quote.totalFiat;
+      if (!fiat) {
+        out.push({ field: "totalFiat", expected: "a fiat quote", actual: "none" });
+        return out;
+      }
+      if (settled.asset !== fiat.currency)
+        out.push({ field: "asset", expected: fiat.currency, actual: settled.asset });
+      if (settled.amountMinor !== fiat.minor)
+        out.push({ field: "amount", expected: fiat.minor, actual: settled.amountMinor });
+      if (receipt.amount !== undefined && receipt.amount !== fiat.minor)
+        out.push({ field: "settledAmount", expected: fiat.minor, actual: receipt.amount });
+      if (receipt.network !== settled.network)
+        out.push({ field: "settledNetwork", expected: settled.network, actual: receipt.network });
+      return out;
+    }
     if (settled.payTo !== quote.payTo)
       out.push({ field: "payTo", expected: quote.payTo, actual: settled.payTo });
     if (settled.asset !== this.opts.assetAddress)

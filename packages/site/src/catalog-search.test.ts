@@ -263,7 +263,7 @@ describe("catalog facets", () => {
       { value: "50x70", count: 2 },
     ]);
     // The draft item is not counted anywhere.
-    expect(facets.Fondo.map((v) => v.value)).not.toContain("dorado");
+    expect(facets.Fondo?.map((v) => v.value)).not.toContain("dorado");
   });
 
   it("counts facets BEFORE the attribute filters, so the sibling options stay visible", async () => {
@@ -304,7 +304,7 @@ describe("catalog facets", () => {
     const res = await makeSite(many).fetch(new Request("https://marcos.test/agentpos/catalog"));
     const body = (await res.json()) as CatalogBody;
     expect(body.facets.Color).toHaveLength(25);
-    expect(body.facets.Color.slice(0, 3)).toEqual([
+    expect(body.facets.Color?.slice(0, 3)).toEqual([
       { value: "mmm", count: 9 },
       { value: "aaa", count: 5 },
       { value: "zzz", count: 5 },
@@ -391,7 +391,7 @@ describe("MCP search_items", () => {
       ),
     );
     // Same discovery surface: the agent can read the other options from the tool answer.
-    expect(tool.facets.Passepartout.map((v) => v.value).sort()).toEqual(["con", "sin"]);
+    expect(tool.facets.Passepartout?.map((v) => v.value).sort()).toEqual(["con", "sin"]);
   });
 
   it("pages like HTTP and refuses a malformed price bound with the typed error", async () => {

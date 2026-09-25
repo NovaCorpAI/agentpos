@@ -47,6 +47,8 @@ export const receiptTermsSchema = z.object({
   network: z.string().min(1),
   asset: z.string().min(1),
   assetAddress: z.string().min(1),
+  /** Rail the terms were quoted on. Absent means x402 on Stellar (the original rail). */
+  rail: z.string().min(1).optional(),
 });
 
 export const receiptBodySchema = z.object({
@@ -103,12 +105,18 @@ export const receiptBodySchema = z.object({
     .optional(),
   payment: z
     .object({
+      /**
+       * Settlement reference: a ledger transaction hash on x402, the rail's own reference on a
+       * rail that does not settle on a ledger (Transbank: the store's buy order).
+       */
       txHash: z.string().min(1),
       network: z.string().min(1),
       asset: z.string().min(1),
       amountMinor: minorString,
       payer: z.string().optional(),
       ts: z.iso.datetime(),
+      /** Rail that settled it. Absent means x402 on Stellar. */
+      rail: z.string().min(1).optional(),
     })
     .optional(),
   /** Why an order is held or a payment refused: the discrepancy, in full. */
@@ -153,7 +161,10 @@ export class MemoryReceiptStore implements ReceiptStore {
   }
   list(options: { from?: string; to?: string; limit?: number } = {}): Receipt[] {
     return this.receipts
-      .filter((r) => (!options.from || r.body.at >= options.from) && (!options.to || r.body.at <= options.to))
+      .filter(
+        (r) =>
+          (!options.from || r.body.at >= options.from) && (!options.to || r.body.at <= options.to),
+      )
       .slice(0, options.limit ?? Number.MAX_SAFE_INTEGER);
   }
   byOrder(orderId: string): Receipt[] {

@@ -243,6 +243,9 @@ export async function createAgentPOS(options: CreateAgentPOSOptions = {}): Promi
     ...(secrets.merchantApiToken !== undefined
       ? { merchantApiToken: secrets.merchantApiToken }
       : {}),
+    // Card rail (Transbank): the merchant's own credentials. Without both, no card rail mounts.
+    transbankCommerceCode: secrets.transbankCommerceCode,
+    transbankApiKey: secrets.transbankApiKey,
     ...(options.facilitator ? { facilitator: options.facilitator } : {}),
   });
   const retryPending = async (): Promise<number> => {

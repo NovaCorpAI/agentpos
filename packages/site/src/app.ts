@@ -6,6 +6,23 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { paymentMiddleware } from "@x402/hono";
+import {
+  PaymentRailRegistry,
+  X402_STELLAR_RAIL_ID,
+  createTransbankRail,
+  railFailureToError,
+} from "@agentpos/core";
+import type {
+  Cart,
+  FiatAmount,
+  Order,
+  PaymentRail,
+  RailQuote,
+  RailQuoteInput,
+  RailSettlement,
+  TransbankTerms,
+} from "@agentpos/core";
+import type { SettledTerms } from "./checkout.js";
 import type { HTTPTransportContext } from "@x402/core/server";
 import {
   AgentPOSError,
@@ -73,6 +90,14 @@ export interface AgentPOSDeps {
   facilitators?: FacilitatorEndpoint[];
   /** Tests only: builds the per-endpoint client for the failover pool. */
   facilitatorClientFactory?: FacilitatorClientFactory;
+  /**
+   * Card rails the store accepts besides x402. Built from `site.transbank` + the merchant's
+   * credentials when omitted; tests inject a rail with a fake transport here.
+   */
+  rails?: PaymentRail[];
+  /** The merchant's own Transbank credentials (from TRANSBANK_* in the sidecar's env). */
+  transbankCommerceCode?: string | undefined;
+  transbankApiKey?: string | undefined;
   logger?: Logger;
   alert?: AlertSink;
   /** Human approval queue (M2). Built from storage when the site enables approvals. */
@@ -102,6 +127,8 @@ export interface SiteRoutes {
   mcp: string;
   cart: string;
   checkout: string;
+  /** Card checkout (a rail that hands the payment step to the human, or charges an enrolment). */
+  checkoutCard: string;
   orders: string;
   approvals: string;
   receipts: string;
@@ -149,6 +176,11 @@ const STATUS_BY_CODE: Record<string, number> = {
   CONFIG_INVALID: 400,
   RATE_LIMITED: 429,
   FACILITATOR_UNAVAILABLE: 502,
+  // payment rails: the store declares no rail for this charge / the rail is waiting for a human.
+  RAIL_UNSUPPORTED: 409,
+  RAIL_NOT_FOUND: 404,
+  RAIL_UNAVAILABLE: 502,
+  PAYMENT_PENDING: 202,
   // merchant policy (M1): the merchant forbids this sale, or pauses it for a human.
   POLICY_SUSPENDED: 403,
   POLICY_ITEM_EXCLUDED: 403,
@@ -261,10 +293,17 @@ export function createAgentPOSApp(deps: AgentPOSDeps): AgentPOSSite {
     network: core.caip2,
     asset: core.checkoutAsset,
     assetAddress: assetAddress(core),
+    fiatCurrency: site.fiatCurrency,
     policy: site.policy,
     logger,
     ...(deps.alert ? { alert: deps.alert } : {}),
   });
+
+  // --- card rails (plan/RIELES.md) ----------------------------------------------
+  // The merchant's own acquirer, with the merchant's own credentials. Absent config means the
+  // store takes x402 only; nothing else changes.
+  const rails = new PaymentRailRegistry(deps.rails ?? buildCardRails(site, deps));
+  const cardRail = rails.list().find((r) => r.id !== X402_STELLAR_RAIL_ID);
   const base = site.basePath;
   const siteUrl = site.siteUrl.replace(/\/+$/, "");
   // Signed audit chain (M4). Declared before the approval queue so the queue can record its
@@ -354,6 +393,7 @@ export function createAgentPOSApp(deps: AgentPOSDeps): AgentPOSSite {
     mcp: `${siteUrl}${base}/mcp`,
     cart: `${siteUrl}${base}/cart`,
     checkout: `${siteUrl}${base}/checkout?cart=<cartId>`,
+    checkoutCard: `${siteUrl}${base}/checkout/card?cart=<cartId>`,
     orders: `${siteUrl}${base}/orders/<orderId>`,
     approvals: `${siteUrl}${base}/approvals/<approvalId>`,
     receipts: `${siteUrl}${base}/orders/<orderId>/receipt`,
@@ -380,9 +420,7 @@ export function createAgentPOSApp(deps: AgentPOSDeps): AgentPOSSite {
           endpoints: facilitatorEndpoints,
           network: core.caip2,
           logger,
-          ...(deps.facilitatorClientFactory
-            ? { createClient: deps.facilitatorClientFactory }
-            : {}),
+          ...(deps.facilitatorClientFactory ? { createClient: deps.facilitatorClientFactory } : {}),
         });
   const resourceServer = createResourceServer(core, deps.facilitator ?? failover);
   const cartIdFrom = (transport: unknown): string | undefined => {
@@ -510,6 +548,7 @@ export function createAgentPOSApp(deps: AgentPOSDeps): AgentPOSSite {
         asset: core.checkoutAsset,
         assetAddress: assetAddress(core),
         payTo: site.payTo,
+        ...(cardRail ? { rails: [cardRail.describe()] } : {}),
         ...(site.policies ? { policies: site.policies } : {}),
       }),
     ),
@@ -785,11 +824,11 @@ export function createAgentPOSApp(deps: AgentPOSDeps): AgentPOSSite {
       traceOf(c),
       agent,
     );
-    return c.json(cartView(cart, core, routes), 201);
+    return c.json(cartView(cart, core, routes, cardRail), 201);
   });
 
   app.get(`${base}/cart/:id`, (c) =>
-    c.json(cartView(checkout.getCart(c.req.param("id").slice(0, 64)), core, routes)),
+    c.json(cartView(checkout.getCart(c.req.param("id").slice(0, 64)), core, routes, cardRail)),
   );
 
   // --- checkout (x402 protected) --------------------------------------------
@@ -908,6 +947,192 @@ export function createAgentPOSApp(deps: AgentPOSDeps): AgentPOSSite {
       order: `${siteUrl}${base}/orders/${order.id}`,
     });
   });
+
+  // --- card checkout: the same cart, paid on the merchant's own acquirer -----------------
+  // Mounted only when the store declares a card rail. Two shapes:
+  //  - no body: Webpay Plus. The rail creates the transaction and the response carries the page
+  //    the HUMAN must visit; the agent cannot fill a card form. The store settles on return.
+  //  - { enrolment }: Oneclick. The buyer enrolled a card once; the store charges it now, with no
+  //    human step. This is the mode in which the agent buys on its own.
+  if (cardRail) {
+    const cardTerms = (order: Order) => order.rail?.terms as TransbankTerms | undefined;
+    const settledTermsOf = (cart: Cart, network: string): SettledTerms => {
+      const fiat = cart.quote.totalFiat as FiatAmount;
+      return {
+        payTo: cart.quote.payTo,
+        asset: fiat.currency,
+        amountMinor: usdcFromMinor(fiat.minor),
+        network,
+        rail: cardRail.id,
+        decimals: fiat.decimals,
+      };
+    };
+    // Turns a rail settlement into the order lifecycle: paid (and pushed to the platform), or
+    // failed. Exactly the two outcomes the x402 hooks produce (guardrail 6).
+    const applySettlement = async (cart: Cart, settlement: RailSettlement) => {
+      if (!settlement.settled) {
+        await checkout.markSettlementFailed(cart.id, settlement.failure?.message ?? "not settled");
+        throw railFailureToError(
+          settlement.failure ?? {
+            kind: "rejected",
+            code: "SETTLEMENT_FAILED",
+            message: "The card rail did not settle",
+            hint: "Nothing was charged. Retry the card step or pay with x402.",
+            retryable: false,
+          },
+          cardRail.id,
+        );
+      }
+      const amount = settlement.amount?.minor;
+      return checkout.markPaid(
+        cart.id,
+        {
+          txHash: settlement.reference,
+          network: (settlement.raw as { environment?: string } | undefined)?.environment
+            ? `transbank:${(settlement.raw as { environment: string }).environment}`
+            : (cardRail.describe().capabilities.networks[0] as string),
+          payer: settlement.payer,
+          amount: amount === undefined ? undefined : usdcFromMinor(amount),
+          adapterVersion: ADAPTER_VERSION,
+        },
+        settledTermsOf(cart, cardRail.describe().capabilities.networks[0] as string),
+      );
+    };
+
+    app.post(
+      `${base}/checkout/card`,
+      rateLimit(ipCheckoutLimiter, clientIp, "checkout"),
+      async (c) => {
+        try {
+          const cartId = String(c.req.query("cart"));
+          const cart = checkout.getCart(cartId);
+          const fiat = cart.quote.totalFiat;
+          if (!fiat) {
+            throw new AgentPOSError("RAIL_UNSUPPORTED", "This cart has no fiat quote", {
+              hint: "Every item must carry a source price in the store's currency to be paid by card. Pay with x402 instead.",
+              details: { cartId, rail: cardRail.id },
+            });
+          }
+          const body = (await c.req.json().catch(() => ({}))) as {
+            enrolment?: { username?: string; tbkUser?: string };
+          };
+          const amount = { minor: fiat.minor, currency: fiat.currency, decimals: fiat.decimals };
+          const network = cardRail.describe().capabilities.networks[0] as string;
+
+          if (body.enrolment?.username && body.enrolment.tbkUser) {
+            // Oneclick: quote is pure, settle charges the enrolled card. No human in the loop.
+            const rail = cardRail as unknown as {
+              quoteOneclick: (i: RailQuoteInput) => RailQuote<TransbankTerms>;
+            };
+            const quote = rail.quoteOneclick({
+              payTo: cart.quote.payTo,
+              amount,
+              reference: cart.id,
+            });
+            checkout.beginOrderOnRail(cart.id, { id: cardRail.id, terms: quote.terms });
+            const settlement = await cardRail.settle(
+              {
+                mode: "oneclick",
+                username: body.enrolment.username,
+                tbkUser: body.enrolment.tbkUser,
+              },
+              quote.terms,
+            );
+            const order = await applySettlement(cart, settlement);
+            return c.json({ ...orderView(order), order: `${siteUrl}${base}/orders/${order.id}` });
+          }
+
+          // Webpay Plus: create the transaction; the human pays on the rail's page and returns.
+          const returnUrl = `${siteUrl}${base}/checkout/card/return?cart=${encodeURIComponent(cart.id)}`;
+          const quote = await cardRail.quote({ payTo: returnUrl, amount, reference: cart.id });
+          const order = checkout.beginOrderOnRail(cart.id, { id: cardRail.id, terms: quote.terms });
+          const terms = quote.terms as TransbankTerms;
+          if (terms.mode !== "webpay-plus") {
+            throw new AgentPOSError("INTERNAL", "Card rail quoted unexpected terms", {
+              hint: "Report this; the store's card rail is misconfigured.",
+            });
+          }
+          return c.json(
+            {
+              orderId: order.id,
+              status: "pending_payment",
+              rail: cardRail.id,
+              currency: fiat.currency,
+              totalMinor: fiat.minor.toString(),
+              network,
+              pay: {
+                // The human is sent here, POSTing the token as `token_ws` (Transbank's contract).
+                url: terms.url,
+                method: "POST",
+                form: { token_ws: terms.token },
+                expiresInSeconds: quote.expiresInSeconds,
+              },
+              hint: "Hand `pay` to the person. When they finish, the store settles and creates the order; poll `order` until status is paid.",
+              order: `${siteUrl}${base}/orders/${order.id}`,
+            },
+            202,
+          );
+        } catch (err) {
+          return errorResponse(c, err);
+        }
+      },
+    );
+
+    // The human comes back from the acquirer's page. Verify the token belongs to this order,
+    // settle exactly once, and answer in the shape the visitor is: a browser gets a page, an
+    // agent (Accept: application/json) gets the order.
+    const cardReturn = async (c: Context) => {
+      const cartId = String(c.req.query("cart"));
+      let token = c.req.query("token_ws");
+      let aborted = c.req.query("TBK_TOKEN") !== undefined;
+      if (c.req.method === "POST") {
+        const form = await c.req.parseBody().catch(() => ({}) as Record<string, unknown>);
+        token = (form as Record<string, string>).token_ws ?? token;
+        aborted = aborted || (form as Record<string, string>).TBK_TOKEN !== undefined;
+      }
+      const wantsJson = (c.req.header("accept") ?? "").includes("application/json");
+      try {
+        const cart = checkout.getCart(cartId);
+        const order = checkout.beginOrder(cart.id);
+        const terms = cardTerms(order);
+        if (!terms || terms.mode !== "webpay-plus") {
+          throw new AgentPOSError("ORDER_NOT_FOUND", "No card payment was started for this cart", {
+            hint: "Start with POST checkout/card?cart=<cartId>.",
+          });
+        }
+        if (aborted || !token) {
+          await checkout.markSettlementFailed(cart.id, "buyer aborted the card payment");
+          throw new AgentPOSError(
+            "SETTLEMENT_FAILED",
+            "The buyer did not complete the card payment",
+            {
+              hint: "Nothing was charged. Start a new card checkout or pay with x402.",
+            },
+          );
+        }
+        if (order.status === "paid" || order.payment) {
+          const done = checkout.getOrder(order.id);
+          return wantsJson
+            ? c.json(orderView(done))
+            : c.html(cardResultPage(done, site.displayName));
+        }
+        const verification = await cardRail.verify({ mode: "webpay-plus", token }, terms);
+        if (!verification.ok) throw railFailureToError(verification.failure, cardRail.id);
+        const settlement = await cardRail.settle({ mode: "webpay-plus", token }, terms);
+        const paid = await applySettlement(cart, settlement);
+        return wantsJson ? c.json(orderView(paid)) : c.html(cardResultPage(paid, site.displayName));
+      } catch (err) {
+        if (wantsJson) return errorResponse(c, err);
+        const e = err as { code?: string; message?: string; hint?: string };
+        return c.html(
+          cardErrorPage(e.code ?? "INTERNAL", e.message ?? "", e.hint ?? "", site.displayName),
+          400,
+        );
+      }
+    };
+    app.get(`${base}/checkout/card/return`, cardReturn);
+    app.post(`${base}/checkout/card/return`, cardReturn);
+  }
 
   // --- approvals (M2) --------------------------------------------------------
   if (approvals) {
@@ -1068,11 +1293,106 @@ export function createAgentPOSApp(deps: AgentPOSDeps): AgentPOSSite {
   };
 }
 
+/**
+ * Card rails from configuration: the merchant's Transbank affiliation, with the merchant's own
+ * credentials from the environment. Nothing is built without both the config block and the
+ * credentials, so a store that takes no cards runs exactly as before.
+ */
+export function buildCardRails(
+  site: SiteConfig,
+  creds: { transbankCommerceCode?: string | undefined; transbankApiKey?: string | undefined },
+): PaymentRail[] {
+  const tb = site.transbank;
+  if (!tb || !creds.transbankCommerceCode || !creds.transbankApiKey) return [];
+  return [
+    createTransbankRail({
+      environment: tb.environment,
+      commerceCode: creds.transbankCommerceCode,
+      apiKey: creds.transbankApiKey,
+      oneclick: tb.oneclick,
+      maxAmountClp: tb.maxAmountClp === undefined ? undefined : BigInt(tb.maxAmountClp),
+    }),
+  ];
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(
+    /[&<>"]/g,
+    (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch] as string,
+  );
+}
+
+/** What the person sees after paying by card. Plain, no scripts, no tracking. */
+function cardResultPage(order: Order, storeName: string): string {
+  const paid = order.status === "paid" || order.status === "fulfilled";
+  const title = paid ? "Pago recibido" : "Pago registrado";
+  return `<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title>
+<body style="font-family:system-ui,sans-serif;max-width:32rem;margin:3rem auto;padding:0 1rem;line-height:1.5">
+<h1 style="font-size:1.4rem">${escapeHtml(title)}</h1>
+<p>${escapeHtml(storeName)} recibió tu pago con tarjeta y ya creó la orden.</p>
+<p>Número de orden: <code>${escapeHtml(order.id)}</code>${order.externalOrderId ? ` (en la tienda: <code>${escapeHtml(order.externalOrderId)}</code>)` : ""}</p>
+<p style="color:#555">Puedes cerrar esta página. Tu agente ya tiene la orden.</p>
+</body></html>`;
+}
+
+function cardErrorPage(code: string, message: string, hint: string, storeName: string): string {
+  return `<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pago no completado</title>
+<body style="font-family:system-ui,sans-serif;max-width:32rem;margin:3rem auto;padding:0 1rem;line-height:1.5">
+<h1 style="font-size:1.4rem">Pago no completado</h1>
+<p>${escapeHtml(storeName)} no pudo confirmar el pago con tarjeta. No se cobró nada.</p>
+<p><code>${escapeHtml(code)}</code> ${escapeHtml(message)}</p>
+<p style="color:#555">${escapeHtml(hint)}</p>
+</body></html>`;
+}
+
+/** The card rails a cart can be paid on, as the agent sees them: no secrets, integer amounts. */
+export function paymentAlternatives(
+  cart: ReturnType<CheckoutService["getCart"]>,
+  cardRail: PaymentRail | undefined,
+  routes: Pick<SiteRoutes, "checkoutCard">,
+): unknown[] {
+  const fiat = cart.quote.totalFiat;
+  if (!cardRail || !fiat) return [];
+  const d = cardRail.describe();
+  const decision = cardRail.supports({
+    currency: fiat.currency,
+    amount: { minor: fiat.minor, currency: fiat.currency, decimals: fiat.decimals },
+  });
+  if (!decision.supported) return [];
+  return [
+    {
+      rail: d.id,
+      label: d.label,
+      protocol: d.protocol,
+      currency: fiat.currency,
+      totalMinor: fiat.minor.toString(),
+      total: formatFiat(fiat.minor, fiat.decimals),
+      network: d.capabilities.networks[0],
+      settlesOnLedger: d.capabilities.settlesOnLedger,
+      method: "POST",
+      url: routes.checkoutCard.replace("<cartId>", cart.id),
+      steps: [
+        "POST the url with no body: the response carries the page where the buyer pays by card",
+        "Hand that page to the human; the store settles when they return and creates the order",
+        "Or POST { enrolment: { username, tbkUser } } to charge a card the buyer enrolled before, with no human step",
+        "Poll get_order / GET orders/:id until status is paid",
+      ],
+    },
+  ];
+}
+
+function formatFiat(minor: bigint, decimals: number): string {
+  const s = minor.toString().padStart(decimals + 1, "0");
+  return decimals === 0 ? s : `${s.slice(0, -decimals)}.${s.slice(-decimals)}`;
+}
+
 export function cartView(
   cart: ReturnType<CheckoutService["getCart"]>,
   core: CoreConfig,
-  routes: Pick<SiteRoutes, "checkout">,
+  routes: Pick<SiteRoutes, "checkout" | "checkoutCard">,
+  cardRail?: PaymentRail,
 ) {
+  const fiat = cart.quote.totalFiat;
   return JSON.parse(
     jsonStringify({
       cartId: cart.id,
@@ -1089,9 +1409,34 @@ export function cartView(
         network: core.caip2,
         payTo: cart.quote.payTo,
         requiresShipping: cart.quote.requiresShipping,
+        // The same cart in the store's currency, when every line has a source price in it.
+        ...(fiat
+          ? {
+              totalFiat: {
+                currency: fiat.currency,
+                minor: fiat.minor.toString(),
+                amount: formatFiat(fiat.minor, fiat.decimals),
+              },
+            }
+          : {}),
       },
       checkout: routes.checkout.replace("<cartId>", cart.id),
       protocol: "x402",
+      // Every way this cart can be paid, x402 first. A rail-neutral cart: same order either way.
+      payments: [
+        {
+          rail: X402_STELLAR_RAIL_ID,
+          protocol: "x402",
+          currency: core.checkoutAsset,
+          totalMinor: cart.quote.totalUsdc.toString(),
+          total: formatUsdc(cart.quote.totalUsdc),
+          network: core.caip2,
+          settlesOnLedger: true,
+          method: "POST",
+          url: routes.checkout.replace("<cartId>", cart.id),
+        },
+        ...paymentAlternatives(cart, cardRail, routes),
+      ],
       // Merchant policy outcome (M1): tells the agent up front whether this cart can be paid.
       policy: cart.policy,
       // What the store recorded about who is buying (M3), so the agent can see it took effect.

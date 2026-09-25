@@ -56,24 +56,24 @@ was handed, rather than from a field the issuer chose.
 
 ### 3.1 Body
 
-| Field | Required | Meaning |
-| --- | --- | --- |
-| `v` | yes | `"agentpos-receipt-1"` |
-| `seq` | yes | 1-based position in this store's chain |
-| `prev` | yes | `hash` of the previous receipt, or `"genesis"` for the first |
-| `event` | yes | see 3.2 |
-| `at` | yes | RFC 3339 timestamp |
-| `store` | yes | `{ name, url, signer }`; `signer` is the Ed25519 public key in Stellar StrKey form (`G…`) |
-| `cart` | no | `{ id }`, when the receipt is about a cart with no order yet |
-| `order` | no | `{ id, cartId, status, externalOrderId? }` |
-| `terms` | no | exactly what the payment demand offered (3.4) |
-| `policy` | no | `{ decision, code?, message?, evaluatedAt }` |
-| `approval` | no | `{ id, status, snapshotHash, resolvedAt?, reason? }` |
-| `agent` | no | `{ authenticated, attested, agentKey?, owner?, name? }` |
-| `payment` | no | `{ txHash, network, asset, amountMinor, payer?, ts }` |
-| `discrepancy` | no | free-form object: why an order is held, or why settlement failed |
-| `adapterVersion` | yes | protocol adapter version in effect |
-| `traceId` | no | correlates with the merchant's logs |
+| Field            | Required | Meaning                                                                                   |
+| ---------------- | -------- | ----------------------------------------------------------------------------------------- |
+| `v`              | yes      | `"agentpos-receipt-1"`                                                                    |
+| `seq`            | yes      | 1-based position in this store's chain                                                    |
+| `prev`           | yes      | `hash` of the previous receipt, or `"genesis"` for the first                              |
+| `event`          | yes      | see 3.2                                                                                   |
+| `at`             | yes      | RFC 3339 timestamp                                                                        |
+| `store`          | yes      | `{ name, url, signer }`; `signer` is the Ed25519 public key in Stellar StrKey form (`G…`) |
+| `cart`           | no       | `{ id }`, when the receipt is about a cart with no order yet                              |
+| `order`          | no       | `{ id, cartId, status, externalOrderId? }`                                                |
+| `terms`          | no       | exactly what the payment demand offered (3.4)                                             |
+| `policy`         | no       | `{ decision, code?, message?, evaluatedAt }`                                              |
+| `approval`       | no       | `{ id, status, snapshotHash, resolvedAt?, reason? }`                                      |
+| `agent`          | no       | `{ authenticated, attested, agentKey?, owner?, name? }`                                   |
+| `payment`        | no       | `{ txHash, network, asset, amountMinor, payer?, ts, rail? }`                              |
+| `discrepancy`    | no       | free-form object: why an order is held, or why settlement failed                          |
+| `adapterVersion` | yes      | protocol adapter version in effect                                                        |
+| `traceId`        | no       | correlates with the merchant's logs                                                       |
 
 All monetary amounts are **decimal strings of integers in the asset's minor units** (USDC: 7
 decimals). Never floating point, and never a number literal: a receipt is JSON that travels
@@ -81,14 +81,14 @@ between languages, and JSON numbers lose integers above 2^53.
 
 ### 3.2 Events
 
-| Event | Written when |
-| --- | --- |
-| `order.settled` | payment settled and the order was placed with the merchant's platform |
-| `order.held` | payment settled but did not match the quoted terms; the order was NOT placed |
-| `order.failed` | settlement failed after verification; nothing was charged |
-| `policy.denied` | the merchant's policy refused the sale |
-| `approval.requested` | the order was parked for a human decision |
-| `approval.resolved` | a human approved or rejected it, **or the deadline passed with no answer** |
+| Event                | Written when                                                                 |
+| -------------------- | ---------------------------------------------------------------------------- |
+| `order.settled`      | payment settled and the order was placed with the merchant's platform        |
+| `order.held`         | payment settled but did not match the quoted terms; the order was NOT placed |
+| `order.failed`       | settlement failed after verification; nothing was charged                    |
+| `policy.denied`      | the merchant's policy refused the sale                                       |
+| `approval.requested` | the order was parked for a human decision                                    |
+| `approval.resolved`  | a human approved or rejected it, **or the deadline passed with no answer**   |
 
 The last row is deliberate. Silence is a decision with consequences, and a chain that omits it
 cannot answer "why was this order never fulfilled?".
@@ -113,8 +113,15 @@ custody of funds would trade an auditing property for a security liability.
 
 ```json
 {
-  "lines": [{ "itemId": "mug", "title": "Ceramic Mug", "quantity": 1,
-              "unitPriceMinor": "99000000", "lineTotalMinor": "99000000" }],
+  "lines": [
+    {
+      "itemId": "mug",
+      "title": "Ceramic Mug",
+      "quantity": 1,
+      "unitPriceMinor": "99000000",
+      "lineTotalMinor": "99000000"
+    }
+  ],
   "totalMinor": "99000000",
   "payTo": "G…",
   "network": "stellar:testnet",
@@ -165,8 +172,23 @@ This confirms that the ledger agrees with the receipt on amount, asset and desti
 not confirm that the buyer intended the purchase, or that the merchant delivered: a receipt is
 evidence of terms and settlement, not of satisfaction.
 
-Verifiers MUST treat an unreachable Horizon as *unknown*, never as *invalid*. The offline
+Verifiers MUST treat an unreachable Horizon as _unknown_, never as _invalid_. The offline
 verification in 4.1 stands on its own.
+
+### 4.4 Rails that do not settle on a ledger
+
+A store may be paid on a rail with no public ledger: a card acquirer, for instance. Such a receipt
+carries `terms.rail` and `payment.rail` (the rail id, e.g. `cl.transbank.webpay`), `network` in
+the rail's own vocabulary (`transbank:production`), `asset` as an ISO 4217 code (`CLP`), amounts
+in that currency's minor unit, and `payment.txHash` holding the rail's settlement reference (for
+Transbank, the store's buy order, which is unique per payment). `assetAddress` is
+`iso4217:<code>`.
+
+For these receipts 4.3 does not apply and a verifier MUST report _not a ledger rail_ rather than
+_invalid_. What the receipt proves is unchanged: the store committed to these terms, this policy
+outcome, this approval and this settlement reference at the time it signed, and has not changed
+its account since. Whether the acquirer agrees is a question for the acquirer's own records,
+which the merchant holds.
 
 ## 5. What a receipt proves, and what it does not
 
@@ -185,7 +207,7 @@ proves is worse than none, because it invites reliance it has not earned.
 ## 6. Security considerations
 
 - **Chain truncation.** Chaining detects edits and deletions in the middle of a run. Dropping the
-  *tail* is only detectable by someone holding a later receipt. Buyers therefore SHOULD keep their
+  _tail_ is only detectable by someone holding a later receipt. Buyers therefore SHOULD keep their
   own copy; merchants operating under external audit SHOULD publish the head hash periodically.
 - **Key compromise or rotation.** A new signing key starts a new chain and is reported as
   `CHAIN_SIGNER_CHANGED`. Receipts signed by the old key remain verifiable; new ones cannot extend
@@ -200,17 +222,17 @@ proves is worse than none, because it invites reliance it has not earned.
 
 ## 7. Error codes
 
-| Code | Meaning |
-| --- | --- |
-| `RECEIPT_NOT_FOUND` | No receipt for that order or hash |
-| `RECEIPT_MALFORMED` | Does not match the schema |
-| `RECEIPT_TAMPERED` | The body does not hash to the stated hash |
-| `RECEIPT_SIGNATURE_INVALID` | The signature does not verify against the named signer |
-| `CHAIN_SEQUENCE_GAP` | A link is missing between two receipts |
-| `CHAIN_LINK_BROKEN` | A receipt does not point at its predecessor |
-| `CHAIN_SIGNER_CHANGED` | The signing key changed mid-chain |
-| `TOTAL_MISMATCH` | The total is not the sum of the lines |
-| `PAYMENT_MISMATCH` | A settled receipt records a payment contradicting its own terms |
+| Code                        | Meaning                                                         |
+| --------------------------- | --------------------------------------------------------------- |
+| `RECEIPT_NOT_FOUND`         | No receipt for that order or hash                               |
+| `RECEIPT_MALFORMED`         | Does not match the schema                                       |
+| `RECEIPT_TAMPERED`          | The body does not hash to the stated hash                       |
+| `RECEIPT_SIGNATURE_INVALID` | The signature does not verify against the named signer          |
+| `CHAIN_SEQUENCE_GAP`        | A link is missing between two receipts                          |
+| `CHAIN_LINK_BROKEN`         | A receipt does not point at its predecessor                     |
+| `CHAIN_SIGNER_CHANGED`      | The signing key changed mid-chain                               |
+| `TOTAL_MISMATCH`            | The total is not the sum of the lines                           |
+| `PAYMENT_MISMATCH`          | A settled receipt records a payment contradicting its own terms |
 
 ## 8. Audit export
 

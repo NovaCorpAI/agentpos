@@ -136,6 +136,7 @@ describe("scanSite", () => {
         },
         provider: "fake",
         model: "m",
+        usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
       })),
     };
     const result = await scanSite({
