@@ -64,7 +64,7 @@ rechaza esos pagos con `SPEC_MISMATCH`, pero un envío manual no pasa por ahí).
 
 **`verify` responde `unexpected_verify_error` en serie.** Casi siempre es el RPC. Revisar el
 log (`facilitator.verify_failed` con el mensaje), y si el RPC primario no responde, cambiar
-`AGENTPOS_FACILITATOR_RPC_URL` al secundario documentado en `docs/RPC-MAINNET.md` y reiniciar.
+`AGENTPOS_FACILITATOR_RPC_URL` a un RPC secundario y reiniciar.
 Nada se cobra mientras tanto: sin `verify` no hay `settle`.
 
 **`verify` pasa pero `settle` queda PENDING y nunca se incluye (o falla al tiro).** Vivido el

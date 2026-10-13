@@ -275,4 +275,4 @@ comercios: el que corremos es para nuestras pruebas y nuestra tienda demo.
 ## Pasar a mainnet
 
 Mainnet está bloqueado tras `AGENTPOS_ALLOW_MAINNET=true` y un facilitador que liquide
-`stellar:pubnet`. Ver `plan/ROADMAP.md`, gate G2.
+`stellar:pubnet`. Ver `docs/GATE-G1.md`.

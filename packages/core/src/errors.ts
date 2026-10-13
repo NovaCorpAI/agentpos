@@ -1,6 +1,6 @@
 /**
  * Machine-readable errors. Every error AgentPOS emits carries a closed-set code, a human
- * message and a hint an agent can act on (CLAUDE.md conventions).
+ * message and a hint an agent can act on.
  */
 export const ERROR_CODES = [
   // config

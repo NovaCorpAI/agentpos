@@ -10,6 +10,7 @@ coverage/
 Thumbs.db
 *.tsbuildinfo
 .agentpos/
+.agentgate/
 apps/demo-store/.data/
 .vercel/
 docs/export/

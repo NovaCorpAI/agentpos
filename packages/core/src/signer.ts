@@ -54,7 +54,7 @@ export function createSigner(config: SignerConfig): SignerProvider {
       );
     case "passkey":
       throw new AgentPOSError("SIGNER_NOT_IMPLEMENTED", "PasskeySigner is a Build-phase slot", {
-        hint: "See plan/ROADMAP.md backlog.",
+        hint: "Planned; not available yet.",
       });
   }
 }

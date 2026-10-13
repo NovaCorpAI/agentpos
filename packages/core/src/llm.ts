@@ -1,5 +1,5 @@
 /**
- * LLM router: direct HTTP to the provider API, no vendor SDK (CLAUDE.md, Stack).
+ * LLM router: direct HTTP to the provider API, no vendor SDK.
  * Used by the scanner to redact catalog descriptions and extract structured drafts.
  */
 import { AgentPOSError } from "./errors.js";

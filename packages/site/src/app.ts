@@ -299,7 +299,7 @@ export function createAgentPOSApp(deps: AgentPOSDeps): AgentPOSSite {
     ...(deps.alert ? { alert: deps.alert } : {}),
   });
 
-  // --- card rails (plan/RIELES.md) ----------------------------------------------
+  // --- card rails ----------------------------------------------
   // The merchant's own acquirer, with the merchant's own credentials. Absent config means the
   // store takes x402 only; nothing else changes.
   const rails = new PaymentRailRegistry(deps.rails ?? buildCardRails(site, deps));

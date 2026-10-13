@@ -10,8 +10,8 @@ It reimplements nothing. Verification and settlement are `ExactStellarScheme` fr
 
 Because a store's ability to sell should not depend on one hosted service run by someone else,
 with no alternative and no SLA. We learned that the hard way: see
-[`docs/INCIDENT-mainnet-facilitator.md`](../../docs/INCIDENT-mainnet-facilitator.md) and the
-analysis in [`docs/EVAL-facilitador-propio.md`](../../docs/EVAL-facilitador-propio.md).
+the 2026-08-29 entry in [`docs/adapter-versions.md`](../../docs/adapter-versions.md), when the hosted
+facilitator rejected every mainnet verification.
 
 ## What it is not
 

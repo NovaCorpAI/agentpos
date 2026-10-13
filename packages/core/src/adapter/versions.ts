@@ -35,7 +35,7 @@ export const PAYMENT_RAIL_IDS = {
 export const RESERVED_PAYMENT_RAIL_IDS = {
   /** Amazon agentic payments (hackathon bridge; declared and simulated, never charged for real). */
   amazonPayments: "com.amazon.payments",
-  /** The merchant's own fiat acquirer, executed by the merchant's sidecar (plan/RIELES.md). */
+  /** The merchant's own fiat acquirer, executed by the merchant's sidecar. */
   merchantFiat: "com.novacorplabs.agentpos.merchant-fiat",
 } as const;
 
@@ -88,7 +88,7 @@ export const PROTOCOL_VERSIONS = {
     /** Rail ids with an implementation behind them today. */
     implemented: [PAYMENT_RAIL_IDS.x402Stellar, PAYMENT_RAIL_IDS.transbankWebpay],
     checkedAt: "2026-09-24",
-    source: "plan/RIELES.md",
+    source: "packages/core/README.md",
     notes:
       "Two rails: x402 on Stellar (settles on ledger) and Transbank Webpay/Oneclick (Chile, cards, settles at the acquirer). Adding a rail is additive: it never changes the catalog or order surfaces. Routing between rails belongs to packages/policy, not here.",
   },
@@ -113,7 +113,7 @@ export const PROTOCOL_VERSIONS = {
     paymentHandlerName: PAYMENT_RAIL_IDS.x402Stellar,
     paymentHandlerId: "x402-stellar",
     /**
-     * Published on the public site (apps/landing/schemas, served at agentposhq.com/schemas).
+     * Published on the public site, served at agentposhq.com/schemas.
      * The previous host, agentpos.novacorplabs.com, never existed in DNS; corrected 2026-09-25.
      * The machine-readable spec IS the OpenAPI document.
      */

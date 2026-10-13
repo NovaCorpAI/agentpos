@@ -114,7 +114,7 @@ never pays us anything is a fully functional, fully discoverable store.
 ## Contributing
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md). Short version: conventional commits, small PRs, one
-topic per PR, tests green, and the non-negotiable guardrails in `CLAUDE.md` (zero custody, no
+topic per PR, tests green, and the non-negotiable guardrails listed there (zero custody, no
 marketplace, no order without settled payment) are not up for debate.
 
 ---

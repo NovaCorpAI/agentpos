@@ -1,5 +1,5 @@
 /**
- * Payment rails: the neutral-acquirer pattern (plan/RIELES.md) applied to the charge itself.
+ * Payment rails: the neutral-acquirer pattern applied to the charge itself.
  *
  * Today a store has exactly one way to be paid: x402 / USDC over Stellar. Tomorrow it may route
  * to the merchant's own fiat acquirer, or to a network agentic credential. A `PaymentRail` is the

@@ -7,7 +7,7 @@
  * guardrails around them, and that is deliberately all it is.
  *
  * Why it exists: so that a store's ability to sell does not depend on one hosted service run by
- * someone else, with no alternative and no SLA. See docs/EVAL-facilitador-propio.md.
+ * someone else, with no alternative and no SLA.
  *
  * What it does NOT do, and must never start doing: hold anyone's funds. The payment moves
  * buyer -> seller inside the transaction this service submits. What this service holds is XLM to

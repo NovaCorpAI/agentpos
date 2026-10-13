@@ -2,7 +2,7 @@
  * Buyer-web domain types: the buyer's web profile (mandate + linked wallet PUBLIC address),
  * purchase proposals awaiting a human decision, and the append-only activity log.
  *
- * Custody rule (hard, see CLAUDE.md #1): nothing in this module can represent a secret key.
+ * Custody rule (hard, see CONTRIBUTING.md): nothing in this module can represent a secret key.
  * The profile links a wallet by public address only; signatures always happen on the buyer's
  * own machine (agentpos-buyer CLI or a future signing bridge).
  */

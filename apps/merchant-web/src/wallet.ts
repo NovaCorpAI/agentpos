@@ -1,5 +1,5 @@
 /**
- * Wallet address validation for the wizard. One rule above all others (CLAUDE.md guardrail 1,
+ * Wallet address validation for the wizard. One rule above all others (CONTRIBUTING.md, zero custody,
  * zero custody): only the PUBLIC address ever reaches us. A secret key pasted here is refused
  * loudly, with advice, and is never echoed back in the error.
  *

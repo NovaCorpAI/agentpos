@@ -1,6 +1,5 @@
 /**
- * Read-only merchant API under `{base}/api/merchant/*` (AgentPOS Cloud foundation,
- * plan/COMERCIAL.md phase 2).
+ * Read-only merchant API under `{base}/api/merchant/*` (the foundation a hosted service builds on).
  *
  * The bearer token (`MERCHANT_API_TOKEN`) belongs to the STORE OWNER: it lets them, or a
  * dashboard they authorize (AgentPOS Cloud), read their own orders, receipts, rules, health and

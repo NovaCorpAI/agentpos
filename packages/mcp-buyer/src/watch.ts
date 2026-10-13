@@ -4,7 +4,7 @@
  * through the existing BuyerService (createCart + buy, the exact machinery a direct purchase
  * uses, so the profile mandate applies unchanged), and reports the outcome back.
  *
- * Custody rule (CLAUDE.md #1): the wallet key never leaves this machine. buyer-web only ever
+ * Custody rule (CONTRIBUTING.md): the wallet key never leaves this machine. buyer-web only ever
  * learns the transaction hash. The bearer token authorizes this daemon against the buyer's
  * OWN buyer-web instance and nothing else; it is read from AGENTPOS_SIGNER_TOKEN (never a
  * CLI flag: flags leak into process lists).

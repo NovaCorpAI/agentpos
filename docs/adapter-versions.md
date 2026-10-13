@@ -32,8 +32,7 @@ existed in DNS, corrected 2026-09-25): service `com.novacorplabs.agentpos`
   the merchant's fiat source price and USDC terms live in the UCP handler config and `/catalog`.
 
 - 2026-08-29: el facilitador rechaza toda verificacion en mainnet con
-  `unexpected_verify_error` (testnet OK con el mismo codigo). Ver
-  `docs/INCIDENT-mainnet-facilitator.md`. Bloquea G2 por causa externa.
+  `unexpected_verify_error` (testnet OK con el mismo codigo). Bloquea G2 por causa externa.
 - 2026-08-29 (G3, correccion): **el pin de UCP estaba mal**. `2026-01-01` nunca
   fue un snapshot publicado y sus URLs de esquema respondian 404. Los releases
   reales son `2026-01-11`, `2026-01-23`, `2026-04-08` y `2026-08-25`. Se

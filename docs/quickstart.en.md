@@ -271,4 +271,4 @@ merchants: the one we run is for our own tests and demo store.
 ## Going to mainnet
 
 Mainnet is locked behind `AGENTPOS_ALLOW_MAINNET=true` and a facilitator that settles
-`stellar:pubnet`. See `plan/ROADMAP.md`, gate G2.
+`stellar:pubnet`. See `docs/GATE-G1.md`.

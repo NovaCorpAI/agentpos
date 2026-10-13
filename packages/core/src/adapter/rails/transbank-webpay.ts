@@ -13,7 +13,7 @@
  *
  * This file is a THIN WRAPPER over Transbank's REST API v1.2 (adapter/versions.ts pins it). It
  * translates between that API and the `PaymentRail` interface and nothing else: the checkout,
- * the catalog and discovery do not change because this rail exists. See plan/RIELES.md.
+ * the catalog and discovery do not change because this rail exists.
  *
  * A card settlement produces no ledger transaction. The rail's settlement reference is our own
  * buy order, which is unique; Transbank's authorization code travels in the raw response.

@@ -1,0 +1,12 @@
+# Findings reviewed by hand on 2026-10-07 and confirmed as test fixtures, never credentials:
+# Transbank's public integration key, made-up WooCommerce-shaped keys, test passwords and a
+# made-up facilitator key. One fingerprint per finding, so a new secret in the same file still fails.
+
+1fc378ab4f0ec050396b835715ba9a75d03e72b8:apps/buyer-web/src/test-utils.ts:generic-api-key:237
+25f318e6b787ea0d23d8436a2ecb468a21abd1a2:packages/site/src/checkout-card.test.ts:generic-api-key:120
+5ec4bbc34dff656253cc2389617af4a011c62d3f:apps/buyer-web/src/recovery.test.ts:generic-api-key:39
+6d66672a42cff7799cd1295d3cefce363a5f8efe:apps/merchant-web/src/app.test.ts:generic-api-key:302
+bad78b44b9a3d6d7c6a997b14174aeb6539d9e0e:apps/merchant-web/src/app.test.ts:generic-api-key:561
+bad78b44b9a3d6d7c6a997b14174aeb6539d9e0e:apps/merchant-web/src/app.test.ts:woocommerce-consumer-secret:562
+f5639dbe9db40acd937944488187ab1e1a9fd970:packages/core/src/adapter/rails/transbank-webpay.test.ts:generic-api-key:12
+f6c7e1a0c59641a877cfc5078f7667e1fc6841ea:packages/site/src/merchant-api.test.ts:generic-api-key:18

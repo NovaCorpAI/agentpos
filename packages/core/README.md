@@ -28,7 +28,7 @@ A **rail** is one way a store can be paid. There are two: x402 / USDC over Stell
 (`org.x402.stellar`, settles on the ledger) and Transbank Webpay / Oneclick for cards in Chile
 (`cl.transbank.webpay`, settles at the merchant's own acquirer). The `PaymentRail` interface is
 what makes the second an addition rather than a rewrite, and what the next one (a network agentic
-credential, plan/RIELES.md) will implement too.
+credential) will implement too.
 
 ```ts
 import { createTransbankRail, fiatMinor, minorAmount } from "@agentpos/core";

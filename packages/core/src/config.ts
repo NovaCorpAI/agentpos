@@ -7,7 +7,7 @@ export type NetworkName = (typeof NETWORKS)[number];
 /**
  * Built on Stellar public facilitator (OpenZeppelin Relayer).
  * Source: https://developers.stellar.org/docs/build/agentic-payments/x402/built-on-stellar
- * Verified 2026-08-25. Re-verify before changing (CLAUDE.md, Stack).
+ * Verified 2026-08-25. Re-verify before changing.
  */
 export const FACILITATOR_URLS: Record<NetworkName, string> = {
   testnet: "https://channels.openzeppelin.com/x402/testnet",

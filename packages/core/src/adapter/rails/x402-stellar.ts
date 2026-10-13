@@ -9,7 +9,7 @@
  *
  * Its whole job is to present that one code path through the `PaymentRail` interface, so the next
  * rail (a merchant fiat acquirer, a network agentic credential) is an addition rather than a
- * rewrite. See plan/RIELES.md.
+ * rewrite.
  */
 import type { CoreConfig } from "../../config.js";
 import { AgentPOSError } from "../../errors.js";

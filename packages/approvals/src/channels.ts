@@ -96,7 +96,7 @@ export interface TwilioWhatsAppOptions {
   baseUrl?: string;
 }
 
-/** Thin HTTP client, no vendor SDK (CLAUDE.md: no lock-in dependencies). */
+/** Thin HTTP client, no vendor SDK (no lock-in dependencies). */
 export class TwilioWhatsAppChannel implements NotificationChannel {
   readonly name = "whatsapp";
   constructor(private readonly options: TwilioWhatsAppOptions) {}
