@@ -16,7 +16,23 @@ quote a cart, pay the `402 Payment Required` challenge in USDC on Stellar, and t
 the merchant's own admin (WooCommerce today, generic hook for custom stacks, Shopify next) —
 **only after the payment settled on-chain**, with the transaction hash attached.
 
-Proven in production: real mainnet sales, settled end to end, with verifiable hashes.
+Proven in production: real purchases settled in USDC on Stellar mainnet, each one linked to its
+transaction in [`docs/EVIDENCE.md`](docs/EVIDENCE.md).
+
+## See it work in two minutes
+
+- **Watch**: the [3-minute pitch](https://youtu.be/RJE-ytsKJxk) (Spanish, English subtitles),
+  with a real purchase on mainnet.
+- **Open**: the live store at <https://demo.agentposhq.com> and what an agent reads from it,
+  <https://demo.agentposhq.com/.well-known/ucp>.
+- **Try**: quote a cart and get the `402 Payment Required` challenge, no wallet needed:
+
+  ```bash
+  curl -s -X POST https://demo.agentposhq.com/agentpos/cart     -H "content-type: application/json"     -d '{"items":[{"itemId":"apoya-agentpos-ap-support","quantity":1}]}'
+  ```
+
+- **Verify**: four mainnet purchases with their transactions, and what is not proven yet, in
+  [`docs/EVIDENCE.md`](docs/EVIDENCE.md).
 
 ## What makes it different
 
@@ -119,4 +135,4 @@ marketplace, no order without settled payment) are not up for debate.
 
 ---
 
-Built by [NovaCorpAI](https://agentgate.novacorplabs.com) · Apache-2.0
+Built by [NovaCorpAI](https://agentposhq.com) · Apache-2.0

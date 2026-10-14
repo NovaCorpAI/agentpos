@@ -27,16 +27,16 @@
   },
   "dependencies": {
     "@agentpos/core": "workspace:*",
-    "@hono/node-server": "^2.1.1",
-    "@stellar/stellar-sdk": "^16.2.0",
+    "@hono/node-server": "^2.1.4",
+    "@stellar/stellar-sdk": "^16.3.1",
     "@x402/core": "2.23.0",
     "@x402/stellar": "2.23.0",
-    "hono": "^4.13.4",
-    "zod": "^4.4.3"
+    "hono": "^4.13.13",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@types/node": "^24.13.3",
-    "tsx": "^4.23.12",
+    "@types/node": "^24.19.2",
+    "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vitest": "^4.1.11"
   }

@@ -27,10 +27,10 @@
   },
   "dependencies": {
     "@agentpos/core": "workspace:*",
-    "zod": "^4.4.3"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@types/node": "^24.13.3",
+    "@types/node": "^24.19.2",
     "typescript": "^5.9.3",
     "vitest": "^4.1.11"
   }

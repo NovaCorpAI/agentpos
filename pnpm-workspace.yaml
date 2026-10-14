@@ -22,3 +22,5 @@ minimumReleaseAgeExclude:
 overrides:
   # GHSA-4mjr-xmp4-gh2g: qs < 6.16.0 (transitive via @modelcontextprotocol/sdk).
   qs: ">=6.16.0"
+  # axios < 1.20.0 (transitive via @stellar/stellar-sdk): ReDoS and prototype-pollution advisories.
+  axios: ">=1.20.0"
