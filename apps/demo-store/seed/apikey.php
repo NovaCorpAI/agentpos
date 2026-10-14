@@ -4,8 +4,8 @@
  * WooCommerce stores consumer_key as wc_api_hash() (HMAC-SHA256 with key 'wc-api') and the
  * consumer_secret in clear. Demo-only credentials, not secrets.
  */
-$ck = getenv('AG_DEMO_CK') ?: 'ck_agentposdemo000000000000000000000000000';
-$cs = getenv('AG_DEMO_CS') ?: 'cs_agentposdemo000000000000000000000000000';
+$ck = getenv('AG_DEMO_CK') ?: 'ck_agentposdemo0000000000000000000000000000';
+$cs = getenv('AG_DEMO_CS') ?: 'cs_agentposdemo0000000000000000000000000000';
 if (strlen($ck) !== 43 || strlen($cs) !== 43) {
     echo "[seed] ERROR: demo credentials must be exactly 43 chars (WooCommerce column size)\n";
     exit(1);

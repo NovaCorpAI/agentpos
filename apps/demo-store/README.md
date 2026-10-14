@@ -10,7 +10,7 @@ pnpm demo:down      # remove containers and volumes
 ```
 
 REST: `http://localhost:8080/wp-json/wc/v3/products` with basic auth
-`ck_agentposdemo000000000000000000000000000` / `cs_agentposdemo000000000000000000000000000`
+`ck_agentposdemo0000000000000000000000000000` / `cs_agentposdemo0000000000000000000000000000`
 (demo-only, not secrets; 43 chars each because WooCommerce stores secrets in a varchar(43)).
 
 Seeding is idempotent (`seed/seed.sh` + `seed/apikey.php`). First boot takes 1-3 minutes

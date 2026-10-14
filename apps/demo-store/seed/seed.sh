@@ -7,8 +7,8 @@ ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin}"
 # REST credentials. CI/local default to public demo values (NOT secrets; allowlisted in
 # .gitleaks.toml). Production passes SEED_CK/SEED_CS with real secrets via env.
 # Exactly 43 chars each: WooCommerce stores consumer_secret in a varchar(43) column.
-CK="${SEED_CK:-ck_agentposdemo000000000000000000000000000}"
-CS="${SEED_CS:-cs_agentposdemo000000000000000000000000000}"
+CK="${SEED_CK:-ck_agentposdemo0000000000000000000000000000}"
+CS="${SEED_CS:-cs_agentposdemo0000000000000000000000000000}"
 export AG_DEMO_CK="$CK" AG_DEMO_CS="$CS"
 
 echo "[seed] waiting for WordPress files..."

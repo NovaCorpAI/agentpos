@@ -47,9 +47,9 @@ for (const candidate of ["../../../.env", "../.env"]) {
 
 const WOO_URL = process.env.DEMO_STORE_URL ?? "http://localhost:8080";
 const WOO_CK =
-  process.env.AGENTPOS_WOO_CONSUMER_KEY ?? "ck_agentposdemo000000000000000000000000000";
+  process.env.AGENTPOS_WOO_CONSUMER_KEY ?? "ck_agentposdemo0000000000000000000000000000";
 const WOO_CS =
-  process.env.AGENTPOS_WOO_CONSUMER_SECRET ?? "cs_agentposdemo000000000000000000000000000";
+  process.env.AGENTPOS_WOO_CONSUMER_SECRET ?? "cs_agentposdemo0000000000000000000000000000";
 
 /**
  * Mainnet mode (G2 first real purchase): E2E_NETWORK=mainnet. No friendbot, no trustline
