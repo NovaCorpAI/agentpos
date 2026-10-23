@@ -64,7 +64,7 @@ export {
 } from "./proxy.js";
 export type { ProxyInput, ProxyTarget } from "./proxy.js";
 export { createAgentPOSApp, cartView, orderView } from "./app.js";
-export type { AgentPOSDeps, AgentPOSSite } from "./app.js";
+export type { AgentPOSDeps, AgentPOSSite, X402StoreNetwork } from "./app.js";
 export { buildMcpServer, createMcpHandler } from "./mcp.js";
 export { TokenBucketLimiter } from "./ratelimit.js";
 export type { GateForPaymentResult } from "./checkout.js";

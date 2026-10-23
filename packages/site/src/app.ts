@@ -93,6 +93,11 @@ export interface X402StoreNetwork {
   payTo: string;
   /** Asset id on that network (the USDC contract). */
   asset: string;
+  /**
+   * Asset metadata the network's scheme needs in the 402, e.g. the EIP-712 domain of USDC on an
+   * EVM chain (`{ name: "USDC", version: "2" }`). Supplied by the rail, never by the merchant.
+   */
+  extra?: Record<string, unknown>;
 }
 
 export interface AgentPOSDeps {
@@ -988,7 +993,7 @@ export function createAgentPOSApp(deps: AgentPOSDeps): AgentPOSSite {
                 ).minor.toString(),
               }),
               maxTimeoutSeconds: 300,
-              extra: { adapterVersion: ADAPTER_VERSION },
+              extra: { ...n.extra, adapterVersion: ADAPTER_VERSION },
             })),
           ],
           description: `${site.displayName}: pay for a cart. Create one at ${routes.cart}.`,

@@ -70,6 +70,8 @@ export interface ExtraAccept {
   asset: string;
   /** Price in that network's USDC minor unit (use `usdcOnChain`). */
   amount: MinorAmount;
+  /** Asset metadata the scheme needs (EVM: the USDC EIP-712 domain name and version). */
+  extra?: Record<string, unknown>;
 }
 
 function isFacilitatorClient(f: FacilitatorConfig | FacilitatorClient): f is FacilitatorClient {
@@ -339,6 +341,7 @@ export function buildRouteConfig(
         ? { maxTimeoutSeconds: terms.maxTimeoutSeconds }
         : {}),
       extra: {
+        ...extra.extra,
         adapterVersion: ADAPTER_VERSION,
         ...(terms.reference ? { reference: terms.reference } : {}),
       },
