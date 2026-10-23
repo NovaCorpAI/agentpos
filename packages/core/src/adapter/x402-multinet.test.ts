@@ -9,7 +9,13 @@ import {
 } from "../chain.js";
 import { AgentPOSError } from "../errors.js";
 import { usdc } from "../money.js";
-import { buildRouteConfig, createResourceServer } from "./x402.js";
+import {
+  assertNetworkAllowed,
+  buildRouteConfig,
+  checkNetworkFacilitators,
+  createResourceServer,
+  healthyOnly,
+} from "./x402.js";
 import type { FacilitatorClient, SchemeNetworkServer } from "./x402.js";
 
 const ARC_TESTNET = "eip155:5042002";
@@ -107,5 +113,131 @@ describe("x402 on more than one network", () => {
         ]),
       ),
     ).toBe("CHAIN_UNKNOWN");
+  });
+});
+
+describe("guardrail 2 on extra networks", () => {
+  const ARC_MAINNET = "eip155:5042";
+  beforeEach(() =>
+    registerChainProfile({
+      caip2: ARC_MAINNET,
+      family: "eip155",
+      label: "Arc",
+      testnet: false,
+      usdcDecimals: 6,
+      isValidAddress: FAMILY_ADDRESS_CHECKS.eip155,
+    }),
+  );
+
+  it("never lets a testnet store charge on a mainnet", () => {
+    expect(codeOf(() => assertNetworkAllowed(resolveConfig(), ARC_MAINNET))).toBe("CONFIG_INVALID");
+  });
+
+  it("never lets a mainnet store charge on a testnet", () => {
+    const main = resolveConfig({
+      network: "mainnet",
+      allowMainnet: true,
+      rpcUrl: "https://rpc.example",
+    });
+    expect(codeOf(() => assertNetworkAllowed(main, ARC_TESTNET))).toBe("CONFIG_INVALID");
+  });
+
+  it("keeps a new mainnet locked until its own gate closes, even with the flag", () => {
+    const main = resolveConfig({
+      network: "mainnet",
+      allowMainnet: true,
+      rpcUrl: "https://rpc.example",
+    });
+    expect(codeOf(() => assertNetworkAllowed(main, ARC_MAINNET))).toBe("MAINNET_NOT_CONFIRMED");
+    expect(() => assertNetworkAllowed(main, "stellar:pubnet")).not.toThrow();
+  });
+
+  it("applies the gate to every entry point", () => {
+    const cfg = resolveConfig();
+    expect(
+      codeOf(() =>
+        createResourceServer(cfg, stubFacilitator, [
+          { network: ARC_MAINNET, server: stubScheme, facilitator: stubFacilitator },
+        ]),
+      ),
+    ).toBe("CONFIG_INVALID");
+    expect(
+      codeOf(() =>
+        buildRouteConfig(cfg, { payTo: Keypair.random().publicKey(), amount: usdc("1") }, [
+          {
+            network: ARC_MAINNET,
+            payTo: MERCHANT_EVM,
+            asset: ARC_USDC,
+            amount: usdcOnChain(usdc("1"), ARC_MAINNET),
+          },
+        ]),
+      ),
+    ).toBe("CONFIG_INVALID");
+  });
+});
+
+describe("facilitator health per network", () => {
+  const facilitatorWith = (impl: () => Promise<unknown>) =>
+    ({ ...stubFacilitator, getSupported: impl }) as unknown as FacilitatorClient;
+
+  it("reports each network on its own and degrades to the healthy ones", async () => {
+    registerChainProfile({
+      caip2: "eip155:84532",
+      family: "eip155",
+      label: "Base Sepolia",
+      testnet: true,
+      usdcDecimals: 6,
+      isValidAddress: FAMILY_ADDRESS_CHECKS.eip155,
+    });
+    const health = await checkNetworkFacilitators(
+      [
+        {
+          network: ARC_TESTNET,
+          server: stubScheme,
+          facilitator: facilitatorWith(async () => ({
+            kinds: [{ x402Version: 2, scheme: "exact", network: ARC_TESTNET }],
+          })),
+        },
+        {
+          network: "eip155:84532",
+          server: stubScheme,
+          facilitator: facilitatorWith(async () => {
+            throw new Error("503");
+          }),
+        },
+      ],
+      1_000,
+    );
+    expect(health.map((h) => [h.network, h.ok])).toEqual([
+      [ARC_TESTNET, true],
+      ["eip155:84532", false],
+    ]);
+    const options = [{ network: ARC_TESTNET }, { network: "eip155:84532" }];
+    expect(healthyOnly(options, health)).toEqual([{ network: ARC_TESTNET }]);
+  });
+
+  it("marks a facilitator that does not settle this network as unhealthy, and times out", async () => {
+    const [wrongNetwork] = await checkNetworkFacilitators([
+      {
+        network: ARC_TESTNET,
+        server: stubScheme,
+        facilitator: facilitatorWith(async () => ({
+          kinds: [{ x402Version: 2, scheme: "exact", network: "eip155:1" }],
+        })),
+      },
+    ]);
+    expect(wrongNetwork?.supportsNetwork).toBe(false);
+    const [slow] = await checkNetworkFacilitators(
+      [
+        {
+          network: ARC_TESTNET,
+          server: stubScheme,
+          facilitator: facilitatorWith(() => new Promise(() => {})),
+        },
+      ],
+      50,
+    );
+    expect(slow?.ok).toBe(false);
+    expect(slow?.error).toContain("timeout");
   });
 });

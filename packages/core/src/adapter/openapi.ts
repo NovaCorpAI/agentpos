@@ -89,7 +89,10 @@ export function buildStoreOpenApi(input: StoreOpenApiInput): Record<string, unkn
             type: "object",
             properties: {
               adapterVersion: { type: "string" },
-              site: { type: "object", properties: { name: { type: "string" }, url: { type: "string" } } },
+              site: {
+                type: "object",
+                properties: { name: { type: "string" }, url: { type: "string" } },
+              },
               payment: {
                 type: "object",
                 properties: {
@@ -165,7 +168,10 @@ export function buildStoreOpenApi(input: StoreOpenApiInput): Record<string, unkn
                   },
                   buyer: {
                     type: "object",
-                    properties: { email: { type: "string", format: "email" }, name: { type: "string" } },
+                    properties: {
+                      email: { type: "string", format: "email" },
+                      name: { type: "string" },
+                    },
                     required: ["email"],
                   },
                   shipping: {
@@ -270,9 +276,7 @@ export function buildStoreOpenApi(input: StoreOpenApiInput): Record<string, unkn
         operationId: "getOrder",
         summary: "Order - status, payment and the merchant's order id",
         tags: ["Orders"],
-        parameters: [
-          { name: "orderId", in: "path", required: true, schema: { type: "string" } },
-        ],
+        parameters: [{ name: "orderId", in: "path", required: true, schema: { type: "string" } }],
         responses: {
           200: jsonResponse("The order as the merchant sees it.", {
             type: "object",

@@ -21,6 +21,7 @@ import { ExactStellarScheme as ExactStellarServerScheme } from "@x402/stellar/ex
 import { ExactStellarScheme as ExactStellarClientScheme } from "@x402/stellar/exact/client";
 import { getNetworkPassphrase, getUsdcAddress } from "@x402/stellar";
 import type { CoreConfig } from "../config.js";
+import { MAINNET_READY_NETWORKS } from "../config.js";
 import type { UsdcMinor } from "../money.js";
 import type { MinorAmount } from "./rails.js";
 import { assertAddressFor, requireChainProfile } from "../chain.js";
@@ -73,6 +74,52 @@ export interface ExtraAccept {
 
 function isFacilitatorClient(f: FacilitatorConfig | FacilitatorClient): f is FacilitatorClient {
   return typeof (f as FacilitatorClient).verify === "function";
+}
+
+function toFacilitatorClient(f: FacilitatorConfig | FacilitatorClient): FacilitatorClient {
+  return isFacilitatorClient(f) ? f : new HTTPFacilitatorClient(f);
+}
+
+/**
+ * Guardrail 2 for every network a rail adds. A testnet store never charges on a mainnet (and a
+ * mainnet store never on a testnet); a mainnet network needs the explicit flag AND its own
+ * production gate in MAINNET_READY_NETWORKS, which today holds Stellar only.
+ */
+export function assertNetworkAllowed(config: CoreConfig, network: string): void {
+  const profile = requireChainProfile(network);
+  const storeIsTestnet = config.network === "testnet";
+  if (profile.testnet !== storeIsTestnet) {
+    throw new AgentPOSError(
+      "CONFIG_INVALID",
+      `${profile.label} is a ${profile.testnet ? "test" : "main"} network but this store runs on ${config.network}`,
+      {
+        hint: "Pair testnet with testnet and mainnet with mainnet; a test store must never move real money.",
+        details: { network, storeNetwork: config.network },
+      },
+    );
+  }
+  if (!profile.testnet) {
+    if (!config.allowMainnet) {
+      throw new AgentPOSError(
+        "MAINNET_NOT_CONFIRMED",
+        `${profile.label} mainnet requires an explicit flag`,
+        {
+          hint: "Set allowMainnet: true (AGENTPOS_ALLOW_MAINNET=true) after the founder confirms.",
+          details: { network },
+        },
+      );
+    }
+    if (!MAINNET_READY_NETWORKS.has(network)) {
+      throw new AgentPOSError(
+        "MAINNET_NOT_CONFIRMED",
+        `${profile.label} mainnet is locked: its production gate is not closed in this release`,
+        {
+          hint: "A network joins MAINNET_READY_NETWORKS (packages/core/src/config.ts) only after its own gate is green on testnet and the founder confirms.",
+          details: { network, ready: [...MAINNET_READY_NETWORKS] },
+        },
+      );
+    }
+  }
 }
 
 export type CheckoutAsset = "USDC" | "XLM";
@@ -161,6 +208,68 @@ export async function checkFacilitator(
   }
 }
 
+/** Facilitator health for one extra network. */
+export interface NetworkFacilitatorHealth extends FacilitatorHealth {
+  network: string;
+}
+
+/**
+ * Asks each extra network's facilitator whether it is up and settles the exact scheme there.
+ * One slow or failing facilitator never blocks the others or the Stellar checkout: each check
+ * has its own timeout and its own result.
+ */
+export async function checkNetworkFacilitators(
+  extensions: ReadonlyArray<X402NetworkExtension>,
+  timeoutMs = 10_000,
+): Promise<NetworkFacilitatorHealth[]> {
+  return Promise.all(
+    extensions.map(async (ext): Promise<NetworkFacilitatorHealth> => {
+      const checkedAt = new Date().toISOString();
+      try {
+        const client = toFacilitatorClient(ext.facilitator);
+        const supported = await Promise.race([
+          client.getSupported(),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error(`timeout after ${timeoutMs} ms`)), timeoutMs),
+          ),
+        ]);
+        const supportsNetwork = supported.kinds.some(
+          (k) => k.scheme === PROTOCOL_VERSIONS.x402.scheme && k.network === ext.network,
+        );
+        return {
+          network: ext.network,
+          ok: supportsNetwork,
+          status: 200,
+          supportsNetwork,
+          checkedAt,
+        };
+      } catch (err) {
+        return {
+          network: ext.network,
+          ok: false,
+          status: undefined,
+          supportsNetwork: false,
+          checkedAt,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    }),
+  );
+}
+
+/**
+ * Degrades instead of failing: keeps only the extra payment options whose network's
+ * facilitator is healthy, so an outage on one network leaves the store payable on the rest
+ * (Stellar always stays, it is not an extra).
+ */
+export function healthyOnly<T extends { network: string }>(
+  items: ReadonlyArray<T>,
+  health: ReadonlyArray<NetworkFacilitatorHealth>,
+): T[] {
+  const up = new Set(health.filter((h) => h.ok).map((h) => h.network));
+  return items.filter((item) => up.has(item.network));
+}
+
 /**
  * Resource (seller) side: an x402ResourceServer bound to the Stellar exact scheme.
  * Pass a custom FacilitatorClient only in tests (stub); production always uses the HTTP client.
@@ -172,12 +281,8 @@ export function createResourceServer(
 ): x402ResourceServer {
   const clients: FacilitatorClient[] = [facilitator ?? facilitatorClient(config)];
   for (const ext of extensions) {
-    requireChainProfile(ext.network);
-    clients.push(
-      isFacilitatorClient(ext.facilitator)
-        ? ext.facilitator
-        : new HTTPFacilitatorClient(ext.facilitator),
-    );
+    assertNetworkAllowed(config, ext.network);
+    clients.push(toFacilitatorClient(ext.facilitator));
   }
   let server = new x402ResourceServer(clients).register(
     config.caip2,
@@ -208,6 +313,7 @@ export function buildRouteConfig(
     },
   };
   const extras = extraAccepts.map((extra) => {
+    assertNetworkAllowed(config, extra.network);
     const profile = requireChainProfile(extra.network);
     assertAddressFor(extra.network, extra.payTo);
     if (extra.amount.currency !== "USDC" || extra.amount.decimals !== profile.usdcDecimals) {
@@ -323,7 +429,7 @@ export function createBuyerClient(
     schemes: [
       { network: config.caip2, client: scheme },
       ...extensions.map((ext) => {
-        requireChainProfile(ext.network);
+        assertNetworkAllowed(config, ext.network);
         return { network: ext.network as Network, client: ext.client };
       }),
     ],
