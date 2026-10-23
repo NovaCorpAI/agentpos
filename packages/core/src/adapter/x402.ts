@@ -8,9 +8,12 @@ import type { FacilitatorClient, FacilitatorConfig, RouteConfig } from "@x402/co
 import { x402Client, x402HTTPClient } from "@x402/core/client";
 import { wrapFetchWithPayment } from "@x402/fetch";
 import type {
+  Network,
   PaymentPayload,
   PaymentRequired,
   PaymentRequirements,
+  SchemeNetworkClient,
+  SchemeNetworkServer,
   SettleResponse,
   VerifyResponse,
 } from "@x402/core/types";
@@ -19,6 +22,8 @@ import { ExactStellarScheme as ExactStellarClientScheme } from "@x402/stellar/ex
 import { getNetworkPassphrase, getUsdcAddress } from "@x402/stellar";
 import type { CoreConfig } from "../config.js";
 import type { UsdcMinor } from "../money.js";
+import type { MinorAmount } from "./rails.js";
+import { assertAddressFor, requireChainProfile } from "../chain.js";
 import { usdcFromMinor } from "../money.js";
 import type { SignerProvider } from "../signer.js";
 import { AgentPOSError } from "../errors.js";
@@ -34,7 +39,41 @@ export type {
   PaymentRequirements,
   VerifyResponse,
   x402ResourceServer,
+  // Rail packages implement these with their chain's official x402 package.
+  SchemeNetworkServer,
+  SchemeNetworkClient,
+  FacilitatorConfig,
 };
+
+/**
+ * Another network a rail package adds to this store's x402 checkout, next to Stellar. The rail
+ * brings the official x402 scheme for its chain (for example `ExactEvmScheme` from `@x402/evm`)
+ * and the facilitator that settles there; the core only wires them in. The network must have a
+ * registered {@link ChainProfile} (see `registerChainProfile`).
+ */
+export interface X402NetworkExtension {
+  /** CAIP-2 id, e.g. "eip155:5042". */
+  network: string;
+  /** Seller-side scheme for this network. */
+  server: SchemeNetworkServer;
+  /** Facilitator that verifies and settles on this network: a config or a ready client. */
+  facilitator: FacilitatorConfig | FacilitatorClient;
+}
+
+/** One more way to pay the same route: same price, settled on another network. */
+export interface ExtraAccept {
+  network: string;
+  /** Merchant's own receiving address on that network. Never ours. */
+  payTo: string;
+  /** Asset id on that network (for EVM, the USDC contract address). */
+  asset: string;
+  /** Price in that network's USDC minor unit (use `usdcOnChain`). */
+  amount: MinorAmount;
+}
+
+function isFacilitatorClient(f: FacilitatorConfig | FacilitatorClient): f is FacilitatorClient {
+  return typeof (f as FacilitatorClient).verify === "function";
+}
 
 export type CheckoutAsset = "USDC" | "XLM";
 
@@ -129,15 +168,31 @@ export async function checkFacilitator(
 export function createResourceServer(
   config: CoreConfig,
   facilitator?: FacilitatorClient,
+  extensions: ReadonlyArray<X402NetworkExtension> = [],
 ): x402ResourceServer {
-  return new x402ResourceServer(facilitator ?? facilitatorClient(config)).register(
+  const clients: FacilitatorClient[] = [facilitator ?? facilitatorClient(config)];
+  for (const ext of extensions) {
+    requireChainProfile(ext.network);
+    clients.push(
+      isFacilitatorClient(ext.facilitator)
+        ? ext.facilitator
+        : new HTTPFacilitatorClient(ext.facilitator),
+    );
+  }
+  let server = new x402ResourceServer(clients).register(
     config.caip2,
     new ExactStellarServerScheme(),
   );
+  for (const ext of extensions) server = server.register(ext.network as Network, ext.server);
+  return server;
 }
 
 /** Builds a RouteConfig entry for the SDK middlewares from integer terms. */
-export function buildRouteConfig(config: CoreConfig, terms: PaymentTerms): RouteConfig {
+export function buildRouteConfig(
+  config: CoreConfig,
+  terms: PaymentTerms,
+  extraAccepts: ReadonlyArray<ExtraAccept> = [],
+): RouteConfig {
   const accept = {
     scheme: PROTOCOL_VERSIONS.x402.scheme,
     network: config.caip2,
@@ -152,8 +207,39 @@ export function buildRouteConfig(config: CoreConfig, terms: PaymentTerms): Route
       ...(terms.reference ? { reference: terms.reference } : {}),
     },
   };
+  const extras = extraAccepts.map((extra) => {
+    const profile = requireChainProfile(extra.network);
+    assertAddressFor(extra.network, extra.payTo);
+    if (extra.amount.currency !== "USDC" || extra.amount.decimals !== profile.usdcDecimals) {
+      throw new AgentPOSError(
+        "INVALID_AMOUNT",
+        `Price for ${profile.label} must be USDC with ${profile.usdcDecimals} decimals`,
+        {
+          hint: "Convert the catalog price with usdcOnChain(price, network); never reuse the Stellar amount.",
+          details: {
+            network: extra.network,
+            currency: extra.amount.currency,
+            decimals: extra.amount.decimals,
+          },
+        },
+      );
+    }
+    return {
+      scheme: PROTOCOL_VERSIONS.x402.scheme,
+      network: extra.network as Network,
+      payTo: extra.payTo,
+      price: { asset: extra.asset, amount: extra.amount.minor.toString() },
+      ...(terms.maxTimeoutSeconds !== undefined
+        ? { maxTimeoutSeconds: terms.maxTimeoutSeconds }
+        : {}),
+      extra: {
+        adapterVersion: ADAPTER_VERSION,
+        ...(terms.reference ? { reference: terms.reference } : {}),
+      },
+    };
+  });
   return {
-    accepts: [accept],
+    accepts: [accept, ...extras],
     ...(terms.description ? { description: terms.description } : {}),
     mimeType: "application/json",
   };
@@ -211,18 +297,36 @@ export interface BuyerLimits {
   maxPerPayment: UsdcMinor;
 }
 
+/** Another network the buyer may pay on, brought by a rail package. */
+export interface BuyerNetworkExtension {
+  network: string;
+  /** Buyer-side scheme for that network, already bound to the buyer's own signer. */
+  client: SchemeNetworkClient;
+  /** Asset id the buyer allows on that network (the USDC contract). */
+  asset: string;
+  /** Per-payment ceiling in that network's minor unit (use `usdcOnChain` on the same limit). */
+  maxPerPayment: MinorAmount;
+}
+
 /** Buyer side: HTTP client that signs auth entries with the given signer, bounded by limits. */
 export function createBuyerClient(
   config: CoreConfig,
   signer: SignerProvider,
   limits: BuyerLimits,
+  extensions: ReadonlyArray<BuyerNetworkExtension> = [],
 ): x402HTTPClient {
   const scheme = new ExactStellarClientScheme(
     signer,
     config.rpcUrl ? { url: config.rpcUrl } : undefined,
   );
   const core = x402Client.fromConfig({
-    schemes: [{ network: config.caip2, client: scheme }],
+    schemes: [
+      { network: config.caip2, client: scheme },
+      ...extensions.map((ext) => {
+        requireChainProfile(ext.network);
+        return { network: ext.network as Network, client: ext.client };
+      }),
+    ],
     spendControls: {
       // Only the configured checkout asset on the configured network, capped in atomic units.
       maxAmountPerPayment: false,
@@ -232,6 +336,11 @@ export function createBuyerClient(
           asset: assetAddress(config),
           maxAmountPerPayment: limits.maxPerPayment.toString(),
         },
+        ...extensions.map((ext) => ({
+          network: ext.network as Network,
+          asset: ext.asset,
+          maxAmountPerPayment: ext.maxPerPayment.minor.toString(),
+        })),
       ],
     },
   });
