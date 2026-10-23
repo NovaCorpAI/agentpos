@@ -1,8 +1,24 @@
 {
   "name": "@agentpos/connectors",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "AgentPOS order connectors: WooCommerce (REST v3), generic hook. Shopify lands in Phase 2.",
   "license": "Apache-2.0",
+  "homepage": "https://agentposhq.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NovaCorpAI/agentpos.git",
+    "directory": "packages/connectors"
+  },
+  "bugs": {
+    "url": "https://github.com/NovaCorpAI/agentpos/issues"
+  },
+  "engines": {
+    "node": ">=22.5"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -23,7 +39,7 @@
     "lint": "eslint src"
   },
   "dependencies": {
-    "@agentpos/core": "workspace:*",
+    "@agentpos/core": "workspace:^",
     "zod": "^4.6.7"
   },
   "devDependencies": {

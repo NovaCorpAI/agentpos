@@ -1,8 +1,24 @@
 {
   "name": "@agentpos/approvals",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "AgentPOS human approval queue: orders above the merchant policy threshold pause, notify the merchant and settle only against an immutable snapshot they approved.",
   "license": "Apache-2.0",
+  "homepage": "https://agentposhq.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NovaCorpAI/agentpos.git",
+    "directory": "packages/approvals"
+  },
+  "bugs": {
+    "url": "https://github.com/NovaCorpAI/agentpos/issues"
+  },
+  "engines": {
+    "node": ">=22.5"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -16,9 +32,6 @@
     "dist",
     "README.md"
   ],
-  "engines": {
-    "node": ">=22.5"
-  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.typecheck.json",
@@ -26,7 +39,7 @@
     "lint": "eslint src"
   },
   "dependencies": {
-    "@agentpos/core": "workspace:*",
+    "@agentpos/core": "workspace:^",
     "zod": "^4.6.7"
   },
   "devDependencies": {
