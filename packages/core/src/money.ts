@@ -110,5 +110,40 @@ export function compareUsdc(a: UsdcMinor, b: UsdcMinor): -1 | 0 | 1 {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
+/**
+ * Moves an integer amount between two minor units EXACTLY: 7 to 6 decimals divides by 10 only
+ * when nothing is lost, 6 to 7 multiplies. Never rounds (guardrail 4): an amount that cannot be
+ * represented in the target unit is an error, so a price is never silently changed when it is
+ * charged on a network whose USDC has fewer decimals.
+ */
+export function rescaleMinor(value: bigint, fromDecimals: number, toDecimals: number): bigint {
+  for (const d of [fromDecimals, toDecimals]) {
+    if (!Number.isInteger(d) || d < 0 || d > 18) {
+      throw new AgentPOSError("INVALID_AMOUNT", `Invalid minor-unit exponent: ${d}`, {
+        hint: "Decimals must be an integer between 0 and 18 (USDC is 7 on Stellar, 6 on EVM).",
+        details: { fromDecimals, toDecimals },
+      });
+    }
+  }
+  if (value < 0n) {
+    throw new AgentPOSError("INVALID_AMOUNT", "Amount cannot be negative", {
+      hint: "Amounts are unsigned integers in the asset's smallest unit.",
+    });
+  }
+  if (toDecimals >= fromDecimals) return value * 10n ** BigInt(toDecimals - fromDecimals);
+  const factor = 10n ** BigInt(fromDecimals - toDecimals);
+  if (value % factor !== 0n) {
+    throw new AgentPOSError(
+      "INVALID_AMOUNT",
+      `Amount has more precision than ${toDecimals} decimals allow`,
+      {
+        hint: `Price it with at most ${toDecimals} decimals; this network cannot charge the remainder and AgentPOS never rounds money.`,
+        details: { minor: value.toString(), fromDecimals, toDecimals },
+      },
+    );
+  }
+  return value / factor;
+}
+
 /** Minimum price accepted for a catalog item: 0.001 USDC. */
 export const MIN_PRICE_USDC: UsdcMinor = usdc("0.001");
