@@ -1,8 +1,24 @@
 {
   "name": "@agentpos/scanner",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "AgentPOS scanner: reads the merchant's own site (connector, sitemap, schema.org, pages) and proposes an agent catalog draft.",
   "license": "Apache-2.0",
+  "homepage": "https://agentposhq.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NovaCorpAI/agentpos.git",
+    "directory": "packages/scanner"
+  },
+  "bugs": {
+    "url": "https://github.com/NovaCorpAI/agentpos/issues"
+  },
+  "engines": {
+    "node": ">=22.5"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -23,7 +39,7 @@
     "lint": "eslint src"
   },
   "dependencies": {
-    "@agentpos/core": "workspace:*",
+    "@agentpos/core": "workspace:^",
     "cheerio": "^1.2.0",
     "fast-xml-parser": "^5.11.2",
     "zod": "^4.6.7"

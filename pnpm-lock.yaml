@@ -147,10 +147,22 @@ importers:
         specifier: ^4.1.11
         version: 4.1.11(@types/node@24.19.2)(vite@8.2.2(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15))
 
+  packages/agentpos:
+    dependencies:
+      '@agentpos/site':
+        specifier: workspace:^
+        version: link:../site
+
+  packages/agentpos-buyer:
+    dependencies:
+      '@agentpos/mcp-buyer':
+        specifier: workspace:^
+        version: link:../mcp-buyer
+
   packages/approvals:
     dependencies:
       '@agentpos/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../core
       zod:
         specifier: ^4.6.7
@@ -169,7 +181,7 @@ importers:
   packages/connectors:
     dependencies:
       '@agentpos/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../core
       zod:
         specifier: ^4.6.7
@@ -188,7 +200,7 @@ importers:
   packages/core:
     dependencies:
       '@agentpos/measure':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../measure
       '@stellar/stellar-sdk':
         specifier: ^16.3.1
@@ -228,7 +240,7 @@ importers:
   packages/identity:
     dependencies:
       '@agentpos/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../core
       '@stellar/stellar-sdk':
         specifier: ^16.3.1
@@ -250,7 +262,7 @@ importers:
   packages/mcp-buyer:
     dependencies:
       '@agentpos/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../core
       '@clack/prompts':
         specifier: ^1.8.1
@@ -272,13 +284,13 @@ importers:
         version: 4.6.7
     devDependencies:
       '@agentpos/connectors':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../connectors
       '@agentpos/scanner':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../scanner
       '@agentpos/site':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../site
       '@types/node':
         specifier: ^24.19.2
@@ -311,7 +323,7 @@ importers:
   packages/policy:
     dependencies:
       '@agentpos/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../core
       zod:
         specifier: ^4.6.7
@@ -330,7 +342,7 @@ importers:
   packages/receipts:
     dependencies:
       '@agentpos/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../core
       '@stellar/stellar-sdk':
         specifier: ^16.3.1
@@ -352,7 +364,7 @@ importers:
   packages/scanner:
     dependencies:
       '@agentpos/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../core
       cheerio:
         specifier: ^1.2.0
@@ -377,25 +389,25 @@ importers:
   packages/site:
     dependencies:
       '@agentpos/approvals':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../approvals
       '@agentpos/connectors':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../connectors
       '@agentpos/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../core
       '@agentpos/identity':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../identity
       '@agentpos/policy':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../policy
       '@agentpos/receipts':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../receipts
       '@agentpos/scanner':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../scanner
       '@clack/prompts':
         specifier: ^1.8.1
