@@ -4,6 +4,12 @@ Shared foundation for every AgentPOS package.
 
 - `config`: network (testnet default, mainnet gated), facilitator URLs, CAIP-2 ids, USDC issuers.
 - `money`: branded integer types (`UsdcMinor`, `Stroops`), 7 decimals, no floats.
+  `rescaleMinor` moves an amount between minor units exactly, and refuses to round.
+- `chain`: networks as data. CAIP-2 ids, a `ChainProfile` per network (USDC decimals on that
+  network, address check, explorer link) and a registry rail packages add to. Stellar ships
+  built in; `usdcOnChain(price, caip2)` expresses a catalog price in that network's USDC unit.
+- `wallet-proof`: proof that a merchant controls a receiving wallet, by signing a nonce
+  (guardrail 1). Stellar uses SEP-53; other families register their verifier.
 - `errors`: `AgentPOSError { code, message, hint, retryable }` with a closed code set.
 - `adapter/x402`: the only module that imports `@x402/*`. Resource server, route config with
   integer prices, buyer client, settle -> receipt.
@@ -95,3 +101,38 @@ merchant's and belong to `packages/policy`. Rail ids are permanent reverse-DNS s
 `adapter/versions.ts` (`PAYMENT_RAIL_IDS`, `RESERVED_PAYMENT_RAIL_IDS`).
 
 Scripts: `pnpm e2e:smoke` (testnet friendbot + trustline + payment, prints tx hashes).
+
+## Networks and wallet linking
+
+The core is neutral about which chain a store is paid on. A network is a `ChainProfile`:
+
+```ts
+import { registerChainProfile, FAMILY_ADDRESS_CHECKS, usdcOnChain, usdc } from "@agentpos/core";
+
+// A rail package registers its network once, at import.
+registerChainProfile({
+  caip2: "eip155:5042002",
+  family: "eip155",
+  label: "Arc testnet",
+  testnet: true,
+  usdcDecimals: 6,
+  isValidAddress: FAMILY_ADDRESS_CHECKS.eip155,
+});
+
+usdcOnChain(usdc("1.5"), "stellar:pubnet"); // { minor: 15000000n, decimals: 7 }
+usdcOnChain(usdc("1.5"), "eip155:5042002"); // { minor: 1500000n, decimals: 6 }
+usdcOnChain(usdc("1.2345678"), "eip155:5042002"); // INVALID_AMOUNT: never rounded
+```
+
+Linking a merchant wallet never touches a key: the store issues a challenge, the merchant signs
+it in their own wallet, the store verifies it.
+
+```ts
+const challenge = createWalletChallenge({
+  caip2: "stellar:pubnet",
+  address: "G...",
+  domain: "shop.example.com",
+});
+// ...the merchant signs challenge.message in Freighter (SEP-53)...
+await verifyWalletProof(challenge, signatureBase64); // throws WALLET_PROOF_INVALID / _EXPIRED
+```

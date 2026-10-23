@@ -88,11 +88,11 @@ importers:
         specifier: ^16.3.1
         version: 16.3.1(debug@4.4.3)
       '@x402/core':
-        specifier: 2.23.0
-        version: 2.23.0
+        specifier: 2.28.0
+        version: 2.28.0
       '@x402/stellar':
-        specifier: 2.23.0
-        version: 2.23.0(debug@4.4.3)
+        specifier: 2.28.0
+        version: 2.28.0(debug@4.4.3)
       hono:
         specifier: ^4.13.13
         version: 4.13.13
@@ -147,10 +147,22 @@ importers:
         specifier: ^4.1.11
         version: 4.1.11(@types/node@24.19.2)(vite@8.2.2(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15))
 
+  packages/agentpos:
+    dependencies:
+      '@agentpos/site':
+        specifier: workspace:^
+        version: link:../site
+
+  packages/agentpos-buyer:
+    dependencies:
+      '@agentpos/mcp-buyer':
+        specifier: workspace:^
+        version: link:../mcp-buyer
+
   packages/approvals:
     dependencies:
       '@agentpos/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../core
       zod:
         specifier: ^4.6.7
@@ -169,7 +181,7 @@ importers:
   packages/connectors:
     dependencies:
       '@agentpos/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../core
       zod:
         specifier: ^4.6.7
@@ -188,20 +200,20 @@ importers:
   packages/core:
     dependencies:
       '@agentpos/measure':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../measure
       '@stellar/stellar-sdk':
         specifier: ^16.3.1
         version: 16.3.1(debug@4.4.3)
       '@x402/core':
-        specifier: 2.23.0
-        version: 2.23.0
+        specifier: 2.28.0
+        version: 2.28.0
       '@x402/fetch':
-        specifier: 2.23.0
-        version: 2.23.0
+        specifier: 2.28.0
+        version: 2.28.0
       '@x402/stellar':
-        specifier: 2.23.0
-        version: 2.23.0(debug@4.4.3)
+        specifier: 2.28.0
+        version: 2.28.0(debug@4.4.3)
       ajv:
         specifier: ^8.20.0
         version: 8.20.0
@@ -228,7 +240,7 @@ importers:
   packages/identity:
     dependencies:
       '@agentpos/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../core
       '@stellar/stellar-sdk':
         specifier: ^16.3.1
@@ -250,7 +262,7 @@ importers:
   packages/mcp-buyer:
     dependencies:
       '@agentpos/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../core
       '@clack/prompts':
         specifier: ^1.8.1
@@ -272,20 +284,20 @@ importers:
         version: 4.6.7
     devDependencies:
       '@agentpos/connectors':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../connectors
       '@agentpos/scanner':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../scanner
       '@agentpos/site':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../site
       '@types/node':
         specifier: ^24.19.2
         version: 24.19.2
       '@x402/core':
-        specifier: 2.23.0
-        version: 2.23.0
+        specifier: 2.28.0
+        version: 2.28.0
       tsx:
         specifier: ^4.23.15
         version: 4.23.15
@@ -311,7 +323,7 @@ importers:
   packages/policy:
     dependencies:
       '@agentpos/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../core
       zod:
         specifier: ^4.6.7
@@ -330,7 +342,7 @@ importers:
   packages/receipts:
     dependencies:
       '@agentpos/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../core
       '@stellar/stellar-sdk':
         specifier: ^16.3.1
@@ -352,7 +364,7 @@ importers:
   packages/scanner:
     dependencies:
       '@agentpos/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../core
       cheerio:
         specifier: ^1.2.0
@@ -377,25 +389,25 @@ importers:
   packages/site:
     dependencies:
       '@agentpos/approvals':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../approvals
       '@agentpos/connectors':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../connectors
       '@agentpos/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../core
       '@agentpos/identity':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../identity
       '@agentpos/policy':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../policy
       '@agentpos/receipts':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../receipts
       '@agentpos/scanner':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../scanner
       '@clack/prompts':
         specifier: ^1.8.1
@@ -410,11 +422,11 @@ importers:
         specifier: ^16.3.1
         version: 16.3.1(debug@4.4.3)
       '@x402/core':
-        specifier: 2.23.0
-        version: 2.23.0
+        specifier: 2.28.0
+        version: 2.28.0
       '@x402/hono':
-        specifier: 2.23.0
-        version: 2.23.0(hono@4.13.13)(typescript@5.9.3)
+        specifier: 2.28.0
+        version: 2.28.0(hono@4.13.13)(typescript@5.9.3)
       commander:
         specifier: ^15.0.0
         version: 15.0.0
@@ -431,6 +443,9 @@ importers:
       '@types/node':
         specifier: ^24.19.2
         version: 24.19.2
+      '@x402/evm':
+        specifier: 2.28.0
+        version: 2.28.0(typescript@5.9.3)
       tsx:
         specifier: ^4.23.15
         version: 4.23.15
@@ -993,26 +1008,29 @@ packages:
   '@vitest/utils@4.1.11':
     resolution: {integrity: sha512-zTCVGpyFsGWBhllOyKlTw/vnr6D9qxsfSDyfbyZmTyjHw5N/VuvzHpHoQjm2ZJzn4RJgx5w4r7V0er69CmLgPQ==}
 
-  '@x402/core@2.23.0':
-    resolution: {integrity: sha512-EFeV0nXbTPPe5FXaD6y9vMgqc+k/ujLXCrUPrQXkmHjHyjC3Ir5tTL1e2FPSkx2+GUGzfpt1wVZb36639ygkWw==}
+  '@x402/core@2.28.0':
+    resolution: {integrity: sha512-Da/7zKxCKqpBoB4Msc9tFgkAv7tJTD8nG+DSSm+QdXAyJS4PQsmgVSKe17rDJTtlu0pwNbLcOje6MyQ6kaDkig==}
 
-  '@x402/extensions@2.23.0':
-    resolution: {integrity: sha512-K0hDWGNrQ5iU8CdDzM8RpYrMusfqs2rgZJbCfUnFXG61TjgFIYYyLExaP8jJ4y2ac0SGXYZC1MI+uJA6YP3TTw==}
+  '@x402/evm@2.28.0':
+    resolution: {integrity: sha512-BZuoaCKMoPQQuMTa4oibvoyI06WdCpgrzgdicUu8d+5NBMAfWb6LAmSQf1KkeiS8C+25/+2JGB4cHSL0VLGnSA==}
 
-  '@x402/fetch@2.23.0':
-    resolution: {integrity: sha512-iyUfmnX6eAQa+GxyhC2M/vDP49EuoB/KHCXeOAFJgfL9lhtsyomLfYAMZlF+0xYHgpk/G96QZSp8iyhVlems/A==}
+  '@x402/extensions@2.28.0':
+    resolution: {integrity: sha512-M3SVxO8DJnx7gpok/ODQp803jr21s1XrCMholNw0hSgOVvSPRksfTZ+CUNfJwteNaHmaAxGjPelXWBhTCMD9oQ==}
 
-  '@x402/hono@2.23.0':
-    resolution: {integrity: sha512-X0fnLcdEpwqf4toNT55OdfsffiSNvmQeCYLvHMpbSxmlKlFe5r33wrrAu+Vr1oTTg4ooulywsXNNg9tmx/PlzQ==}
+  '@x402/fetch@2.28.0':
+    resolution: {integrity: sha512-kF5IjZIz/izg2TD/Zav+SVj0jtC0zBDfE7WcKCnMZWIsZcLCyL2GgvwXCn7CCSsNjpQ/z3Rz4OqTCA4AaeKySQ==}
+
+  '@x402/hono@2.28.0':
+    resolution: {integrity: sha512-tR/AegvCpluj4AX1uYpqt0Ak7e3RcA2QE9GYrPCzwZTxv2z7gYUl7xE/olaxxDEiEb/yRmlsNAxmL81cARjeKw==}
     peerDependencies:
-      '@x402/paywall': ^2.23.0
+      '@x402/paywall': ^2.28.0
       hono: ^4.0.0
     peerDependenciesMeta:
       '@x402/paywall':
         optional: true
 
-  '@x402/stellar@2.23.0':
-    resolution: {integrity: sha512-WMhiTN3k0O2lO4T7g0DcUVF9Sh/YIzY4NMNFqyiRRN2bP3zEZZUmJBx4haH1H6HjgKON6V5ALeBwRDq6E+JLOw==}
+  '@x402/stellar@2.28.0':
+    resolution: {integrity: sha512-H/P46YVVEvJmnXlss8fJBNGgjaLkp3pWJ6PH2uOJY+jVemugUoQPArwtQKNovEV2BnF0gnJ+sdaRg+4Gucu6jQ==}
     engines: {node: '>=22.0.0'}
 
   abitype@1.2.3:
@@ -2617,16 +2635,26 @@ snapshots:
       convert-source-map: 2.0.0
       tinyrainbow: 3.2.0
 
-  '@x402/core@2.23.0':
+  '@x402/core@2.28.0':
     dependencies:
       zod: 3.25.76
 
-  '@x402/extensions@2.23.0(typescript@5.9.3)':
+  '@x402/evm@2.28.0(typescript@5.9.3)':
+    dependencies:
+      '@x402/core': 2.28.0
+      viem: 2.57.5(typescript@5.9.3)(zod@3.25.76)
+      zod: 3.25.76
+    transitivePeerDependencies:
+      - bufferutil
+      - typescript
+      - utf-8-validate
+
+  '@x402/extensions@2.28.0(typescript@5.9.3)':
     dependencies:
       '@noble/curves': 1.9.7
       '@scure/base': 1.2.6
       '@signinwithethereum/siwe': 4.2.1(viem@2.57.5(typescript@5.9.3)(zod@3.25.76))
-      '@x402/core': 2.23.0
+      '@x402/core': 2.28.0
       ajv: 8.20.0
       jose: 5.10.0
       tweetnacl: 1.0.3
@@ -2638,14 +2666,14 @@ snapshots:
       - typescript
       - utf-8-validate
 
-  '@x402/fetch@2.23.0':
+  '@x402/fetch@2.28.0':
     dependencies:
-      '@x402/core': 2.23.0
+      '@x402/core': 2.28.0
 
-  '@x402/hono@2.23.0(hono@4.13.13)(typescript@5.9.3)':
+  '@x402/hono@2.28.0(hono@4.13.13)(typescript@5.9.3)':
     dependencies:
-      '@x402/core': 2.23.0
-      '@x402/extensions': 2.23.0(typescript@5.9.3)
+      '@x402/core': 2.28.0
+      '@x402/extensions': 2.28.0(typescript@5.9.3)
       hono: 4.13.13
     transitivePeerDependencies:
       - bufferutil
@@ -2653,10 +2681,10 @@ snapshots:
       - typescript
       - utf-8-validate
 
-  '@x402/stellar@2.23.0(debug@4.4.3)':
+  '@x402/stellar@2.28.0(debug@4.4.3)':
     dependencies:
       '@stellar/stellar-sdk': 16.3.1(debug@4.4.3)
-      '@x402/core': 2.23.0
+      '@x402/core': 2.28.0
     transitivePeerDependencies:
       - debug
       - supports-color

@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Maintainers can run the testnet jobs on a branch before merging (they need repo secrets).
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -33,7 +35,7 @@ jobs:
 
   smoke-testnet:
     # Real Stellar testnet transaction (friendbot + trustline + payment). Runs on main only.
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     needs: verify
     runs-on: ubuntu-latest
     steps:
@@ -52,7 +54,7 @@ jobs:
   gate-g1:
     # Production gate report (docs/GATE-G1.md). Mainnet stays locked until this is green
     # and the founder flips MAINNET_READY.
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     needs: verify
     runs-on: ubuntu-latest
     env:
@@ -79,7 +81,7 @@ jobs:
   e2e-testnet:
     # Full loop: WooCommerce demo store in docker + real facilitator settlement on testnet.
     # Needs the AGENTPOS_FACILITATOR_API_KEY repository secret; skipped when absent.
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     needs: verify
     runs-on: ubuntu-latest
     env:

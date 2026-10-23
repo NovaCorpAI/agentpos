@@ -1,0 +1,33 @@
+{
+  "name": "agentpos-buyer",
+  "version": "0.1.0",
+  "description": "The `agentpos-buyer` command: a buyer agent under a human mandate (MCP server + CLI). Thin wrapper over @agentpos/mcp-buyer so `npx agentpos-buyer` works.",
+  "license": "Apache-2.0",
+  "homepage": "https://agentposhq.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NovaCorpAI/agentpos.git",
+    "directory": "packages/agentpos-buyer"
+  },
+  "bugs": {
+    "url": "https://github.com/NovaCorpAI/agentpos/issues"
+  },
+  "engines": {
+    "node": ">=22.5"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "type": "module",
+  "bin": {
+    "agentpos-buyer": "./bin/agentpos-buyer.js"
+  },
+  "files": [
+    "bin",
+    "README.md"
+  ],
+  "dependencies": {
+    "@agentpos/mcp-buyer": "workspace:^"
+  }
+}

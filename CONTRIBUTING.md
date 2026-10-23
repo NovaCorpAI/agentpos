@@ -68,6 +68,26 @@ pnpm demo:up      # optional: WooCommerce demo store in Docker, for e2e work
 The e2e against testnet needs a free facilitator API key; `docs/quickstart.en.md` explains
 where it comes from.
 
+## Releasing to npm
+
+Every public package under `packages/` ships together, with one version, from a tag:
+
+```bash
+pnpm release:check 0.2.0        # every package.json must already say 0.2.0
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+The `Release` workflow builds, lints, typechecks, tests, re-runs `release:check` against the
+tag, packs every package (the log shows exactly what is uploaded) and publishes with npm
+provenance. Packages already on the registry at that version are skipped, so re-running the
+workflow after a partial failure is safe. It needs the `NPM_TOKEN` secret in the `npm`
+environment of the repository; maintainers hold it, contributors never need it.
+
+Sibling packages depend on each other with `workspace:^`, which npm sees as `^0.2.0`: a patch
+of `@agentpos/core` does not force a republish of everything that uses it. `agentpos` and
+`agentpos-buyer` are unscoped wrappers that only re-export the binaries of `@agentpos/site`
+and `@agentpos/mcp-buyer`, so that `npx agentpos` works as the docs promise.
+
 ## Reporting security issues
 
 Do **not** open a public issue for anything that could affect payments, keys or receipts.

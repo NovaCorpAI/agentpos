@@ -8,9 +8,12 @@ import type { FacilitatorClient, FacilitatorConfig, RouteConfig } from "@x402/co
 import { x402Client, x402HTTPClient } from "@x402/core/client";
 import { wrapFetchWithPayment } from "@x402/fetch";
 import type {
+  Network,
   PaymentPayload,
   PaymentRequired,
   PaymentRequirements,
+  SchemeNetworkClient,
+  SchemeNetworkServer,
   SettleResponse,
   VerifyResponse,
 } from "@x402/core/types";
@@ -18,7 +21,10 @@ import { ExactStellarScheme as ExactStellarServerScheme } from "@x402/stellar/ex
 import { ExactStellarScheme as ExactStellarClientScheme } from "@x402/stellar/exact/client";
 import { getNetworkPassphrase, getUsdcAddress } from "@x402/stellar";
 import type { CoreConfig } from "../config.js";
+import { MAINNET_READY_NETWORKS } from "../config.js";
 import type { UsdcMinor } from "../money.js";
+import type { MinorAmount } from "./rails.js";
+import { assertAddressFor, requireChainProfile } from "../chain.js";
 import { usdcFromMinor } from "../money.js";
 import type { SignerProvider } from "../signer.js";
 import { AgentPOSError } from "../errors.js";
@@ -34,7 +40,89 @@ export type {
   PaymentRequirements,
   VerifyResponse,
   x402ResourceServer,
+  // Rail packages implement these with their chain's official x402 package.
+  SchemeNetworkServer,
+  SchemeNetworkClient,
+  FacilitatorConfig,
 };
+
+/**
+ * Another network a rail package adds to this store's x402 checkout, next to Stellar. The rail
+ * brings the official x402 scheme for its chain (for example `ExactEvmScheme` from `@x402/evm`)
+ * and the facilitator that settles there; the core only wires them in. The network must have a
+ * registered {@link ChainProfile} (see `registerChainProfile`).
+ */
+export interface X402NetworkExtension {
+  /** CAIP-2 id, e.g. "eip155:5042". */
+  network: string;
+  /** Seller-side scheme for this network. */
+  server: SchemeNetworkServer;
+  /** Facilitator that verifies and settles on this network: a config or a ready client. */
+  facilitator: FacilitatorConfig | FacilitatorClient;
+}
+
+/** One more way to pay the same route: same price, settled on another network. */
+export interface ExtraAccept {
+  network: string;
+  /** Merchant's own receiving address on that network. Never ours. */
+  payTo: string;
+  /** Asset id on that network (for EVM, the USDC contract address). */
+  asset: string;
+  /** Price in that network's USDC minor unit (use `usdcOnChain`). */
+  amount: MinorAmount;
+  /** Asset metadata the scheme needs (EVM: the USDC EIP-712 domain name and version). */
+  extra?: Record<string, unknown>;
+}
+
+function isFacilitatorClient(f: FacilitatorConfig | FacilitatorClient): f is FacilitatorClient {
+  return typeof (f as FacilitatorClient).verify === "function";
+}
+
+function toFacilitatorClient(f: FacilitatorConfig | FacilitatorClient): FacilitatorClient {
+  return isFacilitatorClient(f) ? f : new HTTPFacilitatorClient(f);
+}
+
+/**
+ * Guardrail 2 for every network a rail adds. A testnet store never charges on a mainnet (and a
+ * mainnet store never on a testnet); a mainnet network needs the explicit flag AND its own
+ * production gate in MAINNET_READY_NETWORKS, which today holds Stellar only.
+ */
+export function assertNetworkAllowed(config: CoreConfig, network: string): void {
+  const profile = requireChainProfile(network);
+  const storeIsTestnet = config.network === "testnet";
+  if (profile.testnet !== storeIsTestnet) {
+    throw new AgentPOSError(
+      "CONFIG_INVALID",
+      `${profile.label} is a ${profile.testnet ? "test" : "main"} network but this store runs on ${config.network}`,
+      {
+        hint: "Pair testnet with testnet and mainnet with mainnet; a test store must never move real money.",
+        details: { network, storeNetwork: config.network },
+      },
+    );
+  }
+  if (!profile.testnet) {
+    if (!config.allowMainnet) {
+      throw new AgentPOSError(
+        "MAINNET_NOT_CONFIRMED",
+        `${profile.label} mainnet requires an explicit flag`,
+        {
+          hint: "Set allowMainnet: true (AGENTPOS_ALLOW_MAINNET=true) after the founder confirms.",
+          details: { network },
+        },
+      );
+    }
+    if (!MAINNET_READY_NETWORKS.has(network)) {
+      throw new AgentPOSError(
+        "MAINNET_NOT_CONFIRMED",
+        `${profile.label} mainnet is locked: its production gate is not closed in this release`,
+        {
+          hint: "A network joins MAINNET_READY_NETWORKS (packages/core/src/config.ts) only after its own gate is green on testnet and the founder confirms.",
+          details: { network, ready: [...MAINNET_READY_NETWORKS] },
+        },
+      );
+    }
+  }
+}
 
 export type CheckoutAsset = "USDC" | "XLM";
 
@@ -122,6 +210,68 @@ export async function checkFacilitator(
   }
 }
 
+/** Facilitator health for one extra network. */
+export interface NetworkFacilitatorHealth extends FacilitatorHealth {
+  network: string;
+}
+
+/**
+ * Asks each extra network's facilitator whether it is up and settles the exact scheme there.
+ * One slow or failing facilitator never blocks the others or the Stellar checkout: each check
+ * has its own timeout and its own result.
+ */
+export async function checkNetworkFacilitators(
+  extensions: ReadonlyArray<X402NetworkExtension>,
+  timeoutMs = 10_000,
+): Promise<NetworkFacilitatorHealth[]> {
+  return Promise.all(
+    extensions.map(async (ext): Promise<NetworkFacilitatorHealth> => {
+      const checkedAt = new Date().toISOString();
+      try {
+        const client = toFacilitatorClient(ext.facilitator);
+        const supported = await Promise.race([
+          client.getSupported(),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error(`timeout after ${timeoutMs} ms`)), timeoutMs),
+          ),
+        ]);
+        const supportsNetwork = supported.kinds.some(
+          (k) => k.scheme === PROTOCOL_VERSIONS.x402.scheme && k.network === ext.network,
+        );
+        return {
+          network: ext.network,
+          ok: supportsNetwork,
+          status: 200,
+          supportsNetwork,
+          checkedAt,
+        };
+      } catch (err) {
+        return {
+          network: ext.network,
+          ok: false,
+          status: undefined,
+          supportsNetwork: false,
+          checkedAt,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    }),
+  );
+}
+
+/**
+ * Degrades instead of failing: keeps only the extra payment options whose network's
+ * facilitator is healthy, so an outage on one network leaves the store payable on the rest
+ * (Stellar always stays, it is not an extra).
+ */
+export function healthyOnly<T extends { network: string }>(
+  items: ReadonlyArray<T>,
+  health: ReadonlyArray<NetworkFacilitatorHealth>,
+): T[] {
+  const up = new Set(health.filter((h) => h.ok).map((h) => h.network));
+  return items.filter((item) => up.has(item.network));
+}
+
 /**
  * Resource (seller) side: an x402ResourceServer bound to the Stellar exact scheme.
  * Pass a custom FacilitatorClient only in tests (stub); production always uses the HTTP client.
@@ -129,15 +279,27 @@ export async function checkFacilitator(
 export function createResourceServer(
   config: CoreConfig,
   facilitator?: FacilitatorClient,
+  extensions: ReadonlyArray<X402NetworkExtension> = [],
 ): x402ResourceServer {
-  return new x402ResourceServer(facilitator ?? facilitatorClient(config)).register(
+  const clients: FacilitatorClient[] = [facilitator ?? facilitatorClient(config)];
+  for (const ext of extensions) {
+    assertNetworkAllowed(config, ext.network);
+    clients.push(toFacilitatorClient(ext.facilitator));
+  }
+  let server = new x402ResourceServer(clients).register(
     config.caip2,
     new ExactStellarServerScheme(),
   );
+  for (const ext of extensions) server = server.register(ext.network as Network, ext.server);
+  return server;
 }
 
 /** Builds a RouteConfig entry for the SDK middlewares from integer terms. */
-export function buildRouteConfig(config: CoreConfig, terms: PaymentTerms): RouteConfig {
+export function buildRouteConfig(
+  config: CoreConfig,
+  terms: PaymentTerms,
+  extraAccepts: ReadonlyArray<ExtraAccept> = [],
+): RouteConfig {
   const accept = {
     scheme: PROTOCOL_VERSIONS.x402.scheme,
     network: config.caip2,
@@ -152,8 +314,41 @@ export function buildRouteConfig(config: CoreConfig, terms: PaymentTerms): Route
       ...(terms.reference ? { reference: terms.reference } : {}),
     },
   };
+  const extras = extraAccepts.map((extra) => {
+    assertNetworkAllowed(config, extra.network);
+    const profile = requireChainProfile(extra.network);
+    assertAddressFor(extra.network, extra.payTo);
+    if (extra.amount.currency !== "USDC" || extra.amount.decimals !== profile.usdcDecimals) {
+      throw new AgentPOSError(
+        "INVALID_AMOUNT",
+        `Price for ${profile.label} must be USDC with ${profile.usdcDecimals} decimals`,
+        {
+          hint: "Convert the catalog price with usdcOnChain(price, network); never reuse the Stellar amount.",
+          details: {
+            network: extra.network,
+            currency: extra.amount.currency,
+            decimals: extra.amount.decimals,
+          },
+        },
+      );
+    }
+    return {
+      scheme: PROTOCOL_VERSIONS.x402.scheme,
+      network: extra.network as Network,
+      payTo: extra.payTo,
+      price: { asset: extra.asset, amount: extra.amount.minor.toString() },
+      ...(terms.maxTimeoutSeconds !== undefined
+        ? { maxTimeoutSeconds: terms.maxTimeoutSeconds }
+        : {}),
+      extra: {
+        ...extra.extra,
+        adapterVersion: ADAPTER_VERSION,
+        ...(terms.reference ? { reference: terms.reference } : {}),
+      },
+    };
+  });
   return {
-    accepts: [accept],
+    accepts: [accept, ...extras],
     ...(terms.description ? { description: terms.description } : {}),
     mimeType: "application/json",
   };
@@ -211,18 +406,36 @@ export interface BuyerLimits {
   maxPerPayment: UsdcMinor;
 }
 
+/** Another network the buyer may pay on, brought by a rail package. */
+export interface BuyerNetworkExtension {
+  network: string;
+  /** Buyer-side scheme for that network, already bound to the buyer's own signer. */
+  client: SchemeNetworkClient;
+  /** Asset id the buyer allows on that network (the USDC contract). */
+  asset: string;
+  /** Per-payment ceiling in that network's minor unit (use `usdcOnChain` on the same limit). */
+  maxPerPayment: MinorAmount;
+}
+
 /** Buyer side: HTTP client that signs auth entries with the given signer, bounded by limits. */
 export function createBuyerClient(
   config: CoreConfig,
   signer: SignerProvider,
   limits: BuyerLimits,
+  extensions: ReadonlyArray<BuyerNetworkExtension> = [],
 ): x402HTTPClient {
   const scheme = new ExactStellarClientScheme(
     signer,
     config.rpcUrl ? { url: config.rpcUrl } : undefined,
   );
   const core = x402Client.fromConfig({
-    schemes: [{ network: config.caip2, client: scheme }],
+    schemes: [
+      { network: config.caip2, client: scheme },
+      ...extensions.map((ext) => {
+        assertNetworkAllowed(config, ext.network);
+        return { network: ext.network as Network, client: ext.client };
+      }),
+    ],
     spendControls: {
       // Only the configured checkout asset on the configured network, capped in atomic units.
       maxAmountPerPayment: false,
@@ -232,6 +445,11 @@ export function createBuyerClient(
           asset: assetAddress(config),
           maxAmountPerPayment: limits.maxPerPayment.toString(),
         },
+        ...extensions.map((ext) => ({
+          network: ext.network as Network,
+          asset: ext.asset,
+          maxAmountPerPayment: ext.maxPerPayment.minor.toString(),
+        })),
       ],
     },
   });

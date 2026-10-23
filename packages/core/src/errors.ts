@@ -76,6 +76,11 @@ export const ERROR_CODES = [
   // signer / wallet
   "SIGNER_NOT_IMPLEMENTED",
   "INVALID_SECRET_KEY",
+  // chains and wallet linking (chain.ts, wallet-proof.ts)
+  "CHAIN_UNKNOWN",
+  "ADDRESS_INVALID",
+  "WALLET_PROOF_INVALID",
+  "WALLET_PROOF_EXPIRED",
   // llm
   "LLM_REQUEST_FAILED",
   "LLM_INVALID_JSON",

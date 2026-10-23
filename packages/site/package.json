@@ -1,8 +1,24 @@
 {
   "name": "@agentpos/site",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "AgentPOS site library: turns a fiat e-commerce site into an agent-buyable store. Middleware or sidecar, x402 on Stellar, UCP/ACP/MCP surfaces, orders into the merchant's platform.",
   "license": "Apache-2.0",
+  "homepage": "https://agentposhq.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NovaCorpAI/agentpos.git",
+    "directory": "packages/site"
+  },
+  "bugs": {
+    "url": "https://github.com/NovaCorpAI/agentpos/issues"
+  },
+  "engines": {
+    "node": ">=22.5"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -13,7 +29,8 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    }
+    },
+    "./bin/agentpos.js": "./bin/agentpos.js"
   },
   "files": [
     "dist",
@@ -29,31 +46,29 @@
     "gate:check": "tsx scripts/gate-check.ts"
   },
   "dependencies": {
-    "@agentpos/approvals": "workspace:*",
-    "@agentpos/connectors": "workspace:*",
-    "@agentpos/core": "workspace:*",
-    "@agentpos/identity": "workspace:*",
-    "@agentpos/policy": "workspace:*",
-    "@agentpos/receipts": "workspace:*",
-    "@agentpos/scanner": "workspace:*",
+    "@agentpos/approvals": "workspace:^",
+    "@agentpos/connectors": "workspace:^",
+    "@agentpos/core": "workspace:^",
+    "@agentpos/identity": "workspace:^",
+    "@agentpos/policy": "workspace:^",
+    "@agentpos/receipts": "workspace:^",
+    "@agentpos/scanner": "workspace:^",
     "@clack/prompts": "^1.8.1",
     "@hono/node-server": "^2.1.4",
     "@modelcontextprotocol/sdk": "^1.32.1",
     "@stellar/stellar-sdk": "^16.3.1",
-    "@x402/core": "2.23.0",
-    "@x402/hono": "2.23.0",
+    "@x402/core": "2.28.0",
+    "@x402/hono": "2.28.0",
     "commander": "^15.0.0",
     "hono": "^4.13.13",
     "picocolors": "^1.1.1",
     "zod": "^4.6.7"
   },
-  "engines": {
-    "node": ">=22.5"
-  },
   "devDependencies": {
     "@types/node": "^24.19.2",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.11",
+    "@x402/evm": "2.28.0"
   }
 }

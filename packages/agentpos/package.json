@@ -1,0 +1,33 @@
+{
+  "name": "agentpos",
+  "version": "0.1.0",
+  "description": "The `agentpos` command: install, scan, confirm, publish and serve an agent-buyable store. Thin wrapper over @agentpos/site so `npx agentpos` works.",
+  "license": "Apache-2.0",
+  "homepage": "https://agentposhq.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NovaCorpAI/agentpos.git",
+    "directory": "packages/agentpos"
+  },
+  "bugs": {
+    "url": "https://github.com/NovaCorpAI/agentpos/issues"
+  },
+  "engines": {
+    "node": ">=22.5"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "type": "module",
+  "bin": {
+    "agentpos": "./bin/agentpos.js"
+  },
+  "files": [
+    "bin",
+    "README.md"
+  ],
+  "dependencies": {
+    "@agentpos/site": "workspace:^"
+  }
+}
