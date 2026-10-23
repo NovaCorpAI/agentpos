@@ -50,9 +50,12 @@ describe("validateWalletAddress", () => {
   });
 
   it("refuses a G-prefixed string with a bad checksum", () => {
-    const almost = `${Keypair.random().publicKey().slice(0, 55)}A`;
+    const valid = Keypair.random().publicKey();
+    // Change the last character to a DIFFERENT one: replacing it with a fixed letter left the
+    // address unchanged (and valid) whenever it already ended in that letter, 1 run in 32.
+    const last = valid.slice(-1);
+    const almost = `${valid.slice(0, 55)}${last === "A" ? "B" : "A"}`;
     const err = caught(() => validateWalletAddress(almost));
-    // Either it is coincidentally valid (astronomically unlikely) or it must be CONFIG_INVALID.
     expect(err.code).toBe("CONFIG_INVALID");
   });
 
