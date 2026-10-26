@@ -29,7 +29,12 @@ describe("measuredLlm", () => {
     const repo = new MemoryUsageEventsRepo();
     const llm = measuredLlm(
       stubProvider({
-        usage: { inputTokens: 1_000_000, outputTokens: 1_000, cacheReadTokens: 0, cacheWriteTokens: 0 },
+        usage: {
+          inputTokens: 1_000_000,
+          outputTokens: 1_000,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+        },
       }),
       { repo, prices },
       { traceId: "trace-1", stage: "extract" },
@@ -59,10 +64,14 @@ describe("measuredLlm", () => {
   it("records the failed call too, and rethrows it unchanged", async () => {
     const repo = new MemoryUsageEventsRepo();
     const boom = Object.assign(new Error("upstream down"), { code: "LLM_REQUEST_FAILED" });
-    const llm = measuredLlm(stubProvider({}, boom), { repo, prices }, {
-      traceId: "trace-2",
-      stage: "redact",
-    });
+    const llm = measuredLlm(
+      stubProvider({}, boom),
+      { repo, prices },
+      {
+        traceId: "trace-2",
+        stage: "redact",
+      },
+    );
 
     await expect(llm.complete({ prompt: "x" })).rejects.toBe(boom);
 

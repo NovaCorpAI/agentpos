@@ -143,7 +143,6 @@ function readUsage(data: Record<string, unknown>): LlmUsage {
   };
 }
 
-
 async function readJsonResponse(res: Response, provider: string): Promise<Record<string, unknown>> {
   const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) {

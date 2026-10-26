@@ -113,9 +113,9 @@ describe("reasoning models", () => {
       "https://llm.local/v1",
       fakeFetch(200, { choices: [{ message: { content: "<think>only prose</think> sorry" } }] }),
     );
-    await expect(llm.complete({ prompt: "x", jsonSchema: { type: "object" } })).rejects.toMatchObject(
-      { code: "LLM_INVALID_JSON" },
-    );
+    await expect(
+      llm.complete({ prompt: "x", jsonSchema: { type: "object" } }),
+    ).rejects.toMatchObject({ code: "LLM_INVALID_JSON" });
   });
 });
 
@@ -150,7 +150,11 @@ describe("usage reporting", () => {
       "https://llm.local/v1",
       fakeFetch(200, {
         choices: [{ message: { content: "ok" } }],
-        usage: { prompt_tokens: 7, completion_tokens: 2, prompt_tokens_details: { cached_tokens: 5 } },
+        usage: {
+          prompt_tokens: 7,
+          completion_tokens: 2,
+          prompt_tokens_details: { cached_tokens: 5 },
+        },
       }),
     );
     expect((await withUsage.complete({ prompt: "x" })).usage).toEqual({

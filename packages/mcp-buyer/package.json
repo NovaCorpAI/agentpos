@@ -59,7 +59,7 @@
     "@agentpos/scanner": "workspace:^",
     "@agentpos/site": "workspace:^",
     "@types/node": "^24.19.2",
-    "@x402/core": "2.23.0",
+    "@x402/core": "2.28.0",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vitest": "^4.1.11"

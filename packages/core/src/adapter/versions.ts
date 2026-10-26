@@ -43,7 +43,7 @@ export const PROTOCOL_VERSIONS = {
   x402: {
     /** x402 wire protocol major version (V2 headers: PAYMENT-REQUIRED / PAYMENT-SIGNATURE / PAYMENT-RESPONSE). */
     protocol: 2,
-    sdk: "2.23.0",
+    sdk: "2.28.0",
     scheme: "exact",
     checkedAt: "2026-08-25",
     source: "https://github.com/x402-foundation/x402",

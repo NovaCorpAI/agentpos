@@ -27,6 +27,9 @@ import type { HTTPTransportContext } from "@x402/core/server";
 import {
   AgentPOSError,
   ADAPTER_VERSION,
+  USDC_DECIMALS,
+  assertAddressFor,
+  assertNetworkAllowed,
   assetAddress,
   addressSchema,
   buildAcpFeed,
@@ -39,9 +42,12 @@ import {
   formatUsdc,
   jsonStringify,
   newTraceId,
+  requireChainProfile,
+  rescaleMinor,
   silentLogger,
   toReceipt,
   usdcFromMinor,
+  usdcOnChain,
 } from "@agentpos/core";
 import type {
   CatalogItem,
@@ -51,6 +57,7 @@ import type {
   Logger,
   OrderConnector,
   UsdcMinor,
+  X402NetworkExtension,
 } from "@agentpos/core";
 import { z } from "zod";
 import {
@@ -76,9 +83,28 @@ import { TokenBucketLimiter, clientIp, rateLimit } from "./ratelimit.js";
 import { loadOrCreateReceiptSigner } from "./receipt-key.js";
 import { SiteStorage } from "./storage.js";
 
+/**
+ * One more network the store takes x402 payments on, brought by a rail package (for example
+ * `arcResourceExtension` + the merchant's Arc address from `@agentpos/rail-arc`).
+ */
+export interface X402StoreNetwork {
+  extension: X402NetworkExtension;
+  /** The merchant's OWN receiving address on that network, proven by a signed challenge. */
+  payTo: string;
+  /** Asset id on that network (the USDC contract). */
+  asset: string;
+  /**
+   * Asset metadata the network's scheme needs in the 402, e.g. the EIP-712 domain of USDC on an
+   * EVM chain (`{ name: "USDC", version: "2" }`). Supplied by the rail, never by the merchant.
+   */
+  extra?: Record<string, unknown>;
+}
+
 export interface AgentPOSDeps {
   site: SiteConfig;
   core: CoreConfig;
+  /** Extra x402 networks, offered after the store's own network in every 402. */
+  x402Networks?: ReadonlyArray<X402StoreNetwork>;
   connector: OrderConnector;
   storage?: SiteStorage;
   /** Tests only: stub facilitator. Takes precedence over `facilitators`. */
@@ -281,6 +307,13 @@ const traceOf = (c: Context): string =>
 
 export function createAgentPOSApp(deps: AgentPOSDeps): AgentPOSSite {
   const { site, core } = deps;
+  // Extra networks are validated before anything is served: guardrail 2 per network, and the
+  // merchant's address must be a valid address ON that network (never ours, guardrail 1).
+  const extraNetworks = deps.x402Networks ?? [];
+  for (const n of extraNetworks) {
+    assertNetworkAllowed(core, n.extension.network);
+    assertAddressFor(n.extension.network, n.payTo);
+  }
   const logger = deps.logger ?? silentLogger;
   const storage = deps.storage ?? new SiteStorage(`${site.dataDir}/agentpos.sqlite`);
   const catalog = new CatalogService(storage);
@@ -293,6 +326,11 @@ export function createAgentPOSApp(deps: AgentPOSDeps): AgentPOSSite {
     network: core.caip2,
     asset: core.checkoutAsset,
     assetAddress: assetAddress(core),
+    extraNetworks: extraNetworks.map((n) => ({
+      network: n.extension.network,
+      payTo: n.payTo,
+      assetAddress: n.asset,
+    })),
     fiatCurrency: site.fiatCurrency,
     policy: site.policy,
     logger,
@@ -422,7 +460,17 @@ export function createAgentPOSApp(deps: AgentPOSDeps): AgentPOSSite {
           logger,
           ...(deps.facilitatorClientFactory ? { createClient: deps.facilitatorClientFactory } : {}),
         });
-  const resourceServer = createResourceServer(core, deps.facilitator ?? failover);
+  const resourceServer = createResourceServer(
+    core,
+    deps.facilitator ?? failover,
+    extraNetworks.map((n) => n.extension),
+  );
+  // Amounts settled on an extra network come in that network's USDC unit; the order, the
+  // receipt and every comparison use the catalog's unit. Exact both ways (guardrail 4).
+  const toCatalogUnit = (network: string, amount: bigint): bigint =>
+    network === core.caip2
+      ? amount
+      : rescaleMinor(amount, requireChainProfile(network).usdcDecimals, USDC_DECIMALS);
   const cartIdFrom = (transport: unknown): string | undefined => {
     const t = transport as HTTPTransportContext | undefined;
     const value = t?.request?.adapter?.getQueryParam?.("cart");
@@ -435,12 +483,19 @@ export function createAgentPOSApp(deps: AgentPOSDeps): AgentPOSSite {
       return;
     }
     try {
-      const receipt = toReceipt(ctx.result as never);
+      const raw = toReceipt(ctx.result as never);
       const req = ctx.requirements;
+      const receipt = {
+        ...raw,
+        amount:
+          raw.amount === undefined
+            ? undefined
+            : usdcFromMinor(toCatalogUnit(raw.network, raw.amount)),
+      };
       const order = await checkout.markPaid(cartId, receipt, {
         payTo: req.payTo,
         asset: req.asset,
-        amountMinor: usdcFromMinor(req.amount),
+        amountMinor: usdcFromMinor(toCatalogUnit(req.network, BigInt(req.amount))),
         network: req.network,
       });
       logger.info("settle.processed", {
@@ -924,6 +979,22 @@ export function createAgentPOSApp(deps: AgentPOSDeps): AgentPOSSite {
               maxTimeoutSeconds: 300,
               extra: { adapterVersion: ADAPTER_VERSION },
             },
+            // The same cart, payable on each extra network: the merchant's address there and
+            // the price converted exactly to that network's USDC unit (refused, never rounded).
+            ...extraNetworks.map((n) => ({
+              scheme: "exact" as const,
+              network: n.extension.network as `${string}:${string}`,
+              payTo: n.payTo,
+              price: (ctx: { adapter: { getQueryParam?: (name: string) => unknown } }) => ({
+                asset: n.asset,
+                amount: usdcOnChain(
+                  checkout.getCart(String(ctx.adapter.getQueryParam?.("cart"))).quote.totalUsdc,
+                  n.extension.network,
+                ).minor.toString(),
+              }),
+              maxTimeoutSeconds: 300,
+              extra: { ...n.extra, adapterVersion: ADAPTER_VERSION },
+            })),
           ],
           description: `${site.displayName}: pay for a cart. Create one at ${routes.cart}.`,
           mimeType: "application/json",

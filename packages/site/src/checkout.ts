@@ -78,6 +78,11 @@ export interface CheckoutOptions {
   /** Contract id of the checkout asset; settled asset must match it exactly. */
   assetAddress: string;
   /**
+   * Other networks the store also takes x402 payments on (a rail package adds them). Each has
+   * its own receiving address and asset; amounts reach markPaid already in the catalog's unit.
+   */
+  extraNetworks?: ReadonlyArray<{ network: string; payTo: string; assetAddress: string }>;
+  /**
    * ISO 4217 currency of the store's source prices. When set, every cart whose lines all carry a
    * source price in it also gets a fiat total, which is what a card rail quotes. Never converted.
    */
@@ -837,18 +842,23 @@ export class CheckoutService {
         out.push({ field: "settledNetwork", expected: settled.network, actual: receipt.network });
       return out;
     }
-    if (settled.payTo !== quote.payTo)
-      out.push({ field: "payTo", expected: quote.payTo, actual: settled.payTo });
-    if (settled.asset !== this.opts.assetAddress)
-      out.push({ field: "asset", expected: this.opts.assetAddress, actual: settled.asset });
-    if (settled.network !== this.opts.network)
-      out.push({ field: "network", expected: this.opts.network, actual: settled.network });
+    // A payment on an extra network is checked against THAT network's address and asset.
+    const extra = this.opts.extraNetworks?.find((n) => n.network === settled.network);
+    const expected = extra
+      ? { payTo: extra.payTo, asset: extra.assetAddress, network: extra.network }
+      : { payTo: quote.payTo, asset: this.opts.assetAddress, network: this.opts.network };
+    if (settled.payTo !== expected.payTo)
+      out.push({ field: "payTo", expected: expected.payTo, actual: settled.payTo });
+    if (settled.asset !== expected.asset)
+      out.push({ field: "asset", expected: expected.asset, actual: settled.asset });
+    if (settled.network !== expected.network)
+      out.push({ field: "network", expected: expected.network, actual: settled.network });
     if (compareUsdc(settled.amountMinor, quote.totalUsdc) !== 0)
       out.push({ field: "amount", expected: quote.totalUsdc, actual: settled.amountMinor });
     if (receipt.amount !== undefined && compareUsdc(receipt.amount, quote.totalUsdc) !== 0)
       out.push({ field: "settledAmount", expected: quote.totalUsdc, actual: receipt.amount });
-    if (receipt.network !== this.opts.network)
-      out.push({ field: "settledNetwork", expected: this.opts.network, actual: receipt.network });
+    if (receipt.network !== expected.network)
+      out.push({ field: "settledNetwork", expected: expected.network, actual: receipt.network });
     return out;
   }
 

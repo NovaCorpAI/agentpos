@@ -56,6 +56,8 @@ export type CoreConfigInput = z.input<typeof coreConfigSchema>;
 
 export interface CoreConfig {
   network: NetworkName;
+  /** The explicit mainnet flag (guardrail 2). Rails check it before adding a mainnet network. */
+  allowMainnet: boolean;
   caip2: `stellar:${string}`;
   checkoutAsset: "USDC" | "XLM";
   facilitatorUrl: string;
@@ -76,6 +78,13 @@ export interface CoreConfig {
  * AGENTPOS_ALLOW_MAINNET=true, a mainnet facilitator key and an RPC URL per deployment.
  */
 export const MAINNET_READY = true;
+
+/**
+ * Production gate per network (guardrail 2). A network joins this list only by a dedicated
+ * commit after its own gate is green and the founder confirms in chat. Stellar closed G1 on
+ * 2026-08-26; every other mainnet stays locked until its rail proves itself the same way.
+ */
+export const MAINNET_READY_NETWORKS: ReadonlySet<string> = new Set(["stellar:pubnet"]);
 
 export interface ResolveOptions {
   /** Tests only: pretend the gate is closed. */
@@ -124,6 +133,7 @@ export function resolveConfig(
 
   return {
     network: cfg.network,
+    allowMainnet: cfg.allowMainnet,
     caip2: CAIP2[cfg.network],
     checkoutAsset: cfg.checkoutAsset,
     facilitatorUrl: cfg.facilitatorUrl ?? FACILITATOR_URLS[cfg.network],
@@ -141,6 +151,11 @@ function envBool(value: string | undefined): boolean | undefined {
 }
 
 const STELLAR_SEED = /\bS[A-Z2-7]{55}\b/;
+/**
+ * An EVM private key as wallets export it: 0x + 64 hex. A transaction hash has the same shape,
+ * but a merchant configuration never carries one, so any match is treated as a key.
+ */
+const EVM_PRIVATE_KEY = /\b0x[0-9a-fA-F]{64}\b/;
 
 /**
  * Zero custody at startup (G1): a merchant configuration must never carry a Stellar secret
@@ -149,6 +164,16 @@ const STELLAR_SEED = /\bS[A-Z2-7]{55}\b/;
 export function assertNoSecretsInConfig(config: unknown, label = "configuration"): void {
   const visit = (value: unknown, path: string): void => {
     if (typeof value === "string") {
+      if (EVM_PRIVATE_KEY.test(value)) {
+        throw new AgentPOSError(
+          "SECRET_IN_CONFIG",
+          `Something that looks like an EVM private key was found in ${label} at ${path}`,
+          {
+            hint: "AgentPOS never stores merchant private keys. Put only the PUBLIC address (0x + 40 hex) in the config and keep the key in your wallet.",
+            details: { path },
+          },
+        );
+      }
       if (STELLAR_SEED.test(value)) {
         throw new AgentPOSError(
           "SECRET_IN_CONFIG",
