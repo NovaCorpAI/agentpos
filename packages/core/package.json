@@ -1,8 +1,24 @@
 {
   "name": "@agentpos/core",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "AgentPOS core: config, money types, protocol adapters (x402, UCP, ACP), signer factory, LLM router, fiscal interface.",
   "license": "Apache-2.0",
+  "homepage": "https://agentposhq.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NovaCorpAI/agentpos.git",
+    "directory": "packages/core"
+  },
+  "bugs": {
+    "url": "https://github.com/NovaCorpAI/agentpos/issues"
+  },
+  "engines": {
+    "node": ">=22.5"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -28,7 +44,7 @@
     "e2e:transbank:enrol": "tsx scripts/oneclick-enrol.ts"
   },
   "dependencies": {
-    "@agentpos/measure": "workspace:*",
+    "@agentpos/measure": "workspace:^",
     "@stellar/stellar-sdk": "^16.3.1",
     "@x402/core": "2.23.0",
     "@x402/fetch": "2.23.0",

@@ -1,8 +1,24 @@
 {
   "name": "@agentpos/mcp-buyer",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "AgentPOS buyer: MCP server that lets any agent discover, quote and buy from agent-buyable stores within a human mandate (x402 on Stellar).",
   "license": "Apache-2.0",
+  "homepage": "https://agentposhq.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NovaCorpAI/agentpos.git",
+    "directory": "packages/mcp-buyer"
+  },
+  "bugs": {
+    "url": "https://github.com/NovaCorpAI/agentpos/issues"
+  },
+  "engines": {
+    "node": ">=22.5"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -13,16 +29,14 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    }
+    },
+    "./bin/agentpos-buyer.js": "./bin/agentpos-buyer.js"
   },
   "files": [
     "dist",
     "bin",
     "README.md"
   ],
-  "engines": {
-    "node": ">=22.5"
-  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.typecheck.json",
@@ -32,7 +46,7 @@
     "e2e:testnet": "tsx scripts/e2e-testnet.ts"
   },
   "dependencies": {
-    "@agentpos/core": "workspace:*",
+    "@agentpos/core": "workspace:^",
     "@clack/prompts": "^1.8.1",
     "@modelcontextprotocol/sdk": "^1.32.1",
     "@stellar/stellar-sdk": "^16.3.1",
@@ -41,9 +55,9 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@agentpos/connectors": "workspace:*",
-    "@agentpos/scanner": "workspace:*",
-    "@agentpos/site": "workspace:*",
+    "@agentpos/connectors": "workspace:^",
+    "@agentpos/scanner": "workspace:^",
+    "@agentpos/site": "workspace:^",
     "@types/node": "^24.19.2",
     "@x402/core": "2.23.0",
     "tsx": "^4.23.15",

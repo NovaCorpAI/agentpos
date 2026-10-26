@@ -1,0 +1,53 @@
+name: Release
+
+# Publishes every public workspace package to npm when a version tag is pushed.
+#
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# The tag must equal the version in every public package.json (scripts/check-publish.mjs
+# refuses otherwise). Packages already on the registry at that version are skipped, so a
+# re-run after a partial failure is safe. Publishing needs the NPM_TOKEN repository secret
+# (a granular npm token with publish rights on the @agentpos scope and the two unscoped
+# names); provenance attestations come from the GitHub OIDC token, not from the secret.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm build
+      - run: pnpm test
+      - name: Check publish metadata against the tag
+        run: node scripts/check-publish.mjs "${GITHUB_REF_NAME#v}"
+      - name: Pack (what would be uploaded)
+        run: |
+          mkdir -p /tmp/packs
+          pnpm -r --filter "./packages/*" exec pnpm pack --pack-destination /tmp/packs
+          ls -la /tmp/packs
+      - name: Publish
+        run: pnpm -r --filter "./packages/*" publish --access public --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: "true"
