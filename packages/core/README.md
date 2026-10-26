@@ -28,6 +28,20 @@ const server = createResourceServer(cfg);
 const route = buildRouteConfig(cfg, { payTo: "G...", amount: usdc("1.25"), reference: "order_1" });
 ```
 
+## Installing from npm: the zod override
+
+`@x402/core` (the x402 SDK this package wraps) declares `zod@^3`, and the 3.x line has no patch
+for [GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5), so `npm audit`
+reports it in any project that installs `@agentpos/core`. The SDK only uses zod APIs that are
+identical in zod 4, and this repository runs its whole test suite and the testnet payment loop
+with zod 4. Until the SDK moves, add this to your project's `package.json`:
+
+```json
+{ "overrides": { "zod": "^4.6.6" } }
+```
+
+With pnpm, the same goes under `pnpm.overrides` (or `overrides` in `pnpm-workspace.yaml`).
+
 ## Payment rails
 
 A **rail** is one way a store can be paid. There are two: x402 / USDC over Stellar

@@ -1,6 +1,6 @@
 {
   "name": "@agentpos/approvals",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "AgentPOS human approval queue: orders above the merchant policy threshold pause, notify the merchant and settle only against an immutable snapshot they approved.",
   "license": "Apache-2.0",
   "homepage": "https://agentposhq.com",
