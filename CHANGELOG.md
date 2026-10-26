@@ -2,7 +2,15 @@
 
 All public packages share one version. Dates are the day the tag was pushed.
 
-## 0.1.0 (unreleased)
+## 0.1.1 (2026-10-27)
+
+- Published through npm trusted publishing (OIDC) instead of a token, with provenance
+  attestations on every package.
+- Dependency advisories: zod, body-parser, undici and fast-uri moved to patched versions inside
+  the monorepo. `@x402/core` still declares zod 3, which has no patch for GHSA-mrhx-c7xc-m3w5;
+  the `@agentpos/core` README shows the one-line override for projects that install from npm.
+
+## 0.1.0 (2026-10-26)
 
 First publication on npm of the open base: `@agentpos/core`, `@agentpos/site`,
 `@agentpos/scanner`, `@agentpos/connectors`, `@agentpos/policy`, `@agentpos/approvals`,

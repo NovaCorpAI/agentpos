@@ -6,9 +6,10 @@ name: Release
 #
 # The tag must equal the version in every public package.json (scripts/check-publish.mjs
 # refuses otherwise). Packages already on the registry at that version are skipped, so a
-# re-run after a partial failure is safe. Publishing needs the NPM_TOKEN repository secret
-# (a granular npm token with publish rights on the @agentpos scope and the two unscoped
-# names); provenance attestations come from the GitHub OIDC token, not from the secret.
+# re-run after a partial failure is safe. Publishing uses npm trusted publishing: every
+# package on npmjs.com trusts this repository, this workflow file and the `npm` environment,
+# and the job proves who it is with the GitHub OIDC token. There is no npm token anywhere;
+# the same OIDC token produces the provenance attestations.
 
 on:
   push:
@@ -49,5 +50,4 @@ jobs:
       - name: Publish
         run: pnpm -r --filter "./packages/*" publish --access public --no-git-checks
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: "true"
