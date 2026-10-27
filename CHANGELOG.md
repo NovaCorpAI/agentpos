@@ -2,7 +2,7 @@
 
 All public packages share one version. Dates are the day the tag was pushed.
 
-## Unreleased
+## 0.1.3 (2026-10-27)
 
 - Site: payments are keyed by network plus transaction hash (risk D2), so a payment on one
   network never stands in for one on another; EVM hashes are compared case-insensitively. Stores
