@@ -100,7 +100,7 @@ export class PaymentReconciler {
     // Payments already seen are re-checked on every pass, whether or not the watcher returns
     // them again, so a store that records late clears them and one that never does is reported.
     for (const [key, entry] of this.unresolved) {
-      if (this.isRecorded(entry.payment.txHash)) {
+      if (this.isRecorded(entry.network, entry.payment.txHash)) {
         this.unresolved.delete(key);
         continue;
       }
@@ -114,9 +114,8 @@ export class PaymentReconciler {
     return this.report();
   }
 
-  private isRecorded(txHash: string): boolean {
-    const { storage } = this.opts;
-    return Boolean(storage.getPayment(txHash) ?? storage.getPayment(txHash.toLowerCase()));
+  private isRecorded(network: string, txHash: string): boolean {
+    return this.opts.storage.getPayment(network, txHash) !== undefined;
   }
 
   private async raise({ network, payment }: Unresolved): Promise<void> {

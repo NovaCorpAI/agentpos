@@ -2,6 +2,14 @@
 
 All public packages share one version. Dates are the day the tag was pushed.
 
+## Unreleased
+
+- Site: payments are keyed by network plus transaction hash (risk D2), so a payment on one
+  network never stands in for one on another; EVM hashes are compared case-insensitively. Stores
+  created before this release migrate their payments table once at startup, in a transaction,
+  each row keeping its own network; take a backup first (`npx @agentpos/site backup`).
+  `SiteStorage.getPayment` now takes the network first.
+
 ## 0.1.2 (2026-10-27)
 
 - Site: an extra network whose facilitator is down (Arc, for example) is left out of the 402
