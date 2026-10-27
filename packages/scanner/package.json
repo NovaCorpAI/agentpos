@@ -1,6 +1,6 @@
 {
   "name": "@agentpos/scanner",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "AgentPOS scanner: reads the merchant's own site (connector, sitemap, schema.org, pages) and proposes an agent catalog draft.",
   "license": "Apache-2.0",
   "homepage": "https://agentposhq.com",

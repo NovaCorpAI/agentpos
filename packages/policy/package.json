@@ -1,6 +1,6 @@
 {
   "name": "@agentpos/policy",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "AgentPOS merchant policy engine: verifiable rules a merchant sets over agentic sales, evaluated before quoting and again before settling.",
   "license": "Apache-2.0",
   "homepage": "https://agentposhq.com",
