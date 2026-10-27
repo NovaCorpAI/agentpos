@@ -139,6 +139,23 @@ orden, escala a `RETRY_LOOP_STALLED`.
 4. Si la plataforma realmente no puede recibirla, crea la orden a mano con los datos de
    `/agentpos/orders/<id>` (comprador, despacho, hash) y anota el id externo en tu registro.
 
+## Dinero recibido sin orden: PAYMENT_WITHOUT_ORDER
+
+Solo en una tienda que también cobra en otra red (Arc, por ejemplo) cuyo riel trae un vigilante
+de pagos. Cada 5 minutos AgentPOS lee lo que tu billetera recibió en esa red y lo compara con los
+pagos que registró. Una transferencia que sigue sin orden después de 2 minutos levanta
+`PAYMENT_WITHOUT_ORDER` (crítica), una sola vez por transacción, con la red, el hash, quién pagó,
+el monto y `candidateOrders`: las órdenes que siguen esperando pago con el mismo total.
+
+1. Abre el hash en el explorador de esa red y confirma que el dinero está en tu billetera.
+2. Si calza con una candidata (mismo monto, el comprador que esperabas), la tienda liquidó el pago
+   y después no alcanzó a registrarlo: despacha esa orden a mano y anota el hash.
+3. Si no calza con ninguna orden, puede ser un ingreso ajeno a la tienda (una transferencia tuya,
+   por ejemplo). Si vino de un comprador, reembólsalo. Una billetera dedicada solo a la tienda
+   mantiene esta alerta útil.
+4. `/agentpos/health` muestra la cuenta en `networks[].reconciliation.paymentsWithoutOrder`, y
+   `error` cuando la última pasada no pudo leer la cadena.
+
 ## Falló la liquidación
 
 `SETTLEMENT_FAILED` (advertencia): el facilitador verificó el pago pero falló al liquidarlo.

@@ -133,6 +133,14 @@ the sidecar; the network comes back in the 402 once its facilitator answers agai
 `/agentpos/health` lists them under `networks` as `ok`/`degraded`, without turning the store's
 `ok` false.
 
+Extra networks are also reconciled when their rail brings a `watcher` (`X402StoreNetwork.watcher`,
+a `PaymentWatcher`): every 5 minutes under `serve()` (`reconcileIntervalMs`), the sidecar reads
+what the merchant's wallet received there and compares it with the payments it recorded. A
+payment still without an order after 2 minutes raises a critical `PAYMENT_WITHOUT_ORDER` alert,
+once per transaction, listing the pending orders with the same total. It never creates an order
+or moves funds. `createAgentPOS({ x402Networks })` takes the same networks as
+`createAgentPOSApp`.
+
 ## Merchant API
 
 Token-authenticated, READ-ONLY endpoints under `/agentpos/api/merchant/*` for the store owner's

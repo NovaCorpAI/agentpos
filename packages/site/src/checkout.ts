@@ -42,7 +42,12 @@ import type { SiteStorage } from "./storage.js";
 
 export interface AlertEvent {
   severity: "warning" | "critical";
-  code: "PAYMENT_MISMATCH" | "ORDER_NOT_CREATED" | "SETTLEMENT_FAILED" | "RETRY_LOOP_STALLED";
+  code:
+    | "PAYMENT_MISMATCH"
+    | "ORDER_NOT_CREATED"
+    | "SETTLEMENT_FAILED"
+    | "RETRY_LOOP_STALLED"
+    | "PAYMENT_WITHOUT_ORDER";
   message: string;
   details: Record<string, unknown>;
   at: string;

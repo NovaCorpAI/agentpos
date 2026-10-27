@@ -8,6 +8,9 @@ All public packages share one version. Dates are the day the tag was pushed.
   until it is back, so the store stays payable on its own network. The sidecar no longer exits
   when a facilitator is unreachable at startup: it syncs with the facilitators itself and syncs
   again when a network recovers. `/agentpos/health` reports extra networks under `networks`.
+- Site: reconciliation of extra networks. A rail can bring a `PaymentWatcher`; the sidecar
+  compares what the merchant's wallet received with the payments it recorded and raises
+  `PAYMENT_WITHOUT_ORDER` for money with no order. `createAgentPOS` accepts `x402Networks`.
 
 ## 0.1.1 (2026-10-27)
 

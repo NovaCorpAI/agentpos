@@ -31,6 +31,18 @@ backoff (30 s, 1 m, 2 m, ... hasta 30 m).
 4. Si no se puede crear en la plataforma, crear la orden a mano con los datos de
    `/agentpos/orders/<id>` (comprador, envío, hash) y anotar `externalOrderId` en el registro.
 
+## PAYMENT_WITHOUT_ORDER (crítica)
+
+Qué pasó: en una red extra con vigilante de pagos (Arc), la billetera del comercio recibió una
+transferencia que la tienda no registró como pago de ninguna orden, y siguió así más de 2 minutos.
+Caso típico: el facilitador liquidó y el sidecar cayó antes de guardar el hash.
+
+1. Abrir `details.txHash` en el explorador de la red (`details.network`).
+2. Revisar `details.candidateOrders` (órdenes `pending_payment` con el mismo total). Si una
+   calza, despacharla a mano y anotar el hash.
+3. Si no calza con ninguna: ingreso ajeno a la tienda, o un pago a reembolsar al comprador.
+4. Se avisa una vez por transacción; tras un reinicio del sidecar puede repetirse una vez.
+
 ## RETRY_LOOP_STALLED (crítica)
 
 Una orden pagada lleva más de una hora sin orden en plataforma. Mismo procedimiento que

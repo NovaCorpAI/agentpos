@@ -136,6 +136,23 @@ hour without an order it escalates to `RETRY_LOOP_STALLED`.
 4. If the platform genuinely cannot take it, create the order by hand from
    `/agentpos/orders/<id>` (buyer, shipping, hash) and note the external order id in your records.
 
+## Money received with no order: PAYMENT_WITHOUT_ORDER
+
+Only on a store that also takes payments on another network (Arc, for example) whose rail brings
+a payment watcher. Every 5 minutes AgentPOS reads what your wallet received on that network and
+compares it with the payments it recorded. A transfer still unmatched after 2 minutes raises
+`PAYMENT_WITHOUT_ORDER` (critical), once per transaction, with the network, the hash, the payer,
+the amount and `candidateOrders`: orders still waiting for payment with the same total.
+
+1. Open the hash in the network's explorer and confirm the money is in your wallet.
+2. If it matches a candidate (same amount, the buyer you expected), the store settled the payment
+   and then failed to record it: fulfil that order by hand and write down the hash.
+3. If it matches no order, it may be unrelated income to that wallet (a transfer you made
+   yourself, for instance). If it came from a buyer, refund it. A wallet used only for the store
+   keeps this alert meaningful.
+4. `/agentpos/health` shows the count under `networks[].reconciliation.paymentsWithoutOrder`, and
+   `error` when the last pass could not read the chain.
+
 ## Settlement failed
 
 `SETTLEMENT_FAILED` (warning): the facilitator verified the payment but failed to settle it.
