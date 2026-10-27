@@ -326,3 +326,95 @@ describe("reconciliation of Arc payments (D3)", () => {
     expect(body.networks?.[0]?.reconciliation?.paymentsWithoutOrder).toBe(1);
   });
 });
+
+describe("when the store's own facilitator is down (F5)", () => {
+  const down = async (): Promise<SupportedResponse> => {
+    throw new Error("401 Unauthorized");
+  };
+  const build = (opts: { arcUp: boolean; withArc?: boolean }) => {
+    const storage = new SiteStorage(":memory:");
+    storage.upsertItem(ebook);
+    const connector = connectorMock();
+    const stellar = stubFacilitator();
+    stellar.getSupported = down;
+    const arc = stubFacilitator({ network: ARC, txHash: "0xarc_only" });
+    if (opts.arcUp) {
+      arc.getSupported = async () => ({
+        kinds: [
+          { x402Version: 2, scheme: "exact", network: ARC, extra: { name: "USDC", version: "2" } },
+        ],
+        extensions: [],
+        signers: {},
+      });
+    } else arc.getSupported = down;
+    const gate = createAgentPOSApp({
+      site,
+      core,
+      connector,
+      storage,
+      facilitator: stellar,
+      ...(opts.withArc === false
+        ? {}
+        : {
+            x402Networks: [
+              {
+                extension: { network: ARC, server: new ExactEvmScheme(), facilitator: arc },
+                payTo: ARC_PAYTO,
+                asset: ARC_USDC,
+              },
+            ],
+          }),
+    });
+    return { gate, connector };
+  };
+  const newCheckout = async (gate: ReturnType<typeof build>["gate"]) => {
+    const res = await gate.fetch(
+      new Request("https://shop.test/agentpos/cart", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          items: [{ itemId: "ebook", quantity: 1 }],
+          buyer: { email: "ada@example.com" },
+        }),
+      }),
+    );
+    return ((await res.json()) as { checkout: string }).checkout;
+  };
+
+  it("offers Arc alone, and an Arc payment still creates the order", async () => {
+    const { gate, connector } = build({ arcUp: true });
+    const url = await newCheckout(gate);
+    const first = await gate.fetch(new Request(url, { method: "POST" }));
+    expect(first.status).toBe(402);
+    const client = new x402HTTPClient(new x402Client());
+    const required = client.getPaymentRequiredResponse(
+      (n) => first.headers.get(n),
+      await first
+        .clone()
+        .json()
+        .catch(() => undefined),
+    );
+    expect(required.accepts.map((a) => a.network)).toEqual([ARC]);
+    const payload = {
+      x402Version: 2,
+      accepted: required.accepts[0],
+      payload: { signature: "0xstub", authorization: {} },
+    } as unknown as PaymentPayload;
+    const paid = await gate.fetch(
+      new Request(url, { method: "POST", headers: client.encodePaymentSignatureHeader(payload) }),
+    );
+    expect(paid.status).toBe(200);
+    expect(connector.created[0]?.payment.txHash).toBe("0xarc_only");
+  });
+
+  it("answers a typed, retryable error instead of a 500 when no network can settle", async () => {
+    for (const opts of [{ arcUp: false }, { arcUp: false, withArc: false }]) {
+      const { gate } = build(opts);
+      const res = await gate.fetch(new Request(await newCheckout(gate), { method: "POST" }));
+      expect(res.status).toBe(502);
+      expect(res.headers.get("retry-after")).toBe("60");
+      const body = (await res.json()) as { error: { code: string; retryable: boolean } };
+      expect(body.error).toMatchObject({ code: "FACILITATOR_UNAVAILABLE", retryable: true });
+    }
+  });
+});

@@ -1052,25 +1052,29 @@ export function createAgentPOSApp(deps: AgentPOSDeps): AgentPOSSite {
   // x402 does not sync with the facilitators itself: its startup check exits the process when
   // one network's facilitator is unreachable, taking the whole store down. The store syncs below
   // instead, tolerating a network that is down and syncing again once it is back.
-  const x402For = (offered: ReadonlyArray<X402StoreNetwork>): MiddlewareHandler =>
+  type CartContext = { adapter: { getQueryParam?: (name: string) => unknown } };
+  const ownAccept = {
+    scheme: "exact" as const,
+    network: core.caip2 as `${string}:${string}`,
+    payTo: (ctx: CartContext) =>
+      checkout.getCart(String(ctx.adapter.getQueryParam?.("cart"))).quote.payTo,
+    price: (ctx: CartContext) => ({
+      asset: assetAddress(core),
+      amount: checkout
+        .getCart(String(ctx.adapter.getQueryParam?.("cart")))
+        .quote.totalUsdc.toString(),
+    }),
+    maxTimeoutSeconds: 300,
+    extra: { adapterVersion: ADAPTER_VERSION },
+  };
+  // `own` is false only while the store's own network cannot settle (F5): the cart is then
+  // offered on the extra networks alone instead of failing the whole checkout.
+  const x402For = (offered: ReadonlyArray<X402StoreNetwork>, own: boolean): MiddlewareHandler =>
     paymentMiddleware(
       {
         [`POST ${base}/checkout`]: {
           accepts: [
-            {
-              scheme: "exact",
-              network: core.caip2,
-              payTo: (ctx) =>
-                checkout.getCart(String(ctx.adapter.getQueryParam?.("cart"))).quote.payTo,
-              price: (ctx) => ({
-                asset: assetAddress(core),
-                amount: checkout
-                  .getCart(String(ctx.adapter.getQueryParam?.("cart")))
-                  .quote.totalUsdc.toString(),
-              }),
-              maxTimeoutSeconds: 300,
-              extra: { adapterVersion: ADAPTER_VERSION },
-            },
+            ...(own ? [ownAccept] : []),
             // The same cart, payable on each extra network: the merchant's address there and
             // the price converted exactly to that network's USDC unit (refused, never rounded).
             ...offered.map((n) => ({
@@ -1123,24 +1127,47 @@ export function createAgentPOSApp(deps: AgentPOSDeps): AgentPOSSite {
       });
     return x402Sync;
   };
-  const x402All = x402For(extraNetworks);
-  const x402BySet = new Map<string, MiddlewareHandler>([
-    [extraNetworks.map((n) => n.extension.network).join(","), x402All],
-  ]);
+  const x402BySet = new Map<string, MiddlewareHandler>();
+  let ownDown = false;
+  const x402Set = (offered: ReadonlyArray<X402StoreNetwork>, own: boolean): MiddlewareHandler => {
+    const key = [own ? core.caip2 : "", ...offered.map((n) => n.extension.network)].join(",");
+    let mw = x402BySet.get(key);
+    if (!mw) {
+      mw = x402For(offered, own);
+      x402BySet.set(key, mw);
+    }
+    return mw;
+  };
   app.use(`${base}/checkout`, async (c, next) => {
     const healthy = await offeredNetworks();
     await syncX402([core.caip2, ...healthy.map((n) => n.extension.network)]);
-    // A signed payment always meets the full set: the agent may have chosen a network from a
-    // 402 issued before an outage, and its facilitator decides at settle (no order without it).
-    if (c.req.header("payment-signature") || c.req.header("x-payment")) return x402All(c, next);
-    const offered = healthy.filter((n) => supports(n.extension.network));
-    const key = offered.map((n) => n.extension.network).join(",");
-    let mw = x402BySet.get(key);
-    if (!mw) {
-      mw = x402For(offered);
-      x402BySet.set(key, mw);
+    // Only networks the store can settle on right now: one that cannot would fail the whole
+    // payment request (x402 builds every option, and an unsupported one throws).
+    const own = supports(core.caip2);
+    const settleable = extraNetworks.filter((n) => supports(n.extension.network));
+    // A signed payment meets every settleable network, healthy or not: the agent may have chosen
+    // one from a 402 issued before an outage, and its facilitator decides at settle.
+    const signed = Boolean(c.req.header("payment-signature") || c.req.header("x-payment"));
+    const offered = signed
+      ? settleable
+      : healthy.filter((n) => settleable.some((s) => s.extension.network === n.extension.network));
+    if (!own && offered.length === 0) {
+      c.header("Retry-After", "60");
+      return errorResponse(
+        c,
+        new AgentPOSError("FACILITATOR_UNAVAILABLE", "No payment network can settle right now", {
+          hint: "The store's facilitators are unreachable. Nothing was charged; retry after the Retry-After seconds.",
+          retryable: true,
+          details: { networks: [core.caip2, ...extraNetworks.map((n) => n.extension.network)] },
+        }),
+      );
     }
-    return mw(c, next);
+    if (own === ownDown) {
+      ownDown = !own;
+      if (ownDown) logger.warn("x402.network.degraded", { network: core.caip2, own: true });
+      else logger.info("x402.network.restored", { network: core.caip2, own: true });
+    }
+    return x402Set(offered, own)(c, next);
   });
 
   // 3. Handler runs after verify and before settle: register the pending order only.

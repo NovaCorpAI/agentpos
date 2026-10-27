@@ -2,6 +2,12 @@
 
 All public packages share one version. Dates are the day the tag was pushed.
 
+## Unreleased
+
+- Site: the store's own network degrades like the extra ones (risk F5). While its facilitator
+  cannot settle, the 402 offers the extra networks alone; when no network can settle, checkout
+  answers `FACILITATOR_UNAVAILABLE` (retryable, `Retry-After: 60`) instead of a 500.
+
 ## 0.1.3 (2026-10-27)
 
 - Site: payments are keyed by network plus transaction hash (risk D2), so a payment on one
