@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { usdc } from "@agentpos/core";
 import {
+  allowedNetworks,
   evaluateMandate,
   mandateSchema,
   migrateMandateJson,
@@ -92,5 +93,27 @@ describe("mandate", () => {
     expect(periodStart("day", now).toISOString()).toBe("2026-08-26T00:00:00.000Z");
     expect(periodStart("week", now).toISOString()).toBe("2026-08-24T00:00:00.000Z");
     expect(periodStart("month", now).toISOString()).toBe("2026-08-01T00:00:00.000Z");
+  });
+});
+
+describe("allowedNetworks (M3)", () => {
+  it("defaults to the profile's own network only", () => {
+    const m = mandateSchema.parse({ maxPerTx: "1", maxTotal: "1" });
+    expect(allowedNetworks(m, "stellar:testnet")).toEqual(["stellar:testnet"]);
+  });
+
+  it("takes an explicit list of CAIP-2 ids and refuses anything else", () => {
+    const m = mandateSchema.parse({
+      maxPerTx: "1",
+      maxTotal: "1",
+      allowedNetworks: ["stellar:testnet", "eip155:5042002"],
+    });
+    expect(allowedNetworks(m, "stellar:testnet")).toEqual(["stellar:testnet", "eip155:5042002"]);
+    expect(() =>
+      mandateSchema.parse({ maxPerTx: "1", maxTotal: "1", allowedNetworks: ["arc"] }),
+    ).toThrow(/CAIP-2/);
+    expect(() =>
+      mandateSchema.parse({ maxPerTx: "1", maxTotal: "1", allowedNetworks: [] }),
+    ).toThrow();
   });
 });

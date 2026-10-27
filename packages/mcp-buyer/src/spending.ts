@@ -16,6 +16,10 @@ export interface SpendingEntry {
   txHash: string;
   network: string;
   asset: string;
+  /**
+   * In the catalog's unit (USDC, 7 decimals) whatever network paid, so one sum covers every
+   * network and the period limit cannot be dodged by spreading payments across them (M2).
+   */
   amountMinor: string;
   summary: string;
 }

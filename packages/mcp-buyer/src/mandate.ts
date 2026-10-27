@@ -26,6 +26,16 @@ export const mandateSchema = z.object({
   allowPhysicalGoods: z.boolean().default(false),
   /** When true the agent cannot supply a shipping address; the profile's address is used. */
   shippingAddressLocked: z.boolean().default(true),
+  /**
+   * Networks the agent may pay on, as CAIP-2 ids (e.g. ["stellar:testnet", "eip155:5042002"]).
+   * Absent means only the profile's own network: a network the human never named is never paid
+   * on, even when a rail for it is installed. `maxPerTx` and `maxTotal` apply across all of them
+   * together, in USDC.
+   */
+  allowedNetworks: z
+    .array(z.string().regex(/^[-a-z0-9]{3,8}:[-_a-zA-Z0-9]{1,32}$/, "CAIP-2 network id"))
+    .min(1)
+    .optional(),
 });
 
 export type MandateJson = z.input<typeof mandateSchema>;
@@ -166,6 +176,11 @@ export function evaluateMandate(mandate: Mandate, input: MandateCheckInput): Man
     };
   }
   return { ok: true };
+}
+
+/** The networks this mandate lets the agent pay on (M3): the list, or the profile's own one. */
+export function allowedNetworks(mandate: Mandate, profileNetwork: string): string[] {
+  return mandate.allowedNetworks ?? [profileNetwork];
 }
 
 export function toMandateError(verdict: Exclude<MandateVerdict, { ok: true }>): AgentPOSError {

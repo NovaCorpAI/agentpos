@@ -9,6 +9,10 @@ All public packages share one version. Dates are the day the tag was pushed.
   created before this release migrate their payments table once at startup, in a transaction,
   each row keeping its own network; take a backup first (`npx @agentpos/site backup`).
   `SiteStorage.getPayment` now takes the network first.
+- Buyer: the mandate gains `allowedNetworks` (CAIP-2). Absent, the agent pays only on the
+  profile's own network; listed, `BuyerService` uses the extra networks a rail brings
+  (`networks`). The period limit adds up spending on every network (M2, M3). New error code
+  `NETWORK_NOT_ALLOWED`; `createBuyerFetch` accepts network extensions.
 
 ## 0.1.2 (2026-10-27)
 
