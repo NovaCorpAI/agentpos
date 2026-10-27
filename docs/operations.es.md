@@ -21,6 +21,9 @@ curl -s https://TU-TIENDA/agentpos/health
 `/agentpos/health` responde `200` cuando el facilitador está alcanzable y no hay órdenes pagadas
 trabadas, y `503` en caso contrario. Trae `facilitator`, `facilitators` (una entrada por
 facilitador configurado, solo el host), `orders.stuck` y la altura de la cadena de comprobantes.
+Una tienda que también cobra en otra red (Arc, por ejemplo) agrega `networks`: una entrada por
+red extra, `ok` o `degraded`. Una red degradada sale del pedido de pago hasta que su facilitador
+vuelve, y no convierte la respuesta en `503`: la tienda sigue vendiendo en su propia red.
 
 ## Leer el panel
 
