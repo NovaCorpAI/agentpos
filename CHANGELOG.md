@@ -2,7 +2,7 @@
 
 All public packages share one version. Dates are the day the tag was pushed.
 
-## Unreleased
+## 0.1.2 (2026-10-27)
 
 - Site: an extra network whose facilitator is down (Arc, for example) is left out of the 402
   until it is back, so the store stays payable on its own network. The sidecar no longer exits

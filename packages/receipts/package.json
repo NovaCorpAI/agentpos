@@ -1,6 +1,6 @@
 {
   "name": "@agentpos/receipts",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "AgentPOS verifiable receipts: a signed, hash-chained record per store of what was offered, what the policy said, who approved, who bought and what settled on chain. Verifiable by third parties without database access.",
   "license": "Apache-2.0",
   "homepage": "https://agentposhq.com",

@@ -1,6 +1,6 @@
 {
   "name": "@agentpos/core",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "AgentPOS core: config, money types, protocol adapters (x402, UCP, ACP), signer factory, LLM router, fiscal interface.",
   "license": "Apache-2.0",
   "homepage": "https://agentposhq.com",
