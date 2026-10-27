@@ -3,10 +3,11 @@
  * x402 checkout, orders. Built on Hono so the same app runs as a sidecar or mounted elsewhere.
  */
 import { Hono } from "hono";
-import type { Context } from "hono";
+import type { Context, MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { paymentMiddleware } from "@x402/hono";
 import {
+  PROTOCOL_VERSIONS,
   PaymentRailRegistry,
   X402_STELLAR_RAIL_ID,
   createTransbankRail,
@@ -38,8 +39,10 @@ import {
   buyerContactSchema,
   cartLineSchema,
   checkFacilitator,
+  checkNetworkFacilitators,
   createResourceServer,
   formatUsdc,
+  healthyOnly,
   jsonStringify,
   newTraceId,
   requireChainProfile,
@@ -55,6 +58,7 @@ import type {
   FacilitatorClient,
   FacilitatorHealth,
   Logger,
+  NetworkFacilitatorHealth,
   OrderConnector,
   UsdcMinor,
   X402NetworkExtension,
@@ -144,6 +148,8 @@ export interface AgentPOSDeps {
   merchantApiToken?: string | undefined;
   /** Tests only: fetch used for facilitator health checks. */
   healthFetch?: typeof globalThis.fetch;
+  /** Tests only: how long an extra network's facilitator check stays fresh (default 60 s). */
+  networkHealthTtlMs?: number;
 }
 
 export interface SiteRoutes {
@@ -556,6 +562,46 @@ export function createAgentPOSApp(deps: AgentPOSDeps): AgentPOSSite {
     return facilitatorHealth;
   };
 
+  // --- extra networks' facilitators (F1) ------------------------------------------
+  // Each extra network is offered in the 402 only while its own facilitator is up, so an outage
+  // there leaves the store payable on the rest. The first 402 waits for the first check; after
+  // that a stale result is served while one refresh runs, never a check per request.
+  let extraHealth: NetworkFacilitatorHealth[] | undefined;
+  let extraHealthAt = 0;
+  let extraHealthRun: Promise<void> | undefined;
+  const extraHealthTtlMs = deps.networkHealthTtlMs ?? 60_000;
+  const refreshExtraHealth = (): Promise<void> => {
+    extraHealthRun ??= checkNetworkFacilitators(
+      extraNetworks.map((n) => n.extension),
+      5_000,
+    )
+      .then((health) => {
+        for (const h of health) {
+          const before = extraHealth?.find((p) => p.network === h.network);
+          if (!h.ok && (before?.ok ?? true)) {
+            logger.warn("x402.network.degraded", { network: h.network, error: h.error });
+          } else if (h.ok && before && !before.ok) {
+            logger.info("x402.network.restored", { network: h.network });
+          }
+        }
+        extraHealth = health;
+        extraHealthAt = Date.now();
+      })
+      .finally(() => {
+        extraHealthRun = undefined;
+      });
+    return extraHealthRun;
+  };
+  const offeredNetworks = async (): Promise<X402StoreNetwork[]> => {
+    if (extraNetworks.length === 0) return [];
+    if (!extraHealth) await refreshExtraHealth();
+    else if (Date.now() - extraHealthAt > extraHealthTtlMs) void refreshExtraHealth();
+    return healthyOnly(
+      extraNetworks.map((n) => ({ ...n, network: n.extension.network })),
+      extraHealth ?? [],
+    );
+  };
+
   const app = new Hono();
 
   app.onError((err, c) => {
@@ -770,6 +816,9 @@ export function createAgentPOSApp(deps: AgentPOSDeps): AgentPOSSite {
   app.get(`${base}/health`, async (c) => {
     const stuck = checkout.stuckOrders().length;
     const { facilitator, pool } = await facilitatorReport();
+    // An extra network that is down does not make the store unhealthy: it is left out of the
+    // 402 and the store stays payable on its own network. It is reported so the merchant sees it.
+    await offeredNetworks();
     const ok = facilitator.ok && stuck === 0;
     return c.json(
       {
@@ -780,6 +829,15 @@ export function createAgentPOSApp(deps: AgentPOSDeps): AgentPOSSite {
         asset: core.checkoutAsset,
         facilitator,
         facilitators: pool,
+        ...(extraHealth
+          ? {
+              networks: extraHealth.map((h) => ({
+                network: h.network,
+                status: h.ok ? "ok" : "degraded",
+                checkedAt: h.checkedAt,
+              })),
+            }
+          : {}),
         orders: { stuck },
         // The key third parties check this store's receipts against (M4).
         ...(receipts
@@ -959,8 +1017,12 @@ export function createAgentPOSApp(deps: AgentPOSDeps): AgentPOSSite {
   });
 
   // 2. x402: price and payTo come from the cart (dynamic), asset from config, amounts stay integers.
-  app.use(
-    `${base}/checkout`,
+  // One middleware per set of offered extra networks: x402 fixes `accepts` when the middleware
+  // is built, so degrading (F1) means picking the middleware whose set matches the healthy one.
+  // x402 does not sync with the facilitators itself: its startup check exits the process when
+  // one network's facilitator is unreachable, taking the whole store down. The store syncs below
+  // instead, tolerating a network that is down and syncing again once it is back.
+  const x402For = (offered: ReadonlyArray<X402StoreNetwork>): MiddlewareHandler =>
     paymentMiddleware(
       {
         [`POST ${base}/checkout`]: {
@@ -981,7 +1043,7 @@ export function createAgentPOSApp(deps: AgentPOSDeps): AgentPOSSite {
             },
             // The same cart, payable on each extra network: the merchant's address there and
             // the price converted exactly to that network's USDC unit (refused, never rounded).
-            ...extraNetworks.map((n) => ({
+            ...offered.map((n) => ({
               scheme: "exact" as const,
               network: n.extension.network as `${string}:${string}`,
               payTo: n.payTo,
@@ -1003,9 +1065,53 @@ export function createAgentPOSApp(deps: AgentPOSDeps): AgentPOSSite {
       resourceServer,
       undefined,
       undefined,
-      true,
-    ),
-  );
+      false,
+    );
+  const supports = (network: string): boolean =>
+    resourceServer.getSupportedKind(
+      PROTOCOL_VERSIONS.x402.protocol,
+      network as `${string}:${string}`,
+      PROTOCOL_VERSIONS.x402.scheme,
+    ) !== undefined;
+  let x402Sync: Promise<void> | undefined;
+  let x402SyncedAt = 0;
+  // Every request waits for a sync in flight (it clears the supported kinds while it runs).
+  const syncX402 = async (needed: ReadonlyArray<string>): Promise<void> => {
+    if (x402Sync) return x402Sync;
+    const fresh = x402SyncedAt > 0 && Date.now() - x402SyncedAt <= extraHealthTtlMs;
+    if (x402SyncedAt > 0 && (needed.every(supports) || fresh)) return;
+    x402Sync = resourceServer
+      .initialize()
+      .catch((err: unknown) => {
+        logger.error("x402.sync.failed", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      })
+      .finally(() => {
+        x402SyncedAt = Date.now();
+        x402Sync = undefined;
+      });
+    return x402Sync;
+  };
+  const x402All = x402For(extraNetworks);
+  const x402BySet = new Map<string, MiddlewareHandler>([
+    [extraNetworks.map((n) => n.extension.network).join(","), x402All],
+  ]);
+  app.use(`${base}/checkout`, async (c, next) => {
+    const healthy = await offeredNetworks();
+    await syncX402([core.caip2, ...healthy.map((n) => n.extension.network)]);
+    // A signed payment always meets the full set: the agent may have chosen a network from a
+    // 402 issued before an outage, and its facilitator decides at settle (no order without it).
+    if (c.req.header("payment-signature") || c.req.header("x-payment")) return x402All(c, next);
+    const offered = healthy.filter((n) => supports(n.extension.network));
+    const key = offered.map((n) => n.extension.network).join(",");
+    let mw = x402BySet.get(key);
+    if (!mw) {
+      mw = x402For(offered);
+      x402BySet.set(key, mw);
+    }
+    return mw(c, next);
+  });
 
   // 3. Handler runs after verify and before settle: register the pending order only.
   app.post(`${base}/checkout`, (c) => {

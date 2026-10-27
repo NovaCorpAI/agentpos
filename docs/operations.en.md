@@ -19,7 +19,10 @@ curl -s https://YOUR-STORE/agentpos/health
 
 `/agentpos/health` answers `200` when the facilitator is reachable and no paid order is stuck,
 `503` otherwise, and lists `facilitator`, `facilitators` (one entry per configured facilitator,
-host only), `orders.stuck` and the receipt chain height.
+host only), `orders.stuck` and the receipt chain height. A store that also takes payments on
+another network (Arc, for example) adds `networks`: one entry per extra network, `ok` or
+`degraded`. A degraded network is left out of the payment request until its facilitator is back,
+and does not turn the answer into `503`: the store still sells on its own network.
 
 ## Reading the dashboard
 

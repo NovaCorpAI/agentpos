@@ -206,3 +206,89 @@ describe("a store that also takes payments on Arc", () => {
     ).toThrow(/not a valid Arc testnet address/);
   });
 });
+
+describe("when the Arc facilitator is down (F1)", () => {
+  /** Stellar settles through the store's facilitator; Arc through its own, which can go down. */
+  const build = (networkHealthTtlMs = 60_000) => {
+    const storage = new SiteStorage(":memory:");
+    storage.upsertItem(ebook);
+    const connector = connectorMock();
+    const arcFacilitator = stubFacilitator({ network: ARC, txHash: "0xarc_tx" });
+    const arc = { up: false };
+    arcFacilitator.getSupported = async (): Promise<SupportedResponse> => {
+      if (!arc.up) throw new Error("503 Service Unavailable");
+      return {
+        kinds: [
+          { x402Version: 2, scheme: "exact", network: ARC, extra: { name: "USDC", version: "2" } },
+        ],
+        extensions: [],
+        signers: {},
+      };
+    };
+    const gate = createAgentPOSApp({
+      site,
+      core,
+      connector,
+      storage,
+      facilitator: stubFacilitator(),
+      networkHealthTtlMs,
+      x402Networks: [
+        {
+          extension: { network: ARC, server: new ExactEvmScheme(), facilitator: arcFacilitator },
+          payTo: ARC_PAYTO,
+          asset: ARC_USDC,
+        },
+      ],
+    });
+    return { gate, connector, arc };
+  };
+
+  const checkoutUrl = async (gate: ReturnType<typeof build>["gate"]): Promise<string> => {
+    const res = await gate.fetch(
+      new Request("https://shop.test/agentpos/cart", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          items: [{ itemId: "ebook", quantity: 1 }],
+          buyer: { email: "ada@example.com" },
+        }),
+      }),
+    );
+    return ((await res.json()) as { checkout: string }).checkout;
+  };
+
+  const offered = async (gate: ReturnType<typeof build>["gate"], url: string) => {
+    const res = await gate.fetch(new Request(url, { method: "POST" }));
+    expect(res.status).toBe(402);
+    const required = new x402HTTPClient(new x402Client()).getPaymentRequiredResponse(
+      (n) => res.headers.get(n),
+      await res
+        .clone()
+        .json()
+        .catch(() => undefined),
+    );
+    return required.accepts.map((a) => a.network);
+  };
+
+  it("leaves Arc out of the 402 and keeps the store payable on Stellar", async () => {
+    const { gate } = build();
+    expect(await offered(gate, await checkoutUrl(gate))).toEqual(["stellar:testnet"]);
+  });
+
+  it("offers Arc again once its facilitator is back", async () => {
+    const { gate, arc } = build(0);
+    const url = await checkoutUrl(gate);
+    expect(await offered(gate, url)).toEqual(["stellar:testnet"]);
+    arc.up = true;
+    await offered(gate, url); // serves the stale result and refreshes in the background
+    await new Promise((r) => setTimeout(r, 0));
+    expect(await offered(gate, url)).toEqual(["stellar:testnet", ARC]);
+  });
+
+  it("reports the degraded network in /health without marking the store down", async () => {
+    const { gate } = build();
+    const res = await gate.fetch(new Request("https://shop.test/agentpos/health"));
+    const body = (await res.json()) as { networks?: Array<{ network: string; status: string }> };
+    expect(body.networks).toEqual([expect.objectContaining({ network: ARC, status: "degraded" })]);
+  });
+});

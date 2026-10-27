@@ -126,6 +126,13 @@ existing stuck-order path instead of risking a double settlement. `/agentpos/hea
 facilitator (host only) as `ok`/`degraded` and marks the active one. With a single facilitator
 nothing changes.
 
+Extra networks degrade on their own: each network a rail adds (Arc, for example) is checked
+against its own facilitator at most once a minute, and the 402 offers it only while that
+facilitator is up. An outage there leaves the store payable on its own network and never stops
+the sidecar; the network comes back in the 402 once its facilitator answers again.
+`/agentpos/health` lists them under `networks` as `ok`/`degraded`, without turning the store's
+`ok` false.
+
 ## Merchant API
 
 Token-authenticated, READ-ONLY endpoints under `/agentpos/api/merchant/*` for the store owner's
