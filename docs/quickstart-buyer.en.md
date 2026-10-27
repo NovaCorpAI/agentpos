@@ -53,6 +53,7 @@ evaluated before any signature, on every purchase.
 | `requireConfirmAboveUsdc` | Above this amount the agent must ask you out of band. |
 | `allowPhysicalGoods` | Whether the agent may buy things that ship. |
 | `shippingAddressLocked` | When true the agent cannot supply an address; the profile's is used. |
+| `allowedNetworks` | Networks the agent may pay on, as CAIP-2 ids (`"stellar:testnet"`, `"eip155:5042002"` for Arc testnet). Absent: only the profile's own network. `maxPerTx` and `maxTotal` count every network together. |
 
 `init` does not ask for `allowedSellers`: edit the JSON file to restrict it, for example
 `"allowedSellers": ["demo.agentposhq.com"]`.

@@ -19,12 +19,14 @@ import type {
   Address,
   BuyerContact,
   BuyerLimits,
+  BuyerNetworkExtension,
   CartLine,
   CoreConfig,
   SettlementReceipt,
   SignerProvider,
+  UsdcMinor,
 } from "@agentpos/core";
-import { evaluateMandate, periodStart, toMandateError } from "./mandate.js";
+import { allowedNetworks, evaluateMandate, periodStart, toMandateError } from "./mandate.js";
 import { mergeFacets, sortOffers, toOffer } from "./market.js";
 import type {
   MandateContext,
@@ -78,7 +80,16 @@ export type PayFetchFactory = (
   core: CoreConfig,
   signer: SignerProvider,
   limits: BuyerLimits,
+  extensions: ReadonlyArray<BuyerNetworkExtension>,
 ) => typeof globalThis.fetch;
+
+/**
+ * Another network the buyer can pay on, brought by a rail package and bound to the buyer's own
+ * signer there: given the payment's ceiling in the catalog's unit, it returns the extension with
+ * the ceiling converted to that network (e.g. `(max) => arcBuyerExtension(ARC_TESTNET, client,
+ * max)`). It is used only when the mandate lists its network in `allowedNetworks`.
+ */
+export type BuyerNetwork = (maxPerPayment: UsdcMinor) => BuyerNetworkExtension;
 
 export interface BuyerDeps {
   profile: Profile;
@@ -86,6 +97,8 @@ export interface BuyerDeps {
   /** Tests inject a fake; production signs with the profile keypair. */
   signer?: SignerProvider;
   payFetchFactory?: PayFetchFactory;
+  /** Extra networks the buyer can pay on; the mandate decides which ones it may (M3). */
+  networks?: ReadonlyArray<BuyerNetwork>;
   fetchImpl?: typeof globalThis.fetch;
   spendingLog?: SpendingLog;
   core?: CoreConfig;
@@ -384,7 +397,26 @@ export class BuyerService {
   async buy(siteUrl: string, cartId: string): Promise<BuyResult> {
     const client = this.site(siteUrl);
     const info = await client.info();
-    if (info.network !== this.core.caip2) {
+    const allowed = allowedNetworks(this.profile.mandate, this.core.caip2);
+    const ownNetworkAllowed = allowed.includes(this.core.caip2);
+    const installed = (this.deps.networks ?? []).map((n) => n(usdcFromMinor(0n)).network);
+    const payable = [
+      ...(ownNetworkAllowed ? [this.core.caip2] : []),
+      ...installed.filter((n) => allowed.includes(n)),
+    ];
+    if (payable.length === 0) {
+      throw new AgentPOSError(
+        "NETWORK_NOT_ALLOWED",
+        "The mandate allows no network this buyer can pay on",
+        {
+          hint: `Allowed by the mandate: ${allowed.join(", ")}. Installed here: ${[this.core.caip2, ...installed].join(", ")}. Ask the human to add a network to allowedNetworks.`,
+          details: { allowedNetworks: allowed, installed: [this.core.caip2, ...installed] },
+        },
+      );
+    }
+    // A store on another network is fine when an extra network can pay it: the 402 lists every
+    // network the store takes, and only the payable ones have a scheme here.
+    if (!payable.includes(info.network) && payable.every((n) => n === this.core.caip2)) {
       throw new AgentPOSError(
         "SPEC_MISMATCH",
         `Site settles on ${info.network}, profile is ${this.core.caip2}`,
@@ -430,7 +462,18 @@ export class BuyerService {
       throw toMandateError(verdict);
     }
 
-    const payFetch = this.payFetchFactory(this.core, this.signer(), { maxPerPayment: amount });
+    // One ceiling, the cart total, on every payable network (converted exactly by each rail).
+    // The profile's own network is always registered by the client, so when the mandate leaves
+    // it out its ceiling is zero: nothing can be authorized there (M3).
+    const extensions = (this.deps.networks ?? [])
+      .map((n) => n(amount))
+      .filter((ext) => allowed.includes(ext.network));
+    const payFetch = this.payFetchFactory(
+      this.core,
+      this.signer(),
+      { maxPerPayment: ownNetworkAllowed ? amount : usdcFromMinor(0n) },
+      extensions,
+    );
     this.log(
       `paying cart ${cartId} at ${client.url}: ${formatUsdc(amount)} ${this.core.checkoutAsset}`,
     );
@@ -461,10 +504,19 @@ export class BuyerService {
       orderId: body.orderId,
       txHash: receipt.txHash,
       network: receipt.network,
-      asset: this.core.checkoutAsset,
+      asset:
+        extensions.find((ext) => ext.network === receipt.network)?.asset ?? this.core.checkoutAsset,
       amountMinor: amount.toString(),
       summary: cart.quote.lines.map((l) => `${l.quantity} x ${l.title}`).join(", "),
     });
+    if (!payable.includes(receipt.network)) {
+      // Cannot happen through the x402 client (it holds no scheme for other networks); checked
+      // anyway, after the spending log, so money that did move still counts against the limit.
+      throw new AgentPOSError("NETWORK_NOT_ALLOWED", `Settled on ${receipt.network}`, {
+        hint: "Report this: the payment settled on a network the mandate does not allow.",
+        details: { network: receipt.network, allowedNetworks: allowed, txHash: receipt.txHash },
+      });
+    }
     clearApproval(this.profile.name, cartId);
     const order = await client.waitForOrder(body.orderId);
     return { orderId: body.orderId, cartId, site: client.url, receipt, order };

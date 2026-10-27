@@ -12,7 +12,16 @@ npx @agentpos/mcp-buyer sites add https://shop.example
 
 Mandate (`~/.agentpos/profiles/default.json`): `maxPerTx`, `maxTotal` per `period`
 (day/week/month), `allowedSellers` (`any` or a list of hostnames), `requireConfirmAboveUsdc`,
-`allowPhysicalGoods`, `shippingAddressLocked`. Fund the wallet like a prepaid card.
+`allowPhysicalGoods`, `shippingAddressLocked`, `allowedNetworks`. Fund the wallet like a prepaid card.
+
+Several networks: a rail package can give `BuyerService` another network to pay on (`networks`,
+e.g. `(max) => arcBuyerExtension(ARC_TESTNET, client, max)` from `@agentpos/rail-arc`, with the
+client bound to the buyer's own Arc signer). It is used only when the mandate lists that network
+in `allowedNetworks` (CAIP-2 ids); without the field the agent pays only on the profile's own
+network, whatever is installed. `maxPerTx` and `maxTotal` apply to all networks together: the
+spending log keeps every amount in the catalog's unit, so spreading payments across networks
+does not reset the period limit. A purchase no allowed network can pay fails with
+`NETWORK_NOT_ALLOWED`.
 
 `allowedSellers: "verified-only"` was retired: it asked a hosted seller registry that was never
 built, so it refused every site. A profile that still carries it loads as an explicit empty list

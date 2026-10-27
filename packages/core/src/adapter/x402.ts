@@ -456,13 +456,20 @@ export function createBuyerClient(
   return new x402HTTPClient(core);
 }
 
-/** Buyer side: a fetch that transparently pays 402 responses within the limits. */
+/**
+ * Buyer side: a fetch that transparently pays 402 responses within the limits, on the profile's
+ * network and on any extra network a rail brings.
+ */
 export function createBuyerFetch(
   config: CoreConfig,
   signer: SignerProvider,
   limits: BuyerLimits,
+  extensions: ReadonlyArray<BuyerNetworkExtension> = [],
 ): typeof globalThis.fetch {
-  return wrapFetchWithPayment(globalThis.fetch, createBuyerClient(config, signer, limits));
+  return wrapFetchWithPayment(
+    globalThis.fetch,
+    createBuyerClient(config, signer, limits, extensions),
+  );
 }
 
 /** Decodes the PAYMENT-RESPONSE header of a paid response into a receipt. */

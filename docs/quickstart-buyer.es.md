@@ -55,6 +55,7 @@ antes de cualquier firma, en cada compra.
 | `requireConfirmAboveUsdc` | Sobre ese monto el agente tiene que pedirte confirmación aparte. |
 | `allowPhysicalGoods` | Si el agente puede comprar cosas que se despachan. |
 | `shippingAddressLocked` | Si es verdadero, el agente no puede poner una dirección: se usa la del perfil. |
+| `allowedNetworks` | Redes en las que el agente puede pagar, como ids CAIP-2 (`"stellar:testnet"`, `"eip155:5042002"` para Arc testnet). Si no está: solo la red del perfil. `maxPerTx` y `maxTotal` cuentan todas las redes juntas. |
 
 `init` no pregunta por `allowedSellers`: edita el archivo JSON para restringirlo, por ejemplo
 `"allowedSellers": ["demo.agentposhq.com"]`.
