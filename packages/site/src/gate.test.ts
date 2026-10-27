@@ -261,7 +261,7 @@ describe("G1 payment correctness", () => {
     expect(orderB.status).toBe("pending_payment");
     expect(orderB.payment).toBeUndefined();
     expect(t.connector.created).toHaveLength(1);
-    expect(t.storage.getPayment("tx_same")?.orderId).toBe(orderA.id);
+    expect(t.storage.getPayment("stellar:testnet", "tx_same")?.orderId).toBe(orderA.id);
   });
 
   it("facilitator failure during verify charges nothing and creates no order", async () => {

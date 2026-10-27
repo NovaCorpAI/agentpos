@@ -87,6 +87,15 @@ function reviveOrder(json: string): Order {
   } as Order;
 }
 
+/**
+ * The hash as the payments table keys it. EVM hashes are hex and case-insensitive, so one
+ * transaction spelled two ways is one payment; every other network keeps the reference verbatim
+ * (a card rail's reference is case-sensitive).
+ */
+export function paymentKey(network: string, txHash: string): string {
+  return network.startsWith("eip155:") ? txHash.toLowerCase() : txHash;
+}
+
 export class SiteStorage {
   private readonly db: DatabaseSync;
 
@@ -99,7 +108,7 @@ export class SiteStorage {
       create table if not exists drafts (id text primary key, json text not null);
       create table if not exists carts (id text primary key, json text not null, expires_at text not null);
       create table if not exists orders (id text primary key, cart_id text not null unique, status text not null, json text not null, created_at text not null, updated_at text not null);
-      create table if not exists payments (tx_hash text primary key, order_id text not null, json text not null);
+      create table if not exists payments (network text not null, tx_hash text not null, order_id text not null, json text not null, primary key (network, tx_hash));
       create table if not exists approvals (id text primary key, cart_id text not null, status text not null, json text not null, created_at text not null, expires_at text not null);
       create index if not exists approvals_cart_idx on approvals(cart_id);
       create table if not exists agents (agent_key text primary key, owner text not null, status text not null, json text not null, registered_at text not null);
@@ -107,6 +116,30 @@ export class SiteStorage {
       create index if not exists receipts_order_idx on receipts(order_id);
       create index if not exists receipts_at_idx on receipts(at);
       create table if not exists meta (key text primary key, value text not null);
+    `);
+    this.migratePaymentsKey();
+  }
+
+  /**
+   * Databases created before 0.1.3 keyed payments by the transaction hash alone. The key is now
+   * the network plus the hash (D2): two networks may one day produce the same hash, and a payment
+   * on one must never count as the payment on another. Each row keeps its own network, so the
+   * move is exact; it runs once, in a transaction, before the store serves anything.
+   */
+  private migratePaymentsKey(): void {
+    const columns = this.db.prepare("pragma table_info(payments)").all() as Array<{ name: string }>;
+    if (columns.some((c) => c.name === "network")) return;
+    this.db.exec(`
+      begin;
+      alter table payments rename to payments_by_hash;
+      create table payments (network text not null, tx_hash text not null, order_id text not null, json text not null, primary key (network, tx_hash));
+      insert into payments (network, tx_hash, order_id, json)
+        select coalesce(json_extract(json, '$.network'), ''),
+               case when json_extract(json, '$.network') like 'eip155:%' then lower(tx_hash) else tx_hash end,
+               order_id, json
+        from payments_by_hash;
+      drop table payments_by_hash;
+      commit;
     `);
   }
 
@@ -504,18 +537,28 @@ export class SiteStorage {
     return total;
   }
 
-  // payments (idempotency by tx hash, guardrail 6) --------------------------
+  // payments (idempotency by network + tx hash, guardrail 6 and D2) ---------
   recordPayment(orderId: string, payment: PaymentRecord): boolean {
     const result = this.db
-      .prepare("insert or ignore into payments (tx_hash, order_id, json) values (?, ?, ?)")
-      .run(payment.txHash, orderId, jsonStringify(payment));
+      .prepare(
+        "insert or ignore into payments (network, tx_hash, order_id, json) values (?, ?, ?, ?)",
+      )
+      .run(
+        payment.network,
+        paymentKey(payment.network, payment.txHash),
+        orderId,
+        jsonStringify(payment),
+      );
     return Number(result.changes) === 1;
   }
 
-  getPayment(txHash: string): { orderId: string; payment: PaymentRecord } | undefined {
+  getPayment(
+    network: string,
+    txHash: string,
+  ): { orderId: string; payment: PaymentRecord } | undefined {
     const row = this.db
-      .prepare("select order_id, json from payments where tx_hash = ?")
-      .get(txHash) as { order_id: string; json: string } | undefined;
+      .prepare("select order_id, json from payments where network = ? and tx_hash = ?")
+      .get(network, paymentKey(network, txHash)) as { order_id: string; json: string } | undefined;
     if (!row) return undefined;
     const raw = JSON.parse(row.json) as Record<string, unknown>;
     return {
