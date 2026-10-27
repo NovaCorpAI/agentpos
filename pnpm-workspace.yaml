@@ -4,9 +4,6 @@ packages:
 allowBuilds:
   esbuild: true
 minimumReleaseAgeExclude:
-  # qs 6.16.0 fixes GHSA-4mjr-xmp4-gh2g (published 2026-08-29); the supply-chain hold-back is
-  # exactly wrong for a security patch, so it is excluded explicitly.
-  - qs@6.16.0
   - "@typescript-eslint/eslint-plugin@8.68.0"
   - "@typescript-eslint/parser@8.68.0"
   - "@typescript-eslint/project-service@8.68.0"
@@ -20,8 +17,9 @@ minimumReleaseAgeExclude:
   - eslint@10.9.1
   - typescript-eslint@8.68.0
 overrides:
-  # GHSA-4mjr-xmp4-gh2g: qs < 6.16.0 (transitive via @modelcontextprotocol/sdk).
-  qs: ">=6.16.0"
+  # qs (transitive via @modelcontextprotocol/sdk > express): GHSA-4mjr-xmp4-gh2g (< 6.16.0) and
+  # GHSA-6pq8-jhm2-2vcw (<= 6.16.0, DoS in stringify with arrayFormat comma), patched in 6.16.1.
+  qs: ">=6.16.1"
   # axios < 1.20.0 (transitive via @stellar/stellar-sdk): ReDoS and prototype-pollution advisories.
   axios: ">=1.20.0"
   # Transitive advisories reported by pnpm audit --prod on 2026-10-26 (gate G1, check "audit").
