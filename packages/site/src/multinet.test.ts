@@ -292,3 +292,37 @@ describe("when the Arc facilitator is down (F1)", () => {
     expect(body.networks).toEqual([expect.objectContaining({ network: ARC, status: "degraded" })]);
   });
 });
+
+describe("reconciliation of Arc payments (D3)", () => {
+  it("runs the network's watcher and reports it in /health", async () => {
+    const facilitator = bothNetworks();
+    const gate = createAgentPOSApp({
+      site,
+      core,
+      connector: connectorMock(),
+      storage: new SiteStorage(":memory:"),
+      facilitator,
+      x402Networks: [
+        {
+          extension: { network: ARC, server: new ExactEvmScheme(), facilitator },
+          payTo: ARC_PAYTO,
+          asset: ARC_USDC,
+          watcher: {
+            recentPayments: async () => [
+              { txHash: "0xlost", amountMinor: usdc("2.5"), from: "0x42Db" },
+            ],
+          },
+        },
+      ],
+    });
+    expect(gate.reconciler).toBeDefined();
+    await gate.reconciler!.run(Date.now() - 10 * 60_000);
+    await gate.reconciler!.run();
+    const res = await gate.fetch(new Request("https://shop.test/agentpos/health"));
+    const body = (await res.json()) as {
+      ok: boolean;
+      networks?: Array<{ reconciliation?: { paymentsWithoutOrder: number } }>;
+    };
+    expect(body.networks?.[0]?.reconciliation?.paymentsWithoutOrder).toBe(1);
+  });
+});

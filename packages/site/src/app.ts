@@ -85,6 +85,8 @@ import { createMcpHandler } from "./mcp.js";
 import { buildRulesView, registerMerchantApi } from "./merchant-api.js";
 import { TokenBucketLimiter, clientIp, rateLimit } from "./ratelimit.js";
 import { loadOrCreateReceiptSigner } from "./receipt-key.js";
+import { PaymentReconciler } from "./reconcile.js";
+import type { PaymentWatcher } from "./reconcile.js";
 import { SiteStorage } from "./storage.js";
 
 /**
@@ -102,6 +104,11 @@ export interface X402StoreNetwork {
    * EVM chain (`{ name: "USDC", version: "2" }`). Supplied by the rail, never by the merchant.
    */
   extra?: Record<string, unknown>;
+  /**
+   * Reads what the merchant's wallet received on that network, so a payment that settled with no
+   * order behind it raises an alert (D3). Supplied by the rail; read-only, no key.
+   */
+  watcher?: PaymentWatcher;
 }
 
 export interface AgentPOSDeps {
@@ -182,6 +189,11 @@ export interface AgentPOSSite {
   identity: IdentityService;
   /** Signed audit chain, when the site keeps receipts (M4). */
   receipts: ReceiptChain | undefined;
+  /**
+   * Payments received on extra networks against the store's records (D3), when a network brings
+   * a watcher. The sidecar runs it on a timer; `run()` is also safe to call by hand.
+   */
+  reconciler: PaymentReconciler | undefined;
   /** Route table for docs and the CLI. */
   routes: SiteRoutes;
 }
@@ -562,6 +574,20 @@ export function createAgentPOSApp(deps: AgentPOSDeps): AgentPOSSite {
     return facilitatorHealth;
   };
 
+  // --- extra networks' reconciliation (D3) ---------------------------------------
+  const watched = extraNetworks.flatMap((n) =>
+    n.watcher ? [{ network: n.extension.network, watcher: n.watcher }] : [],
+  );
+  const reconciler =
+    watched.length > 0
+      ? new PaymentReconciler({
+          storage,
+          watchers: watched,
+          logger,
+          ...(deps.alert ? { alert: deps.alert } : {}),
+        })
+      : undefined;
+
   // --- extra networks' facilitators (F1) ------------------------------------------
   // Each extra network is offered in the 402 only while its own facilitator is up, so an outage
   // there leaves the store payable on the rest. The first 402 waits for the first check; after
@@ -831,11 +857,15 @@ export function createAgentPOSApp(deps: AgentPOSDeps): AgentPOSSite {
         facilitators: pool,
         ...(extraHealth
           ? {
-              networks: extraHealth.map((h) => ({
-                network: h.network,
-                status: h.ok ? "ok" : "degraded",
-                checkedAt: h.checkedAt,
-              })),
+              networks: extraHealth.map((h) => {
+                const rec = reconciler?.report().find((r) => r.network === h.network);
+                return {
+                  network: h.network,
+                  status: h.ok ? "ok" : "degraded",
+                  checkedAt: h.checkedAt,
+                  ...(rec ? { reconciliation: rec } : {}),
+                };
+              }),
             }
           : {}),
         orders: { stuck },
@@ -1466,6 +1496,7 @@ export function createAgentPOSApp(deps: AgentPOSDeps): AgentPOSSite {
     approvals,
     identity,
     receipts,
+    reconciler,
     routes,
   };
 }

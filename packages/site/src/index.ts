@@ -14,7 +14,7 @@ import { AgentPOSError, createLogger } from "@agentpos/core";
 import { ApprovalService, TwilioWhatsAppChannel, WebhookChannel } from "@agentpos/approvals";
 import type { NotificationChannel } from "@agentpos/approvals";
 import { createAgentPOSApp } from "./app.js";
-import type { AgentPOSSite } from "./app.js";
+import type { AgentPOSSite, X402StoreNetwork } from "./app.js";
 import type { AlertEvent, AlertSink } from "./checkout.js";
 import { coreConfigFromEnv, loadSiteConfig, parseSiteConfig, secretsFromEnv } from "./config.js";
 import type { SiteConfig, SiteConfigInput, SiteSecrets } from "./config.js";
@@ -65,6 +65,13 @@ export {
 export type { ProxyInput, ProxyTarget } from "./proxy.js";
 export { createAgentPOSApp, cartView, orderView } from "./app.js";
 export type { AgentPOSDeps, AgentPOSSite, X402StoreNetwork } from "./app.js";
+export { PaymentReconciler } from "./reconcile.js";
+export type {
+  NetworkReconciliation,
+  PaymentReconcilerOptions,
+  PaymentWatcher,
+  ReceivedPayment,
+} from "./reconcile.js";
 export { buildMcpServer, createMcpHandler } from "./mcp.js";
 export { TokenBucketLimiter } from "./ratelimit.js";
 export type { GateForPaymentResult } from "./checkout.js";
@@ -103,6 +110,13 @@ export interface CreateAgentPOSOptions {
    * merchant's platform. Like the retry loop it only runs under `serve()`, never in tests.
    */
   statusSyncIntervalMs?: number;
+  /**
+   * Extra x402 networks brought by rail packages (e.g. `@agentpos/rail-arc`), offered after the
+   * store's own network. A network with a `watcher` is also reconciled on a timer (D3).
+   */
+  x402Networks?: ReadonlyArray<X402StoreNetwork>;
+  /** Interval of the reconciliation of extra networks (default 5 min). Only under `serve()`. */
+  reconcileIntervalMs?: number;
 }
 
 export function buildConnector(
@@ -247,6 +261,7 @@ export async function createAgentPOS(options: CreateAgentPOSOptions = {}): Promi
     transbankCommerceCode: secrets.transbankCommerceCode,
     transbankApiKey: secrets.transbankApiKey,
     ...(options.facilitator ? { facilitator: options.facilitator } : {}),
+    ...(options.x402Networks ? { x402Networks: options.x402Networks } : {}),
   });
   const retryPending = async (): Promise<number> => {
     const retried = await built.checkout.retryPending();
@@ -292,6 +307,21 @@ export async function createAgentPOS(options: CreateAgentPOSOptions = {}): Promi
             options.statusSyncIntervalMs ?? 5 * 60_000,
           );
           lifecycleTimer.unref();
+          // Reconciliation of extra networks (D3): reads the chain, so on its own clock too.
+          const { reconciler } = built;
+          if (reconciler) {
+            const reconcileTimer = setInterval(
+              () => {
+                reconciler.run().catch((err: unknown) =>
+                  logger.error("reconcile.loop_failed", {
+                    error: err instanceof Error ? err.message : String(err),
+                  }),
+                );
+              },
+              options.reconcileIntervalMs ?? 5 * 60_000,
+            );
+            reconcileTimer.unref();
+          }
           logger.info("sidecar.started", {
             port: info.port,
             network: core.caip2,
