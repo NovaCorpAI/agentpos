@@ -24,6 +24,9 @@ facilitador configurado, solo el host), `orders.stuck` y la altura de la cadena 
 Una tienda que también cobra en otra red (Arc, por ejemplo) agrega `networks`: una entrada por
 red extra, `ok` o `degraded`. Una red degradada sale del pedido de pago hasta que su facilitador
 vuelve, y no convierte la respuesta en `503`: la tienda sigue vendiendo en su propia red.
+También al revés: si cae el facilitador de la red propia de la tienda, el cobro ofrece solo las
+redes extra. Si ninguna red puede liquidar, el comprador recibe `FACILITATOR_UNAVAILABLE` con
+`Retry-After: 60` y no se cobra nada.
 
 ## Leer el panel
 

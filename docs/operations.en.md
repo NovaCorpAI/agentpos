@@ -23,6 +23,9 @@ host only), `orders.stuck` and the receipt chain height. A store that also takes
 another network (Arc, for example) adds `networks`: one entry per extra network, `ok` or
 `degraded`. A degraded network is left out of the payment request until its facilitator is back,
 and does not turn the answer into `503`: the store still sells on its own network.
+The reverse holds too: if the store's own facilitator is down, checkout offers the extra networks
+alone. When no network can settle, buyers get `FACILITATOR_UNAVAILABLE` with `Retry-After: 60`
+and nothing is charged.
 
 ## Reading the dashboard
 

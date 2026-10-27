@@ -133,6 +133,11 @@ the sidecar; the network comes back in the 402 once its facilitator answers agai
 `/agentpos/health` lists them under `networks` as `ok`/`degraded`, without turning the store's
 `ok` false.
 
+The store's own network degrades the same way: while its facilitator cannot settle, the 402 offers
+the extra networks alone, so a store that also takes Arc keeps selling on Arc. When no network can
+settle, checkout answers `FACILITATOR_UNAVAILABLE` (retryable, `Retry-After: 60`) instead of an
+internal error; nothing is charged.
+
 Extra networks are also reconciled when their rail brings a `watcher` (`X402StoreNetwork.watcher`,
 a `PaymentWatcher`): every 5 minutes under `serve()` (`reconcileIntervalMs`), the sidecar reads
 what the merchant's wallet received there and compares it with the payments it recorded. A
