@@ -2,11 +2,12 @@
 
 All public packages share one version. Dates are the day the tag was pushed.
 
-## Unreleased
+## 0.1.4 (2026-10-27)
 
 - Site: the store's own network degrades like the extra ones (risk F5). While its facilitator
   cannot settle, the 402 offers the extra networks alone; when no network can settle, checkout
   answers `FACILITATOR_UNAVAILABLE` (retryable, `Retry-After: 60`) instead of a 500.
+- Dependency advisory: qs moved to 6.16.1 (GHSA-6pq8-jhm2-2vcw, via the MCP SDK's express).
 
 ## 0.1.3 (2026-10-27)
 

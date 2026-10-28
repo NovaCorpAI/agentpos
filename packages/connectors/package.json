@@ -1,6 +1,6 @@
 {
   "name": "@agentpos/connectors",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "AgentPOS order connectors: WooCommerce (REST v3), generic hook. Shopify lands in Phase 2.",
   "license": "Apache-2.0",
   "homepage": "https://agentposhq.com",
