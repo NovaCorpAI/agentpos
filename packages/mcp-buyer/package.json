@@ -1,6 +1,6 @@
 {
   "name": "@agentpos/mcp-buyer",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "AgentPOS buyer: MCP server that lets any agent discover, quote and buy from agent-buyable stores within a human mandate (x402 on Stellar).",
   "license": "Apache-2.0",
   "homepage": "https://agentposhq.com",
