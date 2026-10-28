@@ -31,6 +31,7 @@ import { BuyerService } from "./buyer.js";
 import type { BuyerNetwork } from "./buyer.js";
 import { mandateSchema } from "./mandate.js";
 import type { MandateJson } from "./mandate.js";
+import { approve, getApproval } from "./profile.js";
 import type { Profile } from "./profile.js";
 import { SpendingLog } from "./spending.js";
 
@@ -54,18 +55,23 @@ const ebook: CatalogItem = {
   sourceEvidence: [],
 };
 
-/** Settles on whichever network the payment names. */
-function facilitator(): FacilitatorClient {
+/** Settles on whichever network the payment names, except one whose screen declines it. */
+function facilitator(declineOn: () => string | undefined = () => undefined): FacilitatorClient {
   let n = 0;
   return {
     verify: async () => ({ isValid: true, payer: "payer" }),
-    settle: async (_p, r) => ({
-      success: true,
-      transaction: `tx_${++n}_${r.network}`,
-      network: r.network,
-      payer: "payer",
-      amount: r.amount,
-    }),
+    settle: async (_p, r) => {
+      if (r.network === declineOn()) {
+        throw new Error('Facilitator settle failed (403): {"code":403,"message":"Forbidden"}');
+      }
+      return {
+        success: true,
+        transaction: `tx_${++n}_${r.network}`,
+        network: r.network,
+        payer: "payer",
+        amount: r.amount,
+      };
+    },
     getSupported: async (): Promise<SupportedResponse> => ({
       kinds: [
         { x402Version: 2, scheme: "exact", network: STELLAR },
@@ -90,6 +96,7 @@ describe("mandate across networks", () => {
   let site: ReturnType<typeof createAgentPOSApp>;
   let spending: SpendingLog;
   let paidWith: { limits: BuyerLimits; extensions: ReadonlyArray<BuyerNetworkExtension> }[];
+  let declineOn: string | undefined;
 
   const fetchImpl: typeof fetch = (input, init) =>
     site.fetch(
@@ -154,7 +161,7 @@ describe("mandate across networks", () => {
     };
     const storage = new SiteStorage(":memory:");
     storage.upsertItem(ebook);
-    const fac = facilitator();
+    const fac = facilitator(() => declineOn);
     site = createAgentPOSApp({
       site: parseSiteConfig({
         siteUrl: "https://shop.test",
@@ -176,6 +183,7 @@ describe("mandate across networks", () => {
     });
     spending = new SpendingLog(join(home, "spending.jsonl"));
     paidWith = [];
+    declineOn = undefined;
   });
   afterEach(() => {
     resetChainProfilesForTests();
@@ -252,5 +260,32 @@ describe("mandate across networks", () => {
     await expect(buyEbook(buyer({ allowedNetworks: [ARC] }, []))).rejects.toMatchObject({
       code: "NETWORK_NOT_ALLOWED",
     });
+  });
+
+  it("never moves a declined payment to another network without the human (F3)", async () => {
+    declineOn = STELLAR;
+    const b = buyer({ allowedNetworks: [STELLAR, ARC] });
+    const cart = await b.createCart("https://shop.test", [{ itemId: "ebook", quantity: 1 }]);
+    await expect(b.buy("https://shop.test", cart.cartId)).rejects.toMatchObject({
+      code: "PAYMENT_DECLINED",
+      retryable: false,
+      details: { network: STELLAR },
+    });
+    expect(getApproval("test", cart.cartId)?.declinedOn).toEqual([STELLAR]);
+
+    // The agent tries again on its own: nothing is signed, on any network.
+    await expect(b.buy("https://shop.test", cart.cartId)).rejects.toMatchObject({
+      code: "PAYMENT_DECLINED",
+      details: { declinedOn: [STELLAR] },
+    });
+    expect(paidWith).toHaveLength(1);
+    expect(spending.entries()).toEqual([]);
+
+    // The human approves: it pays on Arc, and Stellar gets no ceiling at all.
+    approve("test", cart.cartId);
+    const result = await b.buy("https://shop.test", cart.cartId);
+    expect(result.receipt.network).toBe(ARC);
+    expect(paidWith[1]?.limits.maxPerPayment).toBe(0n);
+    expect(getApproval("test", cart.cartId)).toBeUndefined();
   });
 });

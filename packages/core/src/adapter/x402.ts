@@ -7,6 +7,11 @@ import { HTTPFacilitatorClient, x402ResourceServer } from "@x402/core/server";
 import type { FacilitatorClient, FacilitatorConfig, RouteConfig } from "@x402/core/server";
 import { x402Client, x402HTTPClient } from "@x402/core/client";
 import { wrapFetchWithPayment } from "@x402/fetch";
+import {
+  decodePaymentRequiredHeader,
+  decodePaymentResponseHeader,
+  decodePaymentSignatureHeader,
+} from "@x402/core/http";
 import type {
   Network,
   PaymentPayload,
@@ -498,4 +503,132 @@ export function toReceipt(settle: SettleResponse): SettlementReceipt {
     amount: settle.amount !== undefined ? usdcFromMinor(settle.amount) : undefined,
     adapterVersion: ADAPTER_VERSION,
   };
+}
+
+/** Why a facilitator turned down a signed payment, as the store saw it (F3). */
+export interface SignedPaymentFailure {
+  /** Network the buyer signed for, from its PAYMENT-SIGNATURE. */
+  network?: string | undefined;
+  /** The facilitator's reason code, or the transport error x402 put in its place. */
+  reason?: string | undefined;
+}
+
+const header = (get: (name: string) => string | null | undefined, name: string) =>
+  get(name) ?? get(name.toLowerCase()) ?? undefined;
+
+/**
+ * Reads, from a checkout request that carried a signed payment and the 402 (or 502) the x402
+ * middleware answered, which network was tried and why the facilitator refused it. Undefined
+ * when the request carried no payment: that 402 is an offer, not a refusal.
+ */
+export function signedPaymentFailure(
+  requestHeader: (name: string) => string | null | undefined,
+  responseHeader: (name: string) => string | null | undefined,
+  bodyError?: string,
+): SignedPaymentFailure | undefined {
+  const signature = header(requestHeader, "PAYMENT-SIGNATURE");
+  if (!signature) return undefined;
+  let network: string | undefined;
+  try {
+    network = decodePaymentSignatureHeader(signature).accepted?.network;
+  } catch {
+    network = undefined;
+  }
+  // A failed settle carries PAYMENT-RESPONSE; a failed verify reuses the 402 with `error` set.
+  let reason: string | undefined;
+  const settled = header(responseHeader, "PAYMENT-RESPONSE");
+  if (settled) {
+    try {
+      const s = decodePaymentResponseHeader(settled);
+      reason = s.errorReason ?? s.errorMessage;
+      network = network ?? s.network;
+    } catch {
+      reason = undefined;
+    }
+  }
+  if (!reason) {
+    const required = header(responseHeader, "PAYMENT-REQUIRED");
+    if (required) {
+      try {
+        reason = decodePaymentRequiredHeader(required).error;
+      } catch {
+        reason = undefined;
+      }
+    }
+  }
+  return { network, reason: reason ?? bodyError };
+}
+
+const PENDING = /^settlement_pending$/;
+const FUNDS = /insufficient_(funds|balance)/;
+// The buyer's own authorization: stale, reused, malformed or already bound to another payment.
+// A fresh signature fixes it.
+const BUYER_SIGNATURE =
+  /signature|nonce|valid_(before|after)|authorization_(expired|reused|validity)|deadline|not_yet_valid|transaction_state|invalid_payload$|failed_to_parse|permit2|credential_|payment_identifier_conflict|\(409\)/;
+// The store's own payment terms or account at the facilitator: the merchant has to fix them.
+const STORE_SETUP =
+  /recipient_mismatch|receiver_mismatch|invalid_network|network_mismatch|unsupported_scheme|invalid_payment_requirements|invalid_x402_version|token_(name|version)_mismatch|asset_mismatch|registration_required|\((400|401)\)|unauthorized/i;
+const UNAVAILABLE =
+  /\((429|5\d\d)\)|timed? ?out|timeout|aborted|fetch failed|ECONN|ENOTFOUND|EAI_AGAIN|socket/i;
+
+/**
+ * Turns a facilitator's refusal of a signed payment into an error an agent can reason about.
+ * Nothing was charged in any of these cases except `PAYMENT_PENDING`, where the charge may still
+ * land and paying again could charge twice. A refusal the facilitator does not explain, or a
+ * 403 from it, is `PAYMENT_DECLINED`: Circle screens the buyer and the merchant and documents no
+ * reason code for a failed screen, so this is what one looks like. It is never retryable, and
+ * the hint tells the agent not to move the payment to another network on its own.
+ */
+export function paymentFailureError(failure: SignedPaymentFailure): AgentPOSError {
+  const network = failure.network ?? "the network it chose";
+  const reason = failure.reason ?? "";
+  const details = { network: failure.network, facilitatorReason: failure.reason };
+  if (PENDING.test(reason)) {
+    return new AgentPOSError("PAYMENT_PENDING", `Settlement on ${network} is still unresolved`, {
+      hint: "Do not pay again: the charge may still land. Check the order with get_order later; the store reconciles it.",
+      details,
+    });
+  }
+  if (FUNDS.test(reason)) {
+    return new AgentPOSError("INSUFFICIENT_FUNDS", `Not enough USDC on ${network}`, {
+      hint: `The paying wallet on ${network} cannot cover this cart. Nothing was charged. Ask the human to top it up.`,
+      details,
+    });
+  }
+  if (BUYER_SIGNATURE.test(reason)) {
+    return new AgentPOSError(
+      "PAYMENT_REJECTED",
+      `The payment authorization was refused on ${network}`,
+      {
+        hint: "Nothing was charged. Pay the same cart again: a fresh authorization is signed.",
+        retryable: true,
+        details,
+      },
+    );
+  }
+  if (STORE_SETUP.test(reason)) {
+    return new AgentPOSError(
+      "PAYMENT_REJECTED",
+      `The store cannot take payments on ${network} right now`,
+      {
+        hint: "Nothing was charged. The merchant's payment setup on that network needs fixing; tell the human and try later.",
+        details,
+      },
+    );
+  }
+  if (UNAVAILABLE.test(reason)) {
+    return new AgentPOSError(
+      "FACILITATOR_UNAVAILABLE",
+      `The facilitator on ${network} did not answer`,
+      {
+        hint: "Nothing was charged. Retry the same cart after Retry-After seconds.",
+        retryable: true,
+        details,
+      },
+    );
+  }
+  return new AgentPOSError("PAYMENT_DECLINED", `The payment was declined on ${network}`, {
+    hint: `Nothing was charged. The facilitator on ${network} refused this payment without a documented reason, which is how a compliance screen of the buyer or the merchant shows up. Do not retry, and do not pay on another network on your own: tell the human, who decides.`,
+    details,
+  });
 }

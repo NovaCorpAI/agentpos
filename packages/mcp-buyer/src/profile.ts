@@ -113,12 +113,33 @@ export interface PendingApproval {
   summary: string;
   requestedAt: string;
   approvedAt?: string;
+  /**
+   * Networks whose facilitator declined this cart (PAYMENT_DECLINED). The buyer pays it again
+   * only after the human approves, and never on these networks.
+   */
+  declinedOn?: string[];
 }
 
 export function requestApproval(profile: string, pending: PendingApproval): void {
   mkdirSync(approvalsDir(profile), { recursive: true });
   const file = join(approvalsDir(profile), `${pending.cartId}.json`);
   if (!existsSync(file)) writeFileSync(file, `${JSON.stringify(pending, null, 2)}\n`);
+}
+
+/**
+ * Records that a facilitator declined this cart on `network`. Any earlier approval is withdrawn:
+ * paying the same cart elsewhere is a new decision for the human (F3).
+ */
+export function recordDecline(profile: string, pending: PendingApproval, network: string): void {
+  mkdirSync(approvalsDir(profile), { recursive: true });
+  const current = getApproval(profile, pending.cartId) ?? pending;
+  const declinedOn = [...new Set([...(current.declinedOn ?? []), network])];
+  const { approvedAt: _withdrawn, ...rest } = current;
+  writeFileSync(
+    join(approvalsDir(profile), `${pending.cartId}.json`),
+    `${JSON.stringify({ ...rest, declinedOn }, null, 2)}
+`,
+  );
 }
 
 export function getApproval(profile: string, cartId: string): PendingApproval | undefined {

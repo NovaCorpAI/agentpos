@@ -227,7 +227,7 @@ export function buildBuyerServer(options: BuyerServerOptions): McpServer {
     {
       title: "Buy",
       description:
-        "Pay a cart with x402 on Stellar within the human mandate. Returns the receipt (tx hash) and the order in the merchant platform. Never pays outside the mandate; CONFIRMATION_REQUIRED means a human must run `agentpos-buyer approve <cartId>` first.",
+        "Pay a cart with x402 on Stellar within the human mandate. Returns the receipt (tx hash) and the order in the merchant platform. Never pays outside the mandate; CONFIRMATION_REQUIRED means a human must run `agentpos-buyer approve <cartId>` first. PAYMENT_DECLINED means the store's facilitator refused it (nothing charged): do not retry or switch networks; tell the human.",
       inputSchema: { site: z.url(), cartId: z.string(), ...profileArg },
     },
     async ({ site, cartId, profile }) => {

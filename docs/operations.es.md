@@ -159,6 +159,25 @@ el monto y `candidateOrders`: las órdenes que siguen esperando pago con el mism
 4. `/agentpos/health` muestra la cuenta en `networks[].reconciliation.paymentsWithoutOrder`, y
    `error` cuando la última pasada no pudo leer la cadena.
 
+## Pago rechazado: PAYMENT_DECLINED
+
+El facilitador rechazó un pago firmado sin dar una razón documentada. En el Facilitator Service de
+Circle (Arc, Base, Polygon) así se ve un control de cumplimiento ("screening") que no pasó: Circle
+revisa al comprador y al comercio antes de liquidar y no publica un código para ese caso. **Nadie
+fue cobrado** y no se creó ninguna orden. El agente recibe `PAYMENT_DECLINED` con la red; no
+reintenta, y no lleva el pago a otra red salvo que su humano lo apruebe.
+
+Recibes una alerta de advertencia con ese código, a lo más una vez por hora por red. Una alerta
+tras un solo comprador suele ser por ese comprador. Si los compradores siguen siendo rechazados en
+la misma red, el control puede ser por tu propia dirección ahí: deja de ofrecer esa red (quítala
+de las redes de la tienda) y escribe al soporte del facilitador con tu dirección de comercio.
+
+Los otros rechazos de un pago firmado también le llegan tipados al agente: `INSUFFICIENT_FUNDS`
+(a su billetera no le alcanza), `PAYMENT_REJECTED` (una firma vencida, reintentable; o tu
+configuración de pago en esa red, no reintentable), `PAYMENT_PENDING` (la liquidación sigue sin
+resolverse: no pagar de nuevo) y `FACILITATOR_UNAVAILABLE` (reintentable, `Retry-After: 60`).
+Ninguno genera alerta.
+
 ## Falló la liquidación
 
 `SETTLEMENT_FAILED` (advertencia): el facilitador verificó el pago pero falló al liquidarlo.

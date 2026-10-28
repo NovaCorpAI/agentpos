@@ -116,6 +116,13 @@ multiplied by `quantity` in minor units, never in decimals.
 `CONFIRMATION_REQUIRED` are returned instead. For the last one the human runs
 `agentpos-buyer approve <cartId>` (see `agentpos-buyer pending`) and the agent calls `buy` again.
 
+When a store's facilitator declines a payment (`PAYMENT_DECLINED`, for example a compliance screen
+on Circle's facilitator), `buy` records the network on that cart and stops: a second `buy` signs
+nothing. The cart shows up in `agentpos-buyer pending`; if the human approves it, the next `buy`
+pays on another network the mandate allows, never on the one that declined. Other payment errors
+keep the store's code (`INSUFFICIENT_FUNDS`, `PAYMENT_PENDING`, ...), with `retryable` and the
+network in `details`.
+
 Every payment is appended to `~/.agentpos/profiles/<name>.spending.jsonl` with tx hash, site,
 order id and summary.
 

@@ -47,7 +47,8 @@ export interface AlertEvent {
     | "ORDER_NOT_CREATED"
     | "SETTLEMENT_FAILED"
     | "RETRY_LOOP_STALLED"
-    | "PAYMENT_WITHOUT_ORDER";
+    | "PAYMENT_WITHOUT_ORDER"
+    | "PAYMENT_DECLINED";
   message: string;
   details: Record<string, unknown>;
   at: string;

@@ -43,6 +43,18 @@ Caso típico: el facilitador liquidó y el sidecar cayó antes de guardar el has
 3. Si no calza con ninguna: ingreso ajeno a la tienda, o un pago a reembolsar al comprador.
 4. Se avisa una vez por transacción; tras un reinicio del sidecar puede repetirse una vez.
 
+## PAYMENT_DECLINED (advertencia)
+
+Qué pasó: el facilitador de una red rechazó un pago firmado sin razón documentada. En Circle es
+como se ve un screening de cumplimiento fallido (del comprador o del comercio). Nadie fue cobrado,
+no hay orden. Se avisa a lo más una vez por hora por red.
+
+1. Mirar `details.network` y `details.reason` (lo que respondió el facilitador, a veces un 403).
+2. Si pasa con un comprador puntual: nada que hacer, el agente ya recibió el código y no reintenta.
+3. Si se repite con compradores distintos en la misma red: sospechar de la dirección del comercio.
+   Sacar esa red de `x402Networks`, reiniciar, y escribir al soporte del facilitador (Circle)
+   con la dirección de cobro.
+
 ## RETRY_LOOP_STALLED (crítica)
 
 Una orden pagada lleva más de una hora sin orden en plataforma. Mismo procedimiento que

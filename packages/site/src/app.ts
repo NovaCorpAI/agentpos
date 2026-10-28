@@ -11,7 +11,9 @@ import {
   PaymentRailRegistry,
   X402_STELLAR_RAIL_ID,
   createTransbankRail,
+  paymentFailureError,
   railFailureToError,
+  signedPaymentFailure,
 } from "@agentpos/core";
 import type {
   Cart,
@@ -1138,6 +1140,56 @@ export function createAgentPOSApp(deps: AgentPOSDeps): AgentPOSSite {
     }
     return mw;
   };
+  // A signed payment the facilitator refused comes back from x402 as a bare 402 (or 502). The
+  // agent gets the reason as a typed error instead, on the same status and headers, so it can
+  // tell a stale signature from an empty wallet from a declined payment (F3). A decline is also
+  // the merchant's business: if its own address failed the screen, every buyer is refused there.
+  const declineAlertedAt = new Map<string, number>();
+  const refusal = async (c: Context, res: Response): Promise<Response> => {
+    const raw = (await res
+      .clone()
+      .json()
+      .catch(() => ({}))) as { error?: unknown };
+    const failure = signedPaymentFailure(
+      (n) => c.req.header(n),
+      (n) => res.headers.get(n),
+      typeof raw.error === "string" ? raw.error : undefined,
+    );
+    if (!failure) return res;
+    const err = paymentFailureError(failure);
+    const cartId = c.req.query("cart");
+    logger.warn("checkout.payment_refused", {
+      cartId,
+      code: err.code,
+      network: failure.network,
+      reason: failure.reason,
+    });
+    const network = failure.network ?? core.caip2;
+    const last = declineAlertedAt.get(network) ?? 0;
+    if (err.code === "PAYMENT_DECLINED" && deps.alert && Date.now() - last > 3_600_000) {
+      declineAlertedAt.set(network, Date.now());
+      try {
+        await deps.alert({
+          severity: "warning",
+          code: "PAYMENT_DECLINED",
+          message: `The facilitator on ${network} declined a payment without a reason`,
+          details: { network, cartId, reason: failure.reason },
+          at: new Date().toISOString(),
+        });
+      } catch (alertErr) {
+        logger.error("alert.failed", { error: String(alertErr) });
+      }
+    }
+    const headers = new Headers(res.headers);
+    headers.set("content-type", "application/json");
+    if (err.code === "FACILITATOR_UNAVAILABLE") headers.set("Retry-After", "60");
+    const out = new Response(jsonStringify({ error: err.toJSON() }), {
+      status: res.status,
+      headers,
+    });
+    c.res = out;
+    return out;
+  };
   app.use(`${base}/checkout`, async (c, next) => {
     const healthy = await offeredNetworks();
     await syncX402([core.caip2, ...healthy.map((n) => n.extension.network)]);
@@ -1167,7 +1219,10 @@ export function createAgentPOSApp(deps: AgentPOSDeps): AgentPOSSite {
       if (ownDown) logger.warn("x402.network.degraded", { network: core.caip2, own: true });
       else logger.info("x402.network.restored", { network: core.caip2, own: true });
     }
-    return x402Set(offered, own)(c, next);
+    const out = await x402Set(offered, own)(c, next);
+    const res = out ?? c.res;
+    if (!signed || (res.status !== 402 && res.status !== 502)) return out;
+    return refusal(c, res);
   });
 
   // 3. Handler runs after verify and before settle: register the pending order only.
