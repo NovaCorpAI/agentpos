@@ -12,6 +12,12 @@ export const ERROR_CODES = [
   // payment
   "PAYMENT_REJECTED",
   "SETTLEMENT_FAILED",
+  /**
+   * The facilitator refused a signed payment for a reason it does not document, which is how a
+   * compliance screen of the buyer or the merchant shows up (Circle's Facilitator Service). Not
+   * retryable, on that network or silently on another one: a human decides.
+   */
+  "PAYMENT_DECLINED",
   "SPEC_MISMATCH",
   // payment rails (adapter/rails.ts)
   "RAIL_ID_INVALID",

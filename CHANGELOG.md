@@ -2,6 +2,16 @@
 
 All public packages share one version. Dates are the day the tag was pushed.
 
+## Unreleased
+
+- Site: a signed payment the facilitator refuses comes back as a typed error with the network
+  instead of a bare 402 (risk F3): `PAYMENT_DECLINED` (new code: refused without a documented
+  reason, how a failed compliance screen shows up on Circle's facilitator), `INSUFFICIENT_FUNDS`,
+  `PAYMENT_REJECTED`, `PAYMENT_PENDING` or `FACILITATOR_UNAVAILABLE`. A decline raises a
+  `PAYMENT_DECLINED` warning alert at most once an hour per network.
+- Buyer: `buy` keeps the store's error code. After a decline it pays that cart again only once the
+  human approves it, and never on the network that declined.
+
 ## 0.1.4 (2026-10-27)
 
 - Site: the store's own network degrades like the extra ones (risk F5). While its facilitator

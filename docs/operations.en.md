@@ -156,6 +156,24 @@ the amount and `candidateOrders`: orders still waiting for payment with the same
 4. `/agentpos/health` shows the count under `networks[].reconciliation.paymentsWithoutOrder`, and
    `error` when the last pass could not read the chain.
 
+## Payment declined: PAYMENT_DECLINED
+
+The facilitator refused a signed payment without a documented reason. On Circle's Facilitator
+Service (Arc, Base, Polygon) this is how a failed compliance screen looks: Circle screens both the
+buyer and the merchant before settling and publishes no reason code for it. **Nobody was charged**
+and no order was created. The agent receives `PAYMENT_DECLINED` with the network; it does not
+retry, and it does not move the payment to another network unless its human approves it.
+
+You get a warning alert with that code at most once an hour per network. One alert after a single
+buyer is usually about that buyer. If buyers keep being declined on the same network, the screen
+may be about your own address there: stop offering that network (remove it from the store's
+networks) and contact the facilitator's support with your merchant address.
+
+The other refusals of a signed payment reach the agent typed too: `INSUFFICIENT_FUNDS` (its
+wallet is short), `PAYMENT_REJECTED` (a stale signature, retryable; or your payment setup on that
+network, not retryable), `PAYMENT_PENDING` (settlement unresolved: do not pay again) and
+`FACILITATOR_UNAVAILABLE` (retryable, `Retry-After: 60`). None of them raises an alert.
+
 ## Settlement failed
 
 `SETTLEMENT_FAILED` (warning): the facilitator verified the payment but failed to settle it.

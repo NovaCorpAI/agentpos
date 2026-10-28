@@ -418,3 +418,112 @@ describe("when the store's own facilitator is down (F5)", () => {
     }
   });
 });
+
+describe("when a facilitator refuses a signed payment (F3)", () => {
+  type Refusal = {
+    verify?: () => Promise<{ isValid: false; invalidReason: string; payer: string }>;
+    settle?: () => Promise<never>;
+  };
+  const build = (refuse: Refusal) => {
+    const storage = new SiteStorage(":memory:");
+    storage.upsertItem(ebook);
+    const connector = connectorMock();
+    const facilitator = bothNetworks();
+    if (refuse.verify) facilitator.verify = refuse.verify;
+    if (refuse.settle) facilitator.settle = refuse.settle;
+    const alerts: Array<{ code: string; details: Record<string, unknown> }> = [];
+    const gate = createAgentPOSApp({
+      site,
+      core,
+      connector,
+      storage,
+      facilitator,
+      alert: (e) => {
+        alerts.push(e);
+      },
+      x402Networks: [
+        {
+          extension: { network: ARC, server: new ExactEvmScheme(), facilitator },
+          payTo: ARC_PAYTO,
+          asset: ARC_USDC,
+        },
+      ],
+    });
+    return { gate, connector, alerts };
+  };
+
+  const payOnArc = async (gate: ReturnType<typeof createAgentPOSApp>) => {
+    const cartRes = await gate.fetch(
+      new Request("https://shop.test/agentpos/cart", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          items: [{ itemId: "ebook", quantity: 1 }],
+          buyer: { email: "ada@example.com" },
+        }),
+      }),
+    );
+    const cart = (await cartRes.json()) as { checkout: string };
+    const first = await gate.fetch(new Request(cart.checkout, { method: "POST" }));
+    const client = new x402HTTPClient(new x402Client());
+    const required = client.getPaymentRequiredResponse(
+      (n) => first.headers.get(n),
+      await first
+        .clone()
+        .json()
+        .catch(() => undefined),
+    );
+    const payload = {
+      x402Version: 2,
+      accepted: required.accepts.find((a) => a.network === ARC),
+      payload: { signature: "0xstub", authorization: {} },
+    } as unknown as PaymentPayload;
+    const res = await gate.fetch(
+      new Request(cart.checkout, {
+        method: "POST",
+        headers: client.encodePaymentSignatureHeader(payload),
+      }),
+    );
+    const body = (await res.json()) as {
+      error: { code: string; retryable: boolean; hint: string; details: { network?: string } };
+    };
+    return { res, body };
+  };
+
+  // Circle screens the buyer and the merchant and documents no reason code for a failed screen;
+  // its refusals outside the documented reasons come back as a 403.
+  const screened = async (): Promise<never> => {
+    throw new Error('Facilitator settle failed (403): {"code":403,"message":"Forbidden"}');
+  };
+
+  it("answers PAYMENT_DECLINED on the network that declined, with no order", async () => {
+    const { gate, connector } = build({ settle: screened });
+    const { res, body } = await payOnArc(gate);
+    expect(res.status).toBe(402);
+    expect(body.error.code).toBe("PAYMENT_DECLINED");
+    expect(body.error.retryable).toBe(false);
+    expect(body.error.details.network).toBe(ARC);
+    expect(body.error.hint).toMatch(/do not pay on another network on your own/);
+    expect(connector.created).toHaveLength(0);
+  });
+
+  it("alerts the merchant once per network, not once per buyer", async () => {
+    const { gate, alerts } = build({ settle: screened });
+    await payOnArc(gate);
+    await payOnArc(gate);
+    expect(alerts.filter((a) => a.code === "PAYMENT_DECLINED")).toEqual([
+      expect.objectContaining({ details: expect.objectContaining({ network: ARC }) }),
+    ]);
+  });
+
+  it("tells an empty wallet apart from a decline", async () => {
+    const { gate, alerts } = build({
+      verify: async () => ({ isValid: false, invalidReason: "insufficient_funds", payer: "0xb" }),
+    });
+    const { res, body } = await payOnArc(gate);
+    expect(res.status).toBe(402);
+    expect(body.error.code).toBe("INSUFFICIENT_FUNDS");
+    expect(body.error.details.network).toBe(ARC);
+    expect(alerts).toEqual([]);
+  });
+});

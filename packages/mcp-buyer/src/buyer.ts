@@ -4,6 +4,7 @@
  */
 import {
   AgentPOSError,
+  ERROR_CODES,
   compareUsdc,
   createBuyerFetch,
   createLocalKeypairSigner,
@@ -35,7 +36,7 @@ import type {
   MarketOffer,
   MarketStoreReport,
 } from "./market.js";
-import { clearApproval, getApproval, requestApproval } from "./profile.js";
+import { clearApproval, getApproval, recordDecline, requestApproval } from "./profile.js";
 import type { Profile } from "./profile.js";
 import { SiteClient, cartTotalMinor } from "./siteClient.js";
 import type { CatalogQuery, SiteCart, SiteFacets, SiteItem, SiteOrder } from "./siteClient.js";
@@ -397,7 +398,23 @@ export class BuyerService {
   async buy(siteUrl: string, cartId: string): Promise<BuyResult> {
     const client = this.site(siteUrl);
     const info = await client.info();
-    const allowed = allowedNetworks(this.profile.mandate, this.core.caip2);
+    // A facilitator already declined this cart somewhere (F3): only the human can send it to
+    // another network, and never back to the one that declined it.
+    const approval = getApproval(this.profile.name, cartId);
+    const declined = approval?.declinedOn ?? [];
+    if (declined.length > 0 && !approval?.approvedAt) {
+      throw new AgentPOSError(
+        "PAYMENT_DECLINED",
+        `Cart ${cartId} was declined on ${declined.join(", ")}`,
+        {
+          hint: `Nothing was charged. Paying it on another allowed network is the human's decision: they run \`agentpos-buyer approve ${cartId}\`, then call buy again.`,
+          details: { declinedOn: declined },
+        },
+      );
+    }
+    const allowed = allowedNetworks(this.profile.mandate, this.core.caip2).filter(
+      (n) => !declined.includes(n),
+    );
     const ownNetworkAllowed = allowed.includes(this.core.caip2);
     const installed = (this.deps.networks ?? []).map((n) => n(usdcFromMinor(0n)).network);
     const payable = [
@@ -441,7 +458,6 @@ export class BuyerService {
     const cart = (await cartRes.json()) as SiteCart;
     const amount = cartTotalMinor(cart);
     const hasPhysical = cart.quote.lines.some((l) => l.physical);
-    const approval = getApproval(this.profile.name, cartId);
     const verdict = evaluateMandate(this.profile.mandate, {
       amount,
       siteHost: client.host,
@@ -483,17 +499,37 @@ export class BuyerService {
     const response = await payFetch(checkoutUrl, { method: "POST" });
     const body = (await response.json().catch(() => ({}))) as {
       orderId?: string;
-      error?: { code?: string; message?: string; hint?: string };
+      error?: {
+        code?: string;
+        message?: string;
+        hint?: string;
+        retryable?: boolean;
+        details?: Record<string, unknown>;
+      };
     };
     if (response.status !== 200 || !body.orderId) {
-      throw new AgentPOSError(
-        "PAYMENT_REJECTED",
-        body.error?.message ?? `Checkout answered ${response.status}`,
-        {
-          hint: body.error?.hint ?? "The payment was not settled; nothing was charged.",
-          details: { status: response.status, code: body.error?.code },
-        },
-      );
+      // The store names why the payment failed (F3); keep its code when it is one of ours.
+      const code = ERROR_CODES.find((k) => k === body.error?.code) ?? "PAYMENT_REJECTED";
+      const network =
+        typeof body.error?.details?.network === "string" ? body.error.details.network : undefined;
+      if (code === "PAYMENT_DECLINED" && network) {
+        recordDecline(
+          this.profile.name,
+          {
+            cartId,
+            site: client.url,
+            amount: formatUsdc(amount),
+            summary: cart.quote.lines.map((l) => `${l.quantity} x ${l.title}`).join(", "),
+            requestedAt: new Date().toISOString(),
+          },
+          network,
+        );
+      }
+      throw new AgentPOSError(code, body.error?.message ?? `Checkout answered ${response.status}`, {
+        hint: body.error?.hint ?? "The payment was not settled; nothing was charged.",
+        retryable: body.error?.retryable ?? false,
+        details: { ...body.error?.details, status: response.status, code: body.error?.code },
+      });
     }
     const receipt = receiptFromResponse(response);
     this.spending.append({

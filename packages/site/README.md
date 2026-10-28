@@ -138,6 +138,13 @@ the extra networks alone, so a store that also takes Arc keeps selling on Arc. W
 settle, checkout answers `FACILITATOR_UNAVAILABLE` (retryable, `Retry-After: 60`) instead of an
 internal error; nothing is charged.
 
+A signed payment the facilitator refuses comes back typed, on the same 402 and headers, with the
+network it was tried on: `PAYMENT_DECLINED` (refused without a documented reason, which is how a
+failed compliance screen looks on Circle's facilitator; not retryable, and the agent must not
+move it to another network on its own), `INSUFFICIENT_FUNDS`, `PAYMENT_REJECTED`,
+`PAYMENT_PENDING` or `FACILITATOR_UNAVAILABLE`. A decline also raises a `PAYMENT_DECLINED` warning
+alert, at most once an hour per network, in case the screen is about the merchant's own address.
+
 Extra networks are also reconciled when their rail brings a `watcher` (`X402StoreNetwork.watcher`,
 a `PaymentWatcher`): every 5 minutes under `serve()` (`reconcileIntervalMs`), the sidecar reads
 what the merchant's wallet received there and compares it with the payments it recorded. A
