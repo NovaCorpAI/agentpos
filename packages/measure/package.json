@@ -1,6 +1,6 @@
 {
   "name": "@agentpos/measure",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "AgentPOS usage measurement: one usage_events row per model call, with tokens, latency, integer cost in USD micros and the traceId of its run. Price table as configuration, CSV export and reader.",
   "license": "Apache-2.0",
   "homepage": "https://agentposhq.com",

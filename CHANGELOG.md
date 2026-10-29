@@ -2,7 +2,7 @@
 
 All public packages share one version. Dates are the day the tag was pushed.
 
-## Unreleased
+## 0.1.5 (2026-10-29)
 
 - Site: a signed payment the facilitator refuses comes back as a typed error with the network
   instead of a bare 402 (risk F3): `PAYMENT_DECLINED` (new code: refused without a documented
