@@ -1,6 +1,6 @@
 {
   "name": "@agentpos/identity",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "AgentPOS Know Your Agent: Ed25519 request signatures, owner attestations and a revocable agent registry, so a merchant can require that whoever buys is an identifiable agent with a vouched owner.",
   "license": "Apache-2.0",
   "homepage": "https://agentposhq.com",
