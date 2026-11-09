@@ -28,7 +28,7 @@
     "@agentpos/core": "workspace:*",
     "@agentpos/site": "workspace:*",
     "@hono/node-server": "^2.1.4",
-    "@stellar/stellar-sdk": "^16.3.1",
+    "@stellar/stellar-sdk": "^16.4.1",
     "hono": "^4.13.13",
     "zod": "^4.6.7"
   },

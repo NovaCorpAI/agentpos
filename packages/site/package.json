@@ -1,6 +1,6 @@
 {
   "name": "@agentpos/site",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "AgentPOS site library: turns a fiat e-commerce site into an agent-buyable store. Middleware or sidecar, x402 on Stellar, UCP/ACP/MCP surfaces, orders into the merchant's platform.",
   "license": "Apache-2.0",
   "homepage": "https://agentposhq.com",
@@ -56,9 +56,9 @@
     "@clack/prompts": "^1.8.1",
     "@hono/node-server": "^2.1.4",
     "@modelcontextprotocol/sdk": "^1.32.1",
-    "@stellar/stellar-sdk": "^16.3.1",
-    "@x402/core": "2.28.0",
-    "@x402/hono": "2.28.0",
+    "@stellar/stellar-sdk": "^16.4.1",
+    "@x402/core": "2.30.0",
+    "@x402/hono": "2.30.0",
     "commander": "^15.0.0",
     "hono": "^4.13.13",
     "picocolors": "^1.1.1",
@@ -69,6 +69,6 @@
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vitest": "^4.1.11",
-    "@x402/evm": "2.28.0"
+    "@x402/evm": "2.30.0"
   }
 }
