@@ -11,8 +11,7 @@ COPY packages/core ./packages/core
 COPY packages/measure ./packages/measure
 COPY apps/facilitator ./apps/facilitator
 RUN pnpm install --frozen-lockfile --filter @agentpos/facilitator... \
- && pnpm --filter @agentpos/core build \
- && pnpm --filter @agentpos/facilitator build \
+ && pnpm -r --filter @agentpos/facilitator... build \
  && pnpm prune --prod
 
 FROM node:22-alpine
