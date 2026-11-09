@@ -2,6 +2,14 @@
 
 All public packages share one version. Dates are the day the tag was pushed.
 
+## 0.1.6 (2026-11-09)
+
+- Ready for Bell, Protocol 30 (mainnet vote on 23 November 2026): `@stellar/stellar-sdk` moves
+  to 16.4.1, which decodes Protocol 30 ledgers, and every `@x402/*` package moves to 2.30.0.
+  Verified on testnet, already on Protocol 30: the smoke payment and the full agent purchase
+  (scan, publish, mandate, x402 settle, paid WooCommerce order) pass. Muxed contract addresses
+  (`W...`, CAP-84) are not accepted yet; they wait for SDK 17 support in `@x402/stellar`.
+
 ## 0.1.5 (2026-10-29)
 
 - Site: a signed payment the facilitator refuses comes back as a typed error with the network

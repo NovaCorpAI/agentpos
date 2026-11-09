@@ -63,8 +63,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/site
       '@stellar/stellar-sdk':
-        specifier: ^16.3.1
-        version: 16.3.1(debug@4.4.3)
+        specifier: ^16.4.1
+        version: 16.4.1(debug@4.4.3)
       '@types/node':
         specifier: ^24.19.2
         version: 24.19.2
@@ -89,14 +89,14 @@ importers:
         specifier: ^2.1.4
         version: 2.1.4(hono@4.13.13)
       '@stellar/stellar-sdk':
-        specifier: ^16.3.1
-        version: 16.3.1(debug@4.4.3)
+        specifier: ^16.4.1
+        version: 16.4.1(debug@4.4.3)
       '@x402/core':
-        specifier: 2.28.0
-        version: 2.28.0
+        specifier: 2.30.0
+        version: 2.30.0
       '@x402/stellar':
-        specifier: 2.28.0
-        version: 2.28.0(debug@4.4.3)
+        specifier: 2.30.0
+        version: 2.30.0(debug@4.4.3)
       hono:
         specifier: ^4.13.13
         version: 4.13.13
@@ -129,8 +129,8 @@ importers:
         specifier: ^2.1.4
         version: 2.1.4(hono@4.13.13)
       '@stellar/stellar-sdk':
-        specifier: ^16.3.1
-        version: 16.3.1(debug@4.4.3)
+        specifier: ^16.4.1
+        version: 16.4.1(debug@4.4.3)
       hono:
         specifier: ^4.13.13
         version: 4.13.13
@@ -207,17 +207,17 @@ importers:
         specifier: workspace:^
         version: link:../measure
       '@stellar/stellar-sdk':
-        specifier: ^16.3.1
-        version: 16.3.1(debug@4.4.3)
+        specifier: ^16.4.1
+        version: 16.4.1(debug@4.4.3)
       '@x402/core':
-        specifier: 2.28.0
-        version: 2.28.0
+        specifier: 2.30.0
+        version: 2.30.0
       '@x402/fetch':
-        specifier: 2.28.0
-        version: 2.28.0
+        specifier: 2.30.0
+        version: 2.30.0
       '@x402/stellar':
-        specifier: 2.28.0
-        version: 2.28.0(debug@4.4.3)
+        specifier: 2.30.0
+        version: 2.30.0(debug@4.4.3)
       ajv:
         specifier: ^8.20.0
         version: 8.20.0
@@ -247,8 +247,8 @@ importers:
         specifier: workspace:^
         version: link:../core
       '@stellar/stellar-sdk':
-        specifier: ^16.3.1
-        version: 16.3.1(debug@4.4.3)
+        specifier: ^16.4.1
+        version: 16.4.1(debug@4.4.3)
       zod:
         specifier: ^4.6.7
         version: 4.6.7
@@ -275,8 +275,8 @@ importers:
         specifier: ^1.32.1
         version: 1.32.1(zod@4.6.7)
       '@stellar/stellar-sdk':
-        specifier: ^16.3.1
-        version: 16.3.1(debug@4.4.3)
+        specifier: ^16.4.1
+        version: 16.4.1(debug@4.4.3)
       commander:
         specifier: ^15.0.0
         version: 15.0.0
@@ -300,11 +300,11 @@ importers:
         specifier: ^24.19.2
         version: 24.19.2
       '@x402/core':
-        specifier: 2.28.0
-        version: 2.28.0
+        specifier: 2.30.0
+        version: 2.30.0
       '@x402/evm':
-        specifier: 2.28.0
-        version: 2.28.0(typescript@5.9.3)
+        specifier: 2.30.0
+        version: 2.30.0(typescript@5.9.3)
       tsx:
         specifier: ^4.23.15
         version: 4.23.15
@@ -352,8 +352,8 @@ importers:
         specifier: workspace:^
         version: link:../core
       '@stellar/stellar-sdk':
-        specifier: ^16.3.1
-        version: 16.3.1(debug@4.4.3)
+        specifier: ^16.4.1
+        version: 16.4.1(debug@4.4.3)
       zod:
         specifier: ^4.6.7
         version: 4.6.7
@@ -426,14 +426,14 @@ importers:
         specifier: ^1.32.1
         version: 1.32.1(zod@4.6.7)
       '@stellar/stellar-sdk':
-        specifier: ^16.3.1
-        version: 16.3.1(debug@4.4.3)
+        specifier: ^16.4.1
+        version: 16.4.1(debug@4.4.3)
       '@x402/core':
-        specifier: 2.28.0
-        version: 2.28.0
+        specifier: 2.30.0
+        version: 2.30.0
       '@x402/hono':
-        specifier: 2.28.0
-        version: 2.28.0(hono@4.13.13)(typescript@5.9.3)
+        specifier: 2.30.0
+        version: 2.30.0(hono@4.13.13)(typescript@5.9.3)
       commander:
         specifier: ^15.0.0
         version: 15.0.0
@@ -451,8 +451,8 @@ importers:
         specifier: ^24.19.2
         version: 24.19.2
       '@x402/evm':
-        specifier: 2.28.0
-        version: 2.28.0(typescript@5.9.3)
+        specifier: 2.30.0
+        version: 2.30.0(typescript@5.9.3)
       tsx:
         specifier: ^4.23.15
         version: 4.23.15
@@ -874,8 +874,8 @@ packages:
     resolution: {integrity: sha512-+NmNa7Tk5BI5XFdy/6xGTqAN4J9a9KgCrCGhj2uEUTCBhLkch0M+QbKzNH8zEnejWe0p8w+0q5hUVX6L3OzoVA==}
     engines: {node: '>=20.0.0', pnpm: '>=9.0.0'}
 
-  '@stellar/stellar-sdk@16.3.1':
-    resolution: {integrity: sha512-PPM1JA51NChSPyMkh+T9sHxJtP/v9e9Gcyc2BMNvnGvbZwqoKJclRSdPgmalLDAmTnTewGs7VMM9nRxDeCzzgQ==}
+  '@stellar/stellar-sdk@16.4.1':
+    resolution: {integrity: sha512-0kT+ShOUE6dc0smLEsajuizss1hvlGDsCooM88FqgxNOCKpY8IuQPzCs75RNKMSMITz+dX7KZ5qGhQ2EWGMTTg==}
     engines: {node: '>=22.0.0'}
     hasBin: true
 
@@ -1015,29 +1015,29 @@ packages:
   '@vitest/utils@4.1.11':
     resolution: {integrity: sha512-zTCVGpyFsGWBhllOyKlTw/vnr6D9qxsfSDyfbyZmTyjHw5N/VuvzHpHoQjm2ZJzn4RJgx5w4r7V0er69CmLgPQ==}
 
-  '@x402/core@2.28.0':
-    resolution: {integrity: sha512-Da/7zKxCKqpBoB4Msc9tFgkAv7tJTD8nG+DSSm+QdXAyJS4PQsmgVSKe17rDJTtlu0pwNbLcOje6MyQ6kaDkig==}
+  '@x402/core@2.30.0':
+    resolution: {integrity: sha512-gvMxCum2QlNI6jI/3NL1jdrmOgtX9sWEWxSIOmeI67/5ndOJvYOtP7JZLSO8o8af+O+A+Vhhjza1NCda0yVppg==}
 
-  '@x402/evm@2.28.0':
-    resolution: {integrity: sha512-BZuoaCKMoPQQuMTa4oibvoyI06WdCpgrzgdicUu8d+5NBMAfWb6LAmSQf1KkeiS8C+25/+2JGB4cHSL0VLGnSA==}
+  '@x402/evm@2.30.0':
+    resolution: {integrity: sha512-/iaEB820OPJb1JkUqaCTq90FwjbmBB/rAFaH7ZAL2AmcesSVPO/FjdHD2wmXqBzXkEnPG9f6m1SuNpCtVlA9LQ==}
 
-  '@x402/extensions@2.28.0':
-    resolution: {integrity: sha512-M3SVxO8DJnx7gpok/ODQp803jr21s1XrCMholNw0hSgOVvSPRksfTZ+CUNfJwteNaHmaAxGjPelXWBhTCMD9oQ==}
+  '@x402/extensions@2.30.0':
+    resolution: {integrity: sha512-Lqu8hYkFAIhzarWa8V1272tyolFAW7WjHrxQ7we5P0fEZ8oMXOq1hna2X0FXQetZoOFzBDwSWBBMsrqE8ZzvcQ==}
 
-  '@x402/fetch@2.28.0':
-    resolution: {integrity: sha512-kF5IjZIz/izg2TD/Zav+SVj0jtC0zBDfE7WcKCnMZWIsZcLCyL2GgvwXCn7CCSsNjpQ/z3Rz4OqTCA4AaeKySQ==}
+  '@x402/fetch@2.30.0':
+    resolution: {integrity: sha512-rEC8CHQN5ZFn2W9b1mZ8ZvRyEw9Zkc5LuuVXo1CBU9w3PCtQO3c7+ChS7Ht9MvF66JTicK3ja0KgUF+fpChvNA==}
 
-  '@x402/hono@2.28.0':
-    resolution: {integrity: sha512-tR/AegvCpluj4AX1uYpqt0Ak7e3RcA2QE9GYrPCzwZTxv2z7gYUl7xE/olaxxDEiEb/yRmlsNAxmL81cARjeKw==}
+  '@x402/hono@2.30.0':
+    resolution: {integrity: sha512-ctdA345cQEp5zbCXzVlHrP3jp7Zl5ucQJ7595o6pELPZSBb/uUlCkthlOYWtx/Uv9brdLsoDIjySyXj5Uo2l5Q==}
     peerDependencies:
-      '@x402/paywall': ^2.28.0
-      hono: ^4.0.0
+      '@x402/paywall': ^2.30.0
+      hono: '>=4.13.7 <5.0.0'
     peerDependenciesMeta:
       '@x402/paywall':
         optional: true
 
-  '@x402/stellar@2.28.0':
-    resolution: {integrity: sha512-H/P46YVVEvJmnXlss8fJBNGgjaLkp3pWJ6PH2uOJY+jVemugUoQPArwtQKNovEV2BnF0gnJ+sdaRg+4Gucu6jQ==}
+  '@x402/stellar@2.30.0':
+    resolution: {integrity: sha512-XpLbvLesgK8c1EuFRBsJ3fVtBd5csBkjXJ5jQYrFgp+jH0r27bWqoMzSzo5uBdvXv0iQddk+ju6ahqG+F99L3g==}
     engines: {node: '>=22.0.0'}
 
   abitype@1.2.3:
@@ -2454,7 +2454,7 @@ snapshots:
 
   '@stellar/js-xdr@4.0.0': {}
 
-  '@stellar/stellar-sdk@16.3.1(debug@4.4.3)':
+  '@stellar/stellar-sdk@16.4.1(debug@4.4.3)':
     dependencies:
       '@noble/ed25519': 3.2.0
       '@noble/hashes': 2.4.0
@@ -2639,13 +2639,13 @@ snapshots:
       convert-source-map: 2.0.0
       tinyrainbow: 3.2.0
 
-  '@x402/core@2.28.0':
+  '@x402/core@2.30.0':
     dependencies:
       zod: 4.6.7
 
-  '@x402/evm@2.28.0(typescript@5.9.3)':
+  '@x402/evm@2.30.0(typescript@5.9.3)':
     dependencies:
-      '@x402/core': 2.28.0
+      '@x402/core': 2.30.0
       viem: 2.57.5(typescript@5.9.3)(zod@4.6.7)
       zod: 4.6.7
     transitivePeerDependencies:
@@ -2653,12 +2653,12 @@ snapshots:
       - typescript
       - utf-8-validate
 
-  '@x402/extensions@2.28.0(typescript@5.9.3)':
+  '@x402/extensions@2.30.0(typescript@5.9.3)':
     dependencies:
       '@noble/curves': 1.9.7
       '@scure/base': 1.2.6
       '@signinwithethereum/siwe': 4.2.1(viem@2.57.5(typescript@5.9.3)(zod@4.6.7))
-      '@x402/core': 2.28.0
+      '@x402/core': 2.30.0
       ajv: 8.20.0
       jose: 5.10.0
       tweetnacl: 1.0.3
@@ -2670,14 +2670,14 @@ snapshots:
       - typescript
       - utf-8-validate
 
-  '@x402/fetch@2.28.0':
+  '@x402/fetch@2.30.0':
     dependencies:
-      '@x402/core': 2.28.0
+      '@x402/core': 2.30.0
 
-  '@x402/hono@2.28.0(hono@4.13.13)(typescript@5.9.3)':
+  '@x402/hono@2.30.0(hono@4.13.13)(typescript@5.9.3)':
     dependencies:
-      '@x402/core': 2.28.0
-      '@x402/extensions': 2.28.0(typescript@5.9.3)
+      '@x402/core': 2.30.0
+      '@x402/extensions': 2.30.0(typescript@5.9.3)
       hono: 4.13.13
     transitivePeerDependencies:
       - bufferutil
@@ -2685,10 +2685,10 @@ snapshots:
       - typescript
       - utf-8-validate
 
-  '@x402/stellar@2.28.0(debug@4.4.3)':
+  '@x402/stellar@2.30.0(debug@4.4.3)':
     dependencies:
-      '@stellar/stellar-sdk': 16.3.1(debug@4.4.3)
-      '@x402/core': 2.28.0
+      '@stellar/stellar-sdk': 16.4.1(debug@4.4.3)
+      '@x402/core': 2.30.0
     transitivePeerDependencies:
       - debug
       - supports-color
