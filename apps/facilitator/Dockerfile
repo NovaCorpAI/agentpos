@@ -7,10 +7,11 @@ ENV CI=true
 RUN corepack enable
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json tsconfig.base.json ./
 COPY packages/core ./packages/core
+# core imports @agentpos/measure (measured LLM calls), so it has to be in the build context.
+COPY packages/measure ./packages/measure
 COPY apps/facilitator ./apps/facilitator
 RUN pnpm install --frozen-lockfile --filter @agentpos/facilitator... \
- && pnpm --filter @agentpos/core build \
- && pnpm --filter @agentpos/facilitator build \
+ && pnpm -r --filter @agentpos/facilitator... build \
  && pnpm prune --prod
 
 FROM node:22-alpine
