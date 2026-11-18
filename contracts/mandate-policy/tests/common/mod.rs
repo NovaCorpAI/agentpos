@@ -67,6 +67,8 @@ pub struct World {
     pub stranger: Address,
     /// Context rule id of the agent's session.
     pub session: u32,
+    /// How long a session issued in this world lasts, in ledgers.
+    pub session_ledgers: u32,
     nonce: Cell<i64>,
 }
 
@@ -99,11 +101,17 @@ impl World {
     /// An account that holds 100 USDC, owned by `owner`, with one session for `agent`:
     /// up to 5 USDC per payment, 12 USDC per 100 ledgers, one allowed seller, 500 ledgers.
     pub fn new() -> Self {
+        Self::with(1_000_000, SESSION_LEDGERS)
+    }
+
+    /// Same world, with a chosen lifetime for new ledger entries and for the session. The
+    /// default keeps every entry alive for the whole test; the storage tests shorten it.
+    pub fn with(min_entry_ttl: u32, session_ledgers: u32) -> Self {
         let e = Env::default();
         e.ledger().with_mut(|l| {
             l.sequence_number = START_LEDGER;
-            l.min_persistent_entry_ttl = 1_000_000;
-            l.min_temp_entry_ttl = 1_000_000;
+            l.min_persistent_entry_ttl = min_entry_ttl;
+            l.min_temp_entry_ttl = min_entry_ttl;
             l.max_entry_ttl = 2_000_000;
         });
 
@@ -135,6 +143,7 @@ impl World {
             owner,
             agent,
             session: 0,
+            session_ledgers,
             nonce: Cell::new(0),
         };
         world.account = world.new_account(&world.owner, STARTING_BALANCE);
@@ -183,6 +192,7 @@ impl World {
             other_seller: self.other_seller.clone(),
             stranger: self.stranger.clone(),
             session: 0,
+            session_ledgers: self.session_ledgers,
             nonce: Cell::new(1_000_000),
         };
         world.account = world.new_account(&world.owner, STARTING_BALANCE);
@@ -372,7 +382,7 @@ impl World {
         let e = &self.e;
         let context_type = ContextRuleType::CallContract(self.usdc.clone());
         let name = String::from_str(e, "agent session");
-        let valid_until = Some(e.ledger().sequence() + SESSION_LEDGERS);
+        let valid_until = Some(e.ledger().sequence() + self.session_ledgers);
         let policies: Map<Address, Val> =
             map![e, (self.policy.clone(), params.clone().into_val(e))];
 
