@@ -1,8 +1,9 @@
 # Scene for the Instaward week 1 video: the mandate demo, start to end.
 #
-# Needs the demo binary already built into the volume mounted at /target
-# (`cargo test -p agentpos-mandate-policy --test mandate_demo --no-run`), and a `demo.sh`
-# next to this tape that runs it. See contracts/README.md, "See it run".
+# Runs in the charmbracelet/vhs image with two mounts:
+#   /target  the cargo target folder, with the demo binary already built
+#            (`cargo test -p agentpos-mandate-policy --test mandate_demo --no-run`)
+#   /vhs     a folder with this tape and `mandate-demo.sh` copied as `demo.sh`
 Output scene-mandate.mp4
 Set FontSize 19
 Set Width 1920
