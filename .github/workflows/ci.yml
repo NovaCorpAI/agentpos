@@ -33,6 +33,60 @@ jobs:
       - run: pnpm build
       - run: pnpm test
 
+  contracts:
+    # Soroban contracts of the mandate (contracts/): format, lint, WASM build, then the
+    # acceptance matrix, the adversarial tests, the model test and the storage lifetime
+    # tests. Mutation testing runs apart, in mutants.yml. The suite runs twice:
+    # against the native contracts and against the built WASM, which is what gets deployed.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: contracts
+      - uses: stellar/stellar-cli@v30.0.1
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - name: Build WASM
+        run: |
+          stellar contract build
+          sha256sum target/wasm32v1-none/release/*.wasm
+      - name: Acceptance matrix (every accept path and every rejection)
+        run: cargo test -p agentpos-mandate-policy --test mandate_matrix -- --test-threads=1
+      - name: Adversarial tests
+        run: cargo test -p agentpos-mandate-policy --test mandate_adversarial -- --test-threads=1
+      - name: Model test (random sequences against a reference model)
+        run: cargo test -p agentpos-mandate-policy --test mandate_model -- --nocapture
+      - name: Storage lifetime tests
+        run: cargo test -p agentpos-mandate-policy --test mandate_storage -- --test-threads=1
+      - name: Same suite against the WASM artifacts, with the metered costs
+        env:
+          AGENTPOS_WASM_DIR: ${{ github.workspace }}/contracts/target/wasm32v1-none/release
+        run: cargo test --workspace -- --nocapture --test-threads=1
+
+  spike-stellar8004:
+    # Registers an agent, gives feedback and reads the summary on Stellar 8004 testnet,
+    # with throwaway keys. Real network calls, so it runs on main only.
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: spikes/stellar8004
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci --no-audit --no-fund
+      - run: npm run spike
+
   smoke-testnet:
     # Real Stellar testnet transaction (friendbot + trustline + payment). Runs on main only.
     if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
