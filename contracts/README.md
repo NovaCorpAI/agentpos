@@ -41,6 +41,20 @@ Owner operations:
 
 Amounts are integers in the token's smallest unit (USDC has 7 decimals on Stellar).
 
+## See it run
+
+One story, step by step, against the contracts: the agent buys within its mandate, tries
+to go past it, its key leaks, the owner revokes.
+
+```bash
+cd contracts && ./demo.sh          # add --wasm to run it against the built WASM
+```
+
+It is a test like the others (`mandate-policy/tests/mandate_demo.rs`): real signatures, the
+real authorization path, every step asserted. It prints what happens in plain words.
+`AGENTPOS_DEMO_PAUSE_MS=1700` pauses between steps, for a recording;
+`video/tapes/scene-mandate.tape` records it.
+
 ## Acceptance matrix
 
 `mandate-policy/tests/mandate_matrix.rs` runs every case through the host's real

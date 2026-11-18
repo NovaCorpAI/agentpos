@@ -41,6 +41,20 @@ Operaciones del dueño:
 
 Los montos son enteros en la unidad mínima del token (USDC tiene 7 decimales en Stellar).
 
+## Verlo correr
+
+Una historia, paso a paso, contra los contratos: el agente compra dentro de su mandato,
+intenta pasarse, su llave se filtra, el dueño revoca.
+
+```bash
+cd contracts && ./demo.sh          # con --wasm corre contra el WASM compilado
+```
+
+Es un test como los demás (`mandate-policy/tests/mandate_demo.rs`): firmas reales, el
+camino real de autorización y cada paso verificado. Imprime lo que pasa en palabras
+simples. `AGENTPOS_DEMO_PAUSE_MS=1700` hace una pausa entre pasos, para grabar;
+`video/tapes/scene-mandate.tape` lo graba.
+
 ## Matriz de aceptación
 
 `mandate-policy/tests/mandate_matrix.rs` pasa cada caso por el camino real de autorización
