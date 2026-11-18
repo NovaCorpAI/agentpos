@@ -11,11 +11,14 @@ extern crate std;
 mod common;
 
 use agentpos_mandate_account::MandateAccountClient;
-use agentpos_mandate_policy::{MandateError, MandateParams, MandatePolicyClient};
+use agentpos_mandate_policy::{MandateError, MandateParams, MandatePolicyClient, MAX_SELLERS};
 use common::*;
 use soroban_sdk::{
     auth::{Context, ContractContext},
-    symbol_short, vec, IntoVal,
+    symbol_short,
+    testutils::Address as _,
+    token::TokenClient,
+    vec, Address, IntoVal,
 };
 use stellar_accounts::{
     policies::spending_limit::SpendingLimitError, smart_account::SmartAccountError,
@@ -411,4 +414,51 @@ fn safety_05_the_period_is_a_rolling_window_not_a_reset() {
     w.advance(1); // ledger 1160: now it has left
     w.pay(&w.seller, 3 * USDC)
         .expect("only the payment of ledger 1100 still counts");
+}
+
+// ---------------------------------------------------------------------------------------
+// Found by mutation testing: changes in the code that no test noticed
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn attack_13_a_three_argument_token_call_that_is_not_a_transfer() {
+    let w = World::new();
+    let e = &w.e;
+    // `burn_from(spender, from, amount)` has the shape of a transfer: three arguments, an
+    // address first, an amount last. Read as one, it would be "pay 1 USDC to the seller",
+    // which the mandate allows. It must be refused because of its name.
+    w.authorize(
+        Some(&w.agent),
+        w.session,
+        &w.usdc,
+        "burn_from",
+        std::vec![
+            to_scval(e, w.account.clone()),
+            to_scval(e, w.seller.clone()),
+            to_scval(e, USDC),
+        ],
+    );
+    let result = flatten(TokenClient::new(e, &w.usdc).try_burn_from(&w.account, &w.seller, &USDC));
+    assert_rejected(&w, result, MandateError::NotATransfer as u32);
+    w.assert_untouched(0);
+}
+
+#[test]
+fn safety_06_the_seller_list_holds_exactly_the_maximum() {
+    let w = World::new();
+    let mut sellers = vec![&w.e];
+    for _ in 0..MAX_SELLERS {
+        sellers.push_back(Address::generate(&w.e));
+    }
+    let last = sellers.last_unchecked();
+
+    w.set_mandate(&w.owner, OWNER_RULE, PER_PAYMENT_CAP, PERIOD_CAP, &sellers)
+        .expect("a list of exactly MAX_SELLERS is accepted");
+    w.pay(&last, USDC)
+        .expect("the last seller of the list is allowed");
+
+    sellers.push_back(Address::generate(&w.e));
+    let result = w.set_mandate(&w.owner, OWNER_RULE, PER_PAYMENT_CAP, PERIOD_CAP, &sellers);
+    assert_rejected(&w, result, MandateError::TooManySellers as u32);
+    assert_eq!(w.mandate().sellers.len(), MAX_SELLERS);
 }
