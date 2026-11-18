@@ -1,0 +1,31 @@
+[workspace]
+resolver = "2"
+members = ["mandate-account", "mandate-policy", "ed25519-verifier"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/NovaCorpAI/agentpos"
+publish = false
+
+[workspace.dependencies]
+# stellar-accounts 0.8.0 is built against soroban-sdk 28. Contracts built with SDK 28 run on
+# later protocols. OpenZeppelin recommends an exact pin while the library iterates.
+soroban-sdk = "28.0.0"
+stellar-accounts = "=0.8.0"
+
+# Tests run every payment through the real host (signature checks, WASM). Optimizing the
+# dependencies keeps the suite fast; our own crates stay in debug.
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+opt-level = "z"
+overflow-checks = true
+debug = 0
+strip = "symbols"
+debug-assertions = false
+panic = "abort"
+codegen-units = 1
+lto = true
