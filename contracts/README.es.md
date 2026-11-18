@@ -78,8 +78,8 @@ error, y con el saldo y el total del período intactos.
 
 ## Más allá de la matriz
 
-La matriz muestra que cada regla rechaza lo que debe. Otras tres suites van por todo lo que
-rodea a las reglas.
+La matriz muestra que cada regla rechaza lo que debe. Otras cuatro suites van por todo lo
+que rodea a las reglas, y el mutation testing revisa a las suites mismas.
 
 ### Tests adversarios
 
@@ -98,6 +98,7 @@ de sesión, un intermediario descuidado o el dueño de otra cuenta.
 | El agente llega a la política a través de `execute` de la cuenta | rechazado, 3002 |
 | Una regla de sesión con la política y sin ningún firmante, pagada sin firma | rechazado, 4107 |
 | Una sesión con dos firmantes, pagada con una sola firma | rechazado, 4107 |
+| Una llamada al token con forma de transferencia y otro nombre (`burn_from`) | rechazado, 4103 |
 | Llamar a `enforce`, `install`, `uninstall` o `set_mandate` de la política sin la autorización de la cuenta | rechazado; el estado queda intacto |
 | El dueño de otra cuenta cambia el mandato de esta cuenta | rechazado |
 
@@ -110,6 +111,8 @@ Y la contabilidad:
 - Revocar borra el estado del mandato, y una sesión nueva parte con el período limpio.
 - El período es una ventana móvil: un pago deja de contar exactamente `period_ledgers`
   después de hecho, no en un reinicio fijo.
+- La lista de vendedores admite exactamente 32 direcciones: 32 se aceptan, 33 se rechazan
+  (4102).
 
 ### Test contra un modelo
 
@@ -121,6 +124,23 @@ por el agente, por una llave desconocida o por nadie; en ledgers que caen antes,
 después del borde del período y de la expiración de la sesión). Después de cada operación,
 los contratos y el modelo tienen que coincidir en la respuesta, en ambos saldos y en el
 total del período. Una falla nombra su semilla y su paso, así que se reproduce exacta.
+
+### Vigencia del almacenamiento
+
+`mandate-policy/tests/mandate_storage.rs`. El almacenamiento en Soroban se arrienda: una
+entrada que no se renueva se archiva. Un mandato guarda dos entradas por sesión, sus
+términos y el historial del período. Las otras suites le dan a cada entrada una vigencia
+más larga que el test, así que estos cinco tests usan vigencias cortas y leen las entradas
+directamente.
+
+- Un mandato nuevo parte con la vigencia mínima de la red.
+- Un pago, o leer el mandato, renueva ambas entradas a 30 días.
+- No se renueva nada mientras queden más de 29 días, así el agente no paga arriendo en
+  cada compra.
+- Una sesión inactiva por más tiempo que su almacenamiento conserva los mismos términos:
+  un pago sobre el tope o a otro vendedor se sigue rechazando. Esto es lo que hace el host
+  de pruebas, donde una entrada archivada vuelve cuando se lee. Todavía no se ha comprobado
+  en testnet.
 
 ### Los mismos tests contra el WASM
 
@@ -136,16 +156,34 @@ Ed25519 y la política.
 
 | Operación | Instrucciones de CPU | Entradas escritas | Bytes escritos |
 | --- | --- | --- | --- |
-| Pago del agente, primero del período | 2.573.913 | 4 | 912 |
-| Pago del agente, cuarto del período | 2.600.716 | 4 | 1.152 |
-| Pago del agente sobre el tope (rechazado) | 2.252.496 | 0 | 0 |
-| El dueño fija la política | 2.284.439 | 3 | 1.000 |
-| El dueño emite una sesión | 3.661.158 | 7 | 1.692 |
-| El dueño revoca una sesión | 3.121.822 | 7 | 776 |
+| Pago del agente, primero del período | 2.580.802 | 4 | 912 |
+| Pago del agente, cuarto del período | 2.607.605 | 4 | 1.152 |
+| Pago del agente sobre el tope (rechazado) | 2.259.385 | 0 | 0 |
+| El dueño fija la política | 3.062.095 | 3 | 1.000 |
+| El dueño emite una sesión | 3.668.047 | 7 | 1.692 |
+| El dueño revoca una sesión | 3.128.711 | 7 | 776 |
 
 Cada pago agrega una entrada al historial del período (unos 80 bytes) hasta que sale de la
 ventana. CI falla si un pago supera 4.000.000 de instrucciones; ese es un techo propio de
 regresión, no un límite de la red.
+
+### Mutation testing
+
+Las suites anteriores prueban los contratos. El mutation testing prueba a las suites:
+cargo-mutants rompe el código de a un cambio pequeño por vez (un `>` convertido en `>=`,
+un `&&` en `||`, el cuerpo de una función vaciado) y corre todas las suites contra cada
+cambio. Un cambio que ningún test nota es un hueco en los tests.
+
+Sobre los tres contratos hace 53 cambios. 9 no compilan y los tests notan los otros 44;
+ninguno pasa inadvertido. La primera corrida completa dejó 3 sin notar, y cada uno se
+volvió un test: la lista de vendedores en su límite, y una llamada al token con forma de
+transferencia y otro nombre. Una corrida parcial anterior había mostrado que nada probaba
+una sesión a la que le falta una firma cuando hay varios firmantes, y que nada probaba la
+renovación del almacenamiento.
+
+Corre en `.github/workflows/mutants.yml` y falla si algún cambio pasa inadvertido. Muestra
+que los tests notan estos cambios. No muestra que los contratos sean correctos, y no
+reemplaza una auditoría.
 
 ## Notas de seguridad
 
@@ -165,6 +203,10 @@ En qué se apoya el diseño, dicho de forma que un revisor lo pueda comprobar:
 - **El contrato de política no tiene dueño ni camino de actualización.** Su estado se
   indexa por `(cuenta, regla de contexto)` y toda escritura exige la autorización de esa
   cuenta.
+- **La política reusada se usa solo por sus funciones públicas.** El tope del período se
+  instala, se exige, se cambia y se quita llamando a las funciones del límite de gasto de
+  OpenZeppelin; el mandato nunca escribe el almacenamiento de esa política. La versión de
+  la librería queda fijada igual.
 - **En qué se puede equivocar el dueño.** La regla del dueño lo puede todo, por diseño. Dos
   acciones del dueño debilitan una sesión y merecen una pantalla de confirmación en
   cualquier wallet: `remove_policy` sobre una regla de sesión deja la llave de sesión sin
@@ -197,11 +239,13 @@ docker run --rm -v "$PWD:/work" -w /work rust:1 cargo test --workspace -- --test
 ```
 
 CI corre formato, clippy, la compilación a WASM y todas las suites, en nativo y contra el
-WASM, en cada pull request (job `contracts` en `.github/workflows/ci.yml`).
+WASM, en cada pull request (job `contracts` en `.github/workflows/ci.yml`). El mutation
+testing corre aparte (`.github/workflows/mutants.yml`) en los pull requests que tocan
+`contracts/`.
 
 ## Límites conocidos
 
-- Sin auditoría, y desplegado solo en testnet.
+- Sin auditoría y todavía sin desplegar. Solo testnet hasta que haya una auditoría.
 - Un pago a una dirección muxed (`M...`) se rechaza: la lista compara direcciones simples.
 - El período es una ventana móvil medida en ledgers, no en días de calendario.
 - Una sesión con más de 815 pagos dentro de un período se rechaza hasta que los pagos

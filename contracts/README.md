@@ -78,8 +78,8 @@ contract error code, and with the balance and the period total left untouched.
 
 ## Beyond the matrix
 
-The matrix shows that each rule rejects what it should. Three more suites go after
-everything around the rules.
+The matrix shows that each rule rejects what it should. Four more suites go after
+everything around the rules, and mutation testing checks the suites themselves.
 
 ### Adversarial tests
 
@@ -98,6 +98,7 @@ careless relayer or the owner of another account can try.
 | The agent reaches the policy through the account's `execute` | rejected, 3002 |
 | A session rule with the policy and no signer at all, paid without a signature | rejected, 4107 |
 | A session with two signers, paid with one signature | rejected, 4107 |
+| A token call with the shape of a transfer and another name (`burn_from`) | rejected, 4103 |
 | Calling the policy's `enforce`, `install`, `uninstall` or `set_mandate` without the account's authorization | refused; state untouched |
 | The owner of another account changes this account's mandate | refused |
 
@@ -110,6 +111,7 @@ And the accounting:
 - Revoking wipes the mandate's state, and a new session starts with a clean period.
 - The period is a rolling window: a payment stops counting exactly `period_ledgers` after
   it was made, not at a fixed reset.
+- The seller list holds exactly 32 addresses: 32 are accepted, 33 are refused (4102).
 
 ### Model test
 
@@ -121,6 +123,21 @@ key or by nobody; at ledgers that land before, on and after the period boundary 
 session expiry). After every operation the contracts and the model must agree on the
 answer, on both balances and on the period total. A failure names its seed and step, so it
 reproduces exactly.
+
+### Storage lifetime
+
+`mandate-policy/tests/mandate_storage.rs`. Soroban storage is rented: an entry that is not
+renewed gets archived. A mandate keeps two entries per session, its terms and the period's
+history. The other suites give every entry a lifetime longer than the test, so these five
+tests use short lifetimes and read the entries directly.
+
+- A new mandate starts with the network's minimum lifetime.
+- A payment, or reading the mandate, renews both entries to 30 days.
+- Nothing is renewed while more than 29 days remain, so the agent does not pay rent on
+  every purchase.
+- A session left idle for longer than its storage keeps the same terms: a payment over the
+  cap or to another seller is still refused. This is what the test host does, where an
+  archived entry is brought back when it is read. It has not been checked on testnet yet.
 
 ### The same tests against the WASM
 
@@ -136,16 +153,33 @@ the policy.
 
 | Operation | CPU instructions | Ledger entries written | Bytes written |
 | --- | --- | --- | --- |
-| Agent payment, first of the period | 2,573,913 | 4 | 912 |
-| Agent payment, fourth of the period | 2,600,716 | 4 | 1,152 |
-| Agent payment over the cap (rejected) | 2,252,496 | 0 | 0 |
-| Owner sets the policy | 2,284,439 | 3 | 1,000 |
-| Owner issues a session | 3,661,158 | 7 | 1,692 |
-| Owner revokes a session | 3,121,822 | 7 | 776 |
+| Agent payment, first of the period | 2,580,802 | 4 | 912 |
+| Agent payment, fourth of the period | 2,607,605 | 4 | 1,152 |
+| Agent payment over the cap (rejected) | 2,259,385 | 0 | 0 |
+| Owner sets the policy | 3,062,095 | 3 | 1,000 |
+| Owner issues a session | 3,668,047 | 7 | 1,692 |
+| Owner revokes a session | 3,128,711 | 7 | 776 |
 
 Each payment adds one entry to the period's history (about 80 bytes) until it leaves the
 window. CI fails if a payment goes over 4,000,000 instructions; that is our own regression
 ceiling, not a network limit.
+
+### Mutation testing
+
+The suites above test the contracts. Mutation testing tests the suites: cargo-mutants
+breaks the code one small change at a time (a `>` turned into `>=`, an `&&` into `||`, a
+function body emptied) and runs every suite against each change. A change that no test
+notices is a gap in the tests.
+
+Over the three contracts it makes 53 changes. 9 do not compile and the tests notice the
+other 44; none goes unnoticed. The first full run left 3 unnoticed, and each became a test:
+the seller list at its limit, and a token call with the shape of a transfer and another
+name. An earlier partial run had found that nothing tested a session with a missing
+signature when there are several signers, and that nothing tested storage renewal.
+
+It runs in `.github/workflows/mutants.yml` and fails if any change goes unnoticed. It
+shows that the tests notice these changes. It does not show that the contracts are
+correct, and it is no substitute for an audit.
 
 ## Security notes
 
@@ -164,6 +198,10 @@ What the design relies on, stated so a reviewer can check it:
   signature at all. `reject_12` pins it.
 - **The policy contract has no owner and no upgrade path.** Its state is keyed by
   `(account, context rule)` and every write requires that account's authorization.
+- **The reused policy is used through its public functions only.** The period cap is
+  installed, enforced, changed and removed by calling OpenZeppelin's spending limit
+  functions; the mandate never writes that policy's storage. The library version is
+  pinned all the same.
 - **What the owner can still get wrong.** The owner rule can do anything, by design. Two
   owner actions weaken a session and are worth a confirmation screen in any wallet:
   `remove_policy` on a session rule leaves the session key with no mandate at all, and
@@ -196,11 +234,12 @@ docker run --rm -v "$PWD:/work" -w /work rust:1 cargo test --workspace -- --test
 ```
 
 CI runs format, clippy, the WASM build and every suite, natively and against the WASM, on
-every pull request (job `contracts` in `.github/workflows/ci.yml`).
+every pull request (job `contracts` in `.github/workflows/ci.yml`). Mutation testing runs
+apart (`.github/workflows/mutants.yml`) on pull requests that touch `contracts/`.
 
 ## Known limits
 
-- Not audited, and deployed to testnet only.
+- Not audited and not deployed yet. Testnet only until an audit.
 - A payment to a muxed address (`M...`) is refused: the allowlist compares plain addresses.
 - The period is a rolling window measured in ledgers, not calendar days.
 - A session with more than 815 payments inside one period is refused until old payments
