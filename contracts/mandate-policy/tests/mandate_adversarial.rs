@@ -13,15 +13,17 @@ mod common;
 use agentpos_mandate_account::MandateAccountClient;
 use agentpos_mandate_policy::{MandateError, MandateParams, MandatePolicyClient, MAX_SELLERS};
 use common::*;
+use ed25519_dalek::Signer as _;
 use soroban_sdk::{
     auth::{Context, ContractContext},
     symbol_short,
     testutils::Address as _,
     token::TokenClient,
-    vec, Address, IntoVal,
+    vec, Address, Bytes, BytesN, IntoVal, Map, Symbol,
 };
 use stellar_accounts::{
-    policies::spending_limit::SpendingLimitError, smart_account::SmartAccountError,
+    policies::spending_limit::SpendingLimitError,
+    smart_account::{AuthDigestPreimage, AuthPayload, Signer, SmartAccountError},
 };
 
 /// The call was refused, for a reason that is not one of our contract errors (a bad
@@ -461,4 +463,67 @@ fn safety_06_the_seller_list_holds_exactly_the_maximum() {
     let result = w.set_mandate(&w.owner, OWNER_RULE, PER_PAYMENT_CAP, PERIOD_CAP, &sellers);
     assert_rejected(&w, result, MandateError::TooManySellers as u32);
     assert_eq!(w.mandate().sellers.len(), MAX_SELLERS);
+}
+
+// ---------------------------------------------------------------------------------------
+// A payment declared under another contract's call
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn attack_14_a_payment_nested_under_another_contracts_call() {
+    let w = World::new();
+    let e = &w.e;
+
+    // The mandate counts a payment when it is authorized, which is before it runs. If the
+    // agent could authorize a tree "call contract X, which then pays the seller", X could
+    // return without paying and the budget would be spent on nothing (OpenZeppelin
+    // stellar-contracts issue 908). A session cannot: its rule is scoped to the token, so
+    // the call to X has no rule to stand on and the whole tree is refused.
+    let call_to_another_contract = Context::Contract(ContractContext {
+        contract: w.policy.clone(),
+        fn_name: Symbol::new(e, "get_mandate"),
+        args: vec![e, w.session.into_val(e), w.account.clone().into_val(e)],
+    });
+    let payment = Context::Contract(ContractContext {
+        contract: w.usdc.clone(),
+        fn_name: symbol_short!("transfer"),
+        args: vec![
+            e,
+            w.account.clone().into_val(e),
+            w.seller.clone().into_val(e),
+            USDC.into_val(e),
+        ],
+    });
+
+    for rules in [
+        vec![e, w.session, w.session],
+        // Claiming the owner rule for the outer call does not help: the owner did not sign.
+        vec![e, OWNER_RULE, w.session],
+    ] {
+        let signature_payload = BytesN::from_array(e, &[7u8; 32]);
+        let digest = AuthDigestPreimage {
+            account: w.account.clone(),
+            signature_payload: signature_payload.clone(),
+            context_rule_ids: rules.clone(),
+        }
+        .digest(e);
+        let mut signers: Map<Signer, Bytes> = Map::new(e);
+        signers.set(
+            w.signer_of(&w.agent),
+            Bytes::from_array(e, &w.agent.sign(&digest.to_array()).to_bytes()),
+        );
+
+        let result = e.try_invoke_contract_check_auth::<SmartAccountError>(
+            &w.account,
+            &signature_payload,
+            AuthPayload {
+                signers,
+                context_rule_ids: rules,
+            }
+            .into_val(e),
+            &vec![e, call_to_another_contract.clone(), payment.clone()],
+        );
+        assert_eq!(result, Err(Ok(SmartAccountError::UnvalidatedContext)));
+    }
+    w.assert_untouched(0);
 }
