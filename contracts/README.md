@@ -99,6 +99,7 @@ careless relayer or the owner of another account can try.
 | A session rule with the policy and no signer at all, paid without a signature | rejected, 4107 |
 | A session with two signers, paid with one signature | rejected, 4107 |
 | A token call with the shape of a transfer and another name (`burn_from`) | rejected, 4103 |
+| A payment declared under another contract's call, which could return without paying and still spend the budget | rejected, 3002 |
 | Calling the policy's `enforce`, `install`, `uninstall` or `set_mandate` without the account's authorization | refused; state untouched |
 | The owner of another account changes this account's mandate | refused |
 
@@ -183,7 +184,8 @@ correct, and it is no substitute for an audit.
 
 ## Security notes
 
-What the design relies on, stated so a reviewer can check it:
+What the design relies on, stated so a reviewer can check it. The full list of properties,
+each with its test, and the questions still open are in [AUDIT-PREP.md](./AUDIT-PREP.md).
 
 - **The limit is in the authorization path.** The policy runs inside the account's
   `__check_auth`. There is no entry point that moves funds and skips it; a transfer that
@@ -257,5 +259,6 @@ summary back, on testnet, with throwaway keys:
 cd spikes/stellar8004 && npm install && npm run spike
 ```
 
-It is kept apart from the pnpm workspace because `@trionlabs/stellar8004` 0.0.13 needs
+What it showed and what it means for the identity work is in
+[FINDINGS.md](../spikes/stellar8004/FINDINGS.md). It is kept apart from the pnpm workspace because `@trionlabs/stellar8004` 0.0.13 needs
 `@stellar/stellar-sdk` 17, while the AgentPOS packages are on 16.

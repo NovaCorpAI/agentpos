@@ -99,6 +99,7 @@ de sesión, un intermediario descuidado o el dueño de otra cuenta.
 | Una regla de sesión con la política y sin ningún firmante, pagada sin firma | rechazado, 4107 |
 | Una sesión con dos firmantes, pagada con una sola firma | rechazado, 4107 |
 | Una llamada al token con forma de transferencia y otro nombre (`burn_from`) | rechazado, 4103 |
+| Un pago declarado bajo la llamada a otro contrato, que podría retornar sin pagar y gastar igual el presupuesto | rechazado, 3002 |
 | Llamar a `enforce`, `install`, `uninstall` o `set_mandate` de la política sin la autorización de la cuenta | rechazado; el estado queda intacto |
 | El dueño de otra cuenta cambia el mandato de esta cuenta | rechazado |
 
@@ -187,7 +188,9 @@ reemplaza una auditoría.
 
 ## Notas de seguridad
 
-En qué se apoya el diseño, dicho de forma que un revisor lo pueda comprobar:
+En qué se apoya el diseño, dicho de forma que un revisor lo pueda comprobar. La lista
+completa de propiedades, cada una con su test, y las preguntas que siguen abiertas están en
+[AUDIT-PREP.es.md](./AUDIT-PREP.es.md).
 
 - **El límite está en el camino de autorización.** La política corre dentro del
   `__check_auth` de la cuenta. No existe una entrada que mueva fondos y se la salte; una
@@ -263,5 +266,6 @@ el resumen de reputación, en testnet y con llaves desechables:
 cd spikes/stellar8004 && npm install && npm run spike
 ```
 
-Vive fuera del workspace de pnpm porque `@trionlabs/stellar8004` 0.0.13 necesita
+Lo que mostró y lo que implica para el trabajo de identidad está en
+[FINDINGS.es.md](../spikes/stellar8004/FINDINGS.es.md). Vive fuera del workspace de pnpm porque `@trionlabs/stellar8004` 0.0.13 necesita
 `@stellar/stellar-sdk` 17, y los paquetes de AgentPOS están en 16.
