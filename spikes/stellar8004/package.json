@@ -1,0 +1,13 @@
+{
+  "name": "agentpos-spike-stellar8004",
+  "private": true,
+  "type": "module",
+  "description": "Reproducible spike: register an agent, give feedback and read the summary on Stellar 8004 (testnet).",
+  "license": "Apache-2.0",
+  "engines": { "node": ">=22.12.0" },
+  "scripts": { "spike": "node spike.mjs" },
+  "dependencies": {
+    "@stellar/stellar-sdk": "17.4.0",
+    "@trionlabs/stellar8004": "0.0.13"
+  }
+}
