@@ -33,12 +33,10 @@ use soroban_sdk::{
 };
 use stellar_accounts::{
     policies::{
-        spending_limit::{
-            self, SpendingLimitAccountParams, SpendingLimitData, SpendingLimitStorageKey,
-        },
+        spending_limit::{self, SpendingLimitAccountParams, SpendingLimitData},
         Policy,
     },
-    smart_account::{ContextRule, Signer},
+    smart_account::{ContextRule, Signer, SmartAccountClient},
 };
 
 const DAY_IN_LEDGERS: u32 = 17280;
@@ -267,19 +265,23 @@ impl MandatePolicy {
         context_rule_id: u32,
         smart_account: Address,
     ) {
-        smart_account.require_auth();
-
+        // Checks and reads first; nothing is written before the authorization below.
         validate_caps(e, per_payment_cap, period_cap);
         validate_sellers(e, &sellers);
 
         // Panics with `NotInstalled` when there is no mandate to change.
         read_mandate(e, context_rule_id, &smart_account);
 
-        let limit_key =
-            SpendingLimitStorageKey::AccountContext(smart_account.clone(), context_rule_id);
-        let mut limit = spending_limit::get_spending_limit_data(e, context_rule_id, &smart_account);
-        limit.spending_limit = period_cap;
-        e.storage().persistent().set(&limit_key, &limit);
+        // The period cap lives in the reused spending limit policy and is changed through
+        // its public function, never by writing its storage. That function wants the rule
+        // itself, so it is read from the account (`ContextRuleNotFound` when it is gone).
+        let context_rule =
+            SmartAccountClient::new(e, &smart_account).get_context_rule(&context_rule_id);
+
+        // This is the authorization of `set_mandate`: `set_spending_limit` requires the
+        // account's authorization for this call before it writes. The host accepts one
+        // `require_auth` per address and call, so it is not repeated here.
+        spending_limit::set_spending_limit(e, period_cap, &context_rule, &smart_account);
 
         write_mandate(
             e,
