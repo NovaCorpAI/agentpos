@@ -35,7 +35,8 @@ jobs:
 
   contracts:
     # Soroban contracts of the mandate (contracts/): format, lint, WASM build, then the
-    # acceptance matrix, the adversarial tests and the model test. The suite runs twice:
+    # acceptance matrix, the adversarial tests, the model test and the storage lifetime
+    # tests. Mutation testing runs apart, in mutants.yml. The suite runs twice:
     # against the native contracts and against the built WASM, which is what gets deployed.
     runs-on: ubuntu-latest
     defaults:
@@ -63,6 +64,8 @@ jobs:
         run: cargo test -p agentpos-mandate-policy --test mandate_adversarial -- --test-threads=1
       - name: Model test (random sequences against a reference model)
         run: cargo test -p agentpos-mandate-policy --test mandate_model -- --nocapture
+      - name: Storage lifetime tests
+        run: cargo test -p agentpos-mandate-policy --test mandate_storage -- --test-threads=1
       - name: Same suite against the WASM artifacts, with the metered costs
         env:
           AGENTPOS_WASM_DIR: ${{ github.workspace }}/contracts/target/wasm32v1-none/release

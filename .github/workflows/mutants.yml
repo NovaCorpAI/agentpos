@@ -1,0 +1,59 @@
+name: Mutation testing (contracts)
+
+# Checks the tests of the mandate contracts, not the contracts: cargo-mutants breaks the
+# code one small change at a time (a `>` turned into `>=`, a function body emptied) and
+# runs the suites against each change. A change that no test notices fails this job.
+#
+# It takes much longer than CI, so it runs apart from it and only when the contracts change.
+
+on:
+  pull_request:
+    paths:
+      - "contracts/**"
+      - ".github/workflows/mutants.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: mutants-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mutants:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: contracts
+          cache-bin: true
+      - name: Install cargo-mutants
+        run: cargo install cargo-mutants --locked --version 27.1.0
+      - name: Mutate the three contracts, test with the whole workspace
+        run: cargo mutants --workspace --test-workspace true --no-shuffle -j 2
+      - name: Summary
+        if: always()
+        run: |
+          cd mutants.out
+          {
+            echo "### Mutation testing"
+            echo "| Outcome | Mutants |"
+            echo "| --- | --- |"
+            for f in caught missed timeout unviable; do
+              echo "| $f | $(wc -l < $f.txt) |"
+            done
+            echo
+            echo "Missed:"
+            echo '```'
+            cat missed.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mutants-out
+          path: contracts/mutants.out
