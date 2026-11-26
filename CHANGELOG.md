@@ -2,6 +2,23 @@
 
 All public packages share one version. Dates are the day the tag was pushed.
 
+## 0.1.7 (2026-11-26)
+
+- Core, fix: an encrypted key file could not be written or opened on Node 24.14 ("memory limit
+  exceeded"), which broke `agentpos-buyer init` and unlocking the buyer's wallet. `scrypt` with
+  our parameters needs exactly Node's default memory limit; the limit is raised. The parameters
+  do not change, so key files already written still open.
+- Dependency advisories: `hono` 4.13.16, `@hono/node-server` 2.1.6, `fast-xml-parser` 5.12.0 and
+  `follow-redirects` 1.16.2 or later (via the Stellar SDK's axios).
+- Buyer, testnet only: a profile can pay from a mandate account, a Soroban smart account that
+  holds the funds and enforces the mandate on the network: `agentpos-buyer account link`,
+  `unlink` and `show`, and the MCP tool `get_mandate_account`. The contracts are not audited: a
+  linked profile on mainnet refuses to pay.
+- Core, testnet only: an x402 client scheme for a Stellar payer that is a contract account with
+  its own signature format (`createContractAccountScheme`), and the signing for an OpenZeppelin
+  smart account (`signMandateAuthEntry`, `readMandateSession`). Verify and settle stay the
+  facilitator's.
+
 ## 0.1.6 (2026-11-09)
 
 - Ready for Bell, Protocol 30 (mainnet vote on 23 November 2026): `@stellar/stellar-sdk` moves
