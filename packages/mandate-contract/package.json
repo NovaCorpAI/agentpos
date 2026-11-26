@@ -1,0 +1,50 @@
+{
+  "name": "@agentpos/mandate-contract",
+  "version": "0.1.6",
+  "description": "AgentPOS mandate on chain: client for the Soroban smart account that enforces a buying agent's mandate (testnet only, not audited).",
+  "license": "Apache-2.0",
+  "homepage": "https://agentposhq.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NovaCorpAI/agentpos.git",
+    "directory": "packages/mandate-contract"
+  },
+  "bugs": {
+    "url": "https://github.com/NovaCorpAI/agentpos/issues"
+  },
+  "engines": {
+    "node": ">=22.5"
+  },
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.typecheck.json",
+    "test": "vitest run",
+    "lint": "eslint src scripts",
+    "deploy:testnet": "tsx scripts/deploy-testnet.ts",
+    "gate:x402": "tsx scripts/gate-x402.ts"
+  },
+  "dependencies": {
+    "@agentpos/core": "workspace:^",
+    "@stellar/stellar-sdk": "^16.4.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11"
+  }
+}

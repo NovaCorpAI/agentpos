@@ -1,0 +1,28 @@
+{
+  "network": "stellar:testnet",
+  "deployedAtLedger": 5935615,
+  "contracts": {
+    "ed25519-verifier": {
+      "id": "CDC7LVU4JKVPHWEHFYG2RSVHASVPXRGJ2CKHIQHGF7LVVIGB3OZAGGBX",
+      "wasmHash": "fc53bd74812b50a1eef5a73244f05889e167042349b3c1d76d42d403b169f958"
+    },
+    "mandate-policy": {
+      "id": "CA24LYV23JLZMHHZX6MQSVI4OLN4NBM3YYFRX2P27B3AI464WWMI2V7S",
+      "wasmHash": "ab0fc1e3aaa8eb0a5f5b42b41e916ff940f475ff7683176d35bc0d784418a0ee"
+    },
+    "mandate-account": {
+      "id": "CANDFUS6PH3UMU2U5UMBUAACGWZJZ7XZ2OOJZ2PVEWPQQYULY2XT3TRI",
+      "wasmHash": "81e55b1435ceaf43d3cc571041617fe4fedbfea00d0459d70d2be2445a02b9c6"
+    }
+  },
+  "usdc": "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA",
+  "demoSession": {
+    "contextRuleId": 1,
+    "issuedIn": "48f143937628e3069ff309702d792acf07795467755b4d66aa1ce02f23f477c6",
+    "validUntilLedger": 6177535,
+    "perPaymentCap": "10000000",
+    "periodCap": "20000000",
+    "periodLedgers": 17280,
+    "sellers": ["GCPWUCBPYTKUIPHNWEQASX7IJU3M2GFLXFULIUJJIWKBGVLVAYJBG6CQ"]
+  }
+}
