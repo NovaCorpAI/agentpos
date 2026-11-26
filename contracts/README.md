@@ -188,8 +188,8 @@ breaks the code one small change at a time (a `>` turned into `>=`, an `&&` into
 function body emptied) and runs every suite against each change. A change that no test
 notices is a gap in the tests.
 
-Over the three contracts it makes 53 changes. 9 do not compile and the tests notice the
-other 44; none goes unnoticed. The first full run left 3 unnoticed, and each became a test:
+Over the three contracts it makes 67 changes. 9 do not compile and the tests notice the
+other 58; none goes unnoticed. The first full run left 3 unnoticed, and each became a test:
 the seller list at its limit, and a token call with the shape of a transfer and another
 name. An earlier partial run had found that nothing tested a session with a missing
 signature when there are several signers, and that nothing tested storage renewal.

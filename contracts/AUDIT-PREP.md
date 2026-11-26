@@ -65,8 +65,8 @@ The model test (`mandate_model.rs`) checks properties 2, 3, 4, 6 and 7 together:
 operations from 8 fixed seeds, compared step by step with a second, naive implementation
 of the mandate.
 
-Mutation testing (`.github/workflows/mutants.yml`) changes the three contracts in 53
-places. 9 changes do not compile and the tests notice the other 44.
+Mutation testing (`.github/workflows/mutants.yml`) changes the three contracts in 67
+places. 9 changes do not compile and the tests notice the other 58.
 
 ## What we checked against the library we reuse
 

@@ -65,8 +65,8 @@ El test de modelo (`mandate_model.rs`) revisa las propiedades 2, 3, 4, 6 y 7 jun
 operaciones a partir de 8 semillas fijas, comparadas paso a paso con una segunda
 implementación ingenua del mandato.
 
-El mutation testing (`.github/workflows/mutants.yml`) cambia los tres contratos en 53
-lugares. 9 cambios no compilan y los tests notan los otros 44.
+El mutation testing (`.github/workflows/mutants.yml`) cambia los tres contratos en 67
+lugares. 9 cambios no compilan y los tests notan los otros 58.
 
 ## Qué revisamos contra la librería que reusamos
 

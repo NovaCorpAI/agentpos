@@ -191,7 +191,7 @@ cargo-mutants rompe el código de a un cambio pequeño por vez (un `>` convertid
 un `&&` en `||`, el cuerpo de una función vaciado) y corre todas las suites contra cada
 cambio. Un cambio que ningún test nota es un hueco en los tests.
 
-Sobre los tres contratos hace 53 cambios. 9 no compilan y los tests notan los otros 44;
+Sobre los tres contratos hace 67 cambios. 9 no compilan y los tests notan los otros 58;
 ninguno pasa inadvertido. La primera corrida completa dejó 3 sin notar, y cada uno se
 volvió un test: la lista de vendedores en su límite, y una llamada al token con forma de
 transferencia y otro nombre. Una corrida parcial anterior había mostrado que nada probaba
