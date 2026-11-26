@@ -6,6 +6,9 @@
  * `{public_key, signature}` value of a `G...` account. A smart account whose `__check_auth`
  * takes another value (OpenZeppelin's `AuthPayload`, for one) cannot be signed for that way.
  *
+ * Reported upstream as https://github.com/x402-foundation/x402/issues/4453. If the official
+ * client learns to take the caller's signature, this file goes away.
+ *
  * This scheme is the official one with a single difference: the caller signs the authorization
  * entry itself. The payload it returns is the same wire object, and verify and settle stay the
  * facilitator's (guardrail 3: nothing of the protocol is reimplemented here).

@@ -91,6 +91,20 @@ its own that `AGENTPOS_MANDATE_STATE_FILE` keeps apart from the reference one.
 accept from a smart account: a contract event emitted while authorizing. It is kept as a
 record of that finding.
 
+## Reported upstream
+
+Building this surfaced two gaps between x402 on Stellar and smart accounts. Both are public,
+with reproductions and settled testnet transactions as evidence.
+
+| What                                                                                     | Where                                                                  | Our part                                                                                                                                                                                                                                           |
+| ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The x402 client scheme cannot sign for a contract account with its own signature value   | [x402 issue 4453](https://github.com/x402-foundation/x402/issues/4453) | Reported by us, with the cause in the code, a fix and an offer to send the PR. `createContractAccountScheme` in the core is that fix, in use                                                                                                       |
+| The facilitator refuses a payment whose account emits a contract event while authorizing | [x402 issue 3764](https://github.com/x402-foundation/x402/issues/3764) | Reported before us by someone else. We [confirmed it independently](https://github.com/x402-foundation/x402/issues/3764#issuecomment-7198315698), showed that an account that emits nothing settles, and measured what these payments cost in fees |
+
+Until the second one changes, a policy that wants to be payable through x402 stays silent on
+the payment path, which is why `mandate-policy` copies one function of OpenZeppelin's library.
+If the first one is fixed, the scheme in the core goes away and the stock client is used.
+
 ## Known limits
 
 - Signers are Ed25519 keys behind the verifier contract. Passkeys and delegated signers are
