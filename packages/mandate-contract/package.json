@@ -35,13 +35,19 @@
     "test": "vitest run",
     "lint": "eslint src scripts",
     "deploy:testnet": "tsx scripts/deploy-testnet.ts",
-    "gate:x402": "tsx scripts/gate-x402.ts"
+    "gate:x402": "tsx scripts/gate-x402.ts",
+    "e2e:purchase": "tsx scripts/e2e-purchase.ts"
   },
   "dependencies": {
     "@agentpos/core": "workspace:^",
     "@stellar/stellar-sdk": "^16.4.1"
   },
   "devDependencies": {
+    "@agentpos/connectors": "workspace:^",
+    "@agentpos/mcp-buyer": "workspace:^",
+    "@agentpos/receipts": "workspace:^",
+    "@agentpos/scanner": "workspace:^",
+    "@agentpos/site": "workspace:^",
     "@types/node": "^24.19.2",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",

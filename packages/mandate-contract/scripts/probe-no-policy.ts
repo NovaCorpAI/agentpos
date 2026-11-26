@@ -43,7 +43,7 @@ async function main(): Promise<void> {
     chain,
     new Contract(state.account).call(
       "add_context_rule",
-      callContractRuleScVal(state.usdc),
+      callContractRuleScVal(state.token),
       xdr.ScVal.scvString("probe, no policy"),
       scv.u32(latest.sequence + 500),
       xdr.ScVal.scvVec([

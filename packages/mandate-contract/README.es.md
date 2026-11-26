@@ -70,6 +70,26 @@ por git) y escribe los identificadores de los contratos en
 del facilitador e imprime la transacción liquidada; después intenta 1,5 USDC contra un tope
 de 1 e imprime el rechazo.
 
+## La compra, de punta a punta
+
+```bash
+pnpm demo:up          # la tienda demo de WooCommerce
+pnpm e2e:mandate      # necesita un despliegue (deploy:testnet)
+```
+
+Un agente compra en una tienda AgentPOS real y paga desde la cuenta con mandato: la tienda
+responde 402, el agente firma con su llave de sesión, el facilitador liquida, la orden se crea
+en WooCommerce con el hash de la transacción y el comprobante firmado de la tienda se verifica
+sin conexión. Después el agente intenta dos unidades contra una sesión con tope igual al
+precio de una. En esta corrida el mandato del propio comprador se deja holgado a propósito,
+como si el software del agente estuviera mal o comprometido, para que el rechazo que se ve sea
+el de la red: la cuenta responde 4105, el saldo no se mueve y el período muestra un solo pago.
+
+La corrida devuelve el precio desde su vendedor desechable a la cuenta, así que se puede
+repetir. Con `AGENTPOS_CHECKOUT_ASSET=XLM` la sesión queda acotada al activo nativo y
+friendbot financia todo; así la corre el CI (job `e2e-mandate-account`), con un despliegue
+propio que `AGENTPOS_MANDATE_STATE_FILE` mantiene separado del de referencia.
+
 `scripts/probe-no-policy.ts` es la prueba que aisló lo único que un facilitador no acepta de
 una smart account: un evento de contrato emitido al autorizar. Se conserva como registro de
 ese hallazgo.

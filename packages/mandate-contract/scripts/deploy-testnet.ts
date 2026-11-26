@@ -30,17 +30,19 @@ import {
   explorerContract,
   explorerTx,
   friendbot,
+  fundingSource,
   loadConfig,
   trustUsdc,
-  usdcContract,
+  tokenContract,
   writeJson,
   type TestnetState,
 } from "./testnet.js";
 
-const USDC = 10_000_000n;
-const ACCOUNT_FUNDING = 3n * USDC;
-const PER_PAYMENT_CAP = 1n * USDC;
-const PERIOD_CAP = 2n * USDC;
+/** One unit of the asset: USDC and XLM both have 7 decimals on Stellar. */
+const UNIT = 10_000_000n;
+const ACCOUNT_FUNDING = 3n * UNIT;
+const PER_PAYMENT_CAP = 1n * UNIT;
+const PERIOD_CAP = 2n * UNIT;
 const DAY_IN_LEDGERS = 17_280;
 const SESSION_DAYS = 14;
 
@@ -53,12 +55,13 @@ async function main(): Promise<void> {
   const agent = Keypair.random();
   const seller = Keypair.random();
   const chain = chainFor(config, payer);
-  const usdc = usdcContract(config);
+  const token = tokenContract(config);
+  const asset = config.checkoutAsset;
 
   await Promise.all([friendbot(payer), friendbot(seller)]);
-  await trustUsdc(config, seller);
+  if (asset === "USDC") await trustUsdc(config, seller);
   console.log(
-    `fee payer ${payer.publicKey()}\nseller    ${seller.publicKey()} (USDC trustline open)`,
+    `fee payer ${payer.publicKey()}\nseller    ${seller.publicKey()} (receives ${asset})`,
   );
 
   const artifacts = {
@@ -82,7 +85,7 @@ async function main(): Promise<void> {
     chain,
     { account, contextRuleId: 0, verifier, keys: [owner] },
     {
-      token: usdc,
+      token,
       policy,
       signers: [{ verifier, publicKey: agent.rawPublicKey() }],
       validUntilLedger,
@@ -104,48 +107,50 @@ async function main(): Promise<void> {
     verifier,
     policy,
     account,
-    usdc,
+    token,
     session: session.contextRuleId,
     sessionValidUntilLedger: validUntilLedger,
   };
   writeJson(STATE_FILE, state);
-  writeJson(DEPLOYMENT_FILE, {
-    network: "stellar:testnet",
-    deployedAtLedger: latest.sequence,
-    contracts: {
-      "ed25519-verifier": { id: verifier, wasmHash: hash(artifacts.verifier).toString("hex") },
-      "mandate-policy": { id: policy, wasmHash: hash(artifacts.policy).toString("hex") },
-      "mandate-account": { id: account, wasmHash: hash(artifacts.account).toString("hex") },
-    },
-    usdc,
-    demoSession: {
-      contextRuleId: session.contextRuleId,
-      issuedIn: session.hash,
-      validUntilLedger,
-      perPaymentCap: PER_PAYMENT_CAP.toString(),
-      periodCap: PERIOD_CAP.toString(),
-      periodLedgers: DAY_IN_LEDGERS,
-      sellers: [seller.publicKey()],
-    },
-  });
+  if (DEPLOYMENT_FILE) {
+    writeJson(DEPLOYMENT_FILE, {
+      network: "stellar:testnet",
+      deployedAtLedger: latest.sequence,
+      contracts: {
+        "ed25519-verifier": { id: verifier, wasmHash: hash(artifacts.verifier).toString("hex") },
+        "mandate-policy": { id: policy, wasmHash: hash(artifacts.policy).toString("hex") },
+        "mandate-account": { id: account, wasmHash: hash(artifacts.account).toString("hex") },
+      },
+      asset,
+      assetContract: token,
+      demoSession: {
+        contextRuleId: session.contextRuleId,
+        issuedIn: session.hash,
+        validUntilLedger,
+        perPaymentCap: PER_PAYMENT_CAP.toString(),
+        periodCap: PERIOD_CAP.toString(),
+        periodLedgers: DAY_IN_LEDGERS,
+        sellers: [seller.publicKey()],
+      },
+    });
+  }
 
-  const sourceSecret = process.env.SMOKE_USDC_SOURCE_SECRET;
-  if (!sourceSecret) {
+  const source = fundingSource(config, payer);
+  if (!source) {
     console.log(
       `SMOKE_USDC_SOURCE_SECRET not set: send testnet USDC to ${account} to pay with it.`,
     );
   } else {
-    const source = Keypair.fromSecret(sourceSecret);
     const funded = await submit(
       { ...chain, payer: source },
-      new Contract(usdc).call(
+      new Contract(token).call(
         "transfer",
         scv.address(source.publicKey()),
         scv.address(account),
         scv.i128(ACCOUNT_FUNDING),
       ),
     );
-    console.log(`funded    ${ACCOUNT_FUNDING} units of USDC in ${explorerTx(funded.hash)}`);
+    console.log(`funded    ${ACCOUNT_FUNDING} units of ${asset} in ${explorerTx(funded.hash)}`);
   }
 
   const mandate = await getMandate(chain, policy, account, session.contextRuleId);

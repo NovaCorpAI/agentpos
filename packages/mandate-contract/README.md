@@ -67,6 +67,26 @@ and writes the contract ids to `contracts/deployments/testnet.json`. `gate:x402`
 0.5 USDC from the account through the facilitator and prints the settled transaction, then
 tries 1.5 USDC against a cap of 1 and prints the refusal.
 
+## The purchase, end to end
+
+```bash
+pnpm demo:up          # the WooCommerce demo store
+pnpm e2e:mandate      # needs a deployment (deploy:testnet)
+```
+
+An agent buys in a real AgentPOS store and pays from the mandate account: the store answers
+402, the agent signs with its session key, the facilitator settles, the order is created in
+WooCommerce with the transaction hash, and the store's signed receipt is verified offline.
+Then the agent tries two items against a session capped at the price of one. The buyer's own
+mandate is set loose on purpose in this run, as if the agent's software were wrong or
+compromised, so the refusal shown is the network's: the account answers 4105, the balance does
+not move and the period shows one payment.
+
+The run returns the price from its throwaway seller to the account, so it can be repeated.
+With `AGENTPOS_CHECKOUT_ASSET=XLM` the session is scoped to the native asset and friendbot
+funds everything; that is how CI runs it (job `e2e-mandate-account`), with a deployment of
+its own that `AGENTPOS_MANDATE_STATE_FILE` keeps apart from the reference one.
+
 `scripts/probe-no-policy.ts` is the probe that isolated the one thing a facilitator does not
 accept from a smart account: a contract event emitted while authorizing. It is kept as a
 record of that finding.

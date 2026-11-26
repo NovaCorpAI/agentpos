@@ -7,6 +7,7 @@ import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Keypair } from "@stellar/stellar-sdk";
 import {
+  Keypair as KeypairValue,
   Asset,
   BASE_FEE,
   Horizon,
@@ -20,10 +21,19 @@ import type { MandateChain } from "../src/index.js";
 
 export const SOROBAN_RPC_TESTNET = "https://soroban-testnet.stellar.org";
 const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
-/** Throwaway testnet keys and contract ids. Git-ignored (`.agentpos/`). */
-export const STATE_FILE = `${repoRoot}.agentpos/mandate-testnet.json`;
-/** Public record of the deployment: contract ids and WASM hashes, no keys. */
-export const DEPLOYMENT_FILE = `${repoRoot}contracts/deployments/testnet.json`;
+/**
+ * Throwaway testnet keys and contract ids. Git-ignored (`.agentpos/`). An ad hoc deployment (CI,
+ * a second asset) keeps its own file through AGENTPOS_MANDATE_STATE_FILE.
+ */
+export const STATE_FILE =
+  process.env.AGENTPOS_MANDATE_STATE_FILE ?? `${repoRoot}.agentpos/mandate-testnet.json`;
+/**
+ * Public record of the reference deployment: contract ids and WASM hashes, no keys. Undefined
+ * for an ad hoc deployment, which leaves the record alone.
+ */
+export const DEPLOYMENT_FILE = process.env.AGENTPOS_MANDATE_STATE_FILE
+  ? undefined
+  : `${repoRoot}contracts/deployments/testnet.json`;
 export const WASM_DIR = `${repoRoot}contracts/target/wasm32v1-none/release/`;
 
 export interface TestnetState {
@@ -34,7 +44,8 @@ export interface TestnetState {
   verifier: string;
   policy: string;
   account: string;
-  usdc: string;
+  /** The token the session may move: the checkout asset's contract (USDC, or XLM in CI). */
+  token: string;
   session: number;
   sessionValidUntilLedger: number;
 }
@@ -47,7 +58,7 @@ export function loadConfig(): CoreConfig {
       break;
     }
   }
-  const config = configFromEnv(process.env);
+  const config = configFromEnv({ ...process.env, AGENTPOS_ALLOW_MAINNET: "false" });
   if (config.network !== "testnet") {
     console.error("The mandate contracts run on testnet only (guardrail 2).");
     process.exit(1);
@@ -76,7 +87,19 @@ export function writeJson(path: string, value: unknown): void {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
 }
 
-export const usdcContract = (config: CoreConfig): string => assetAddress(config, "USDC");
+/** Contract of the checkout asset: USDC by default, XLM when AGENTPOS_CHECKOUT_ASSET says so. */
+export const tokenContract = (config: CoreConfig): string => assetAddress(config);
+
+/**
+ * The account that funds the mandate account with the checkout asset. XLM comes from the fee
+ * payer, which friendbot funded. USDC has no faucet a script can call, so it comes from
+ * SMOKE_USDC_SOURCE_SECRET (an account funded at https://faucet.circle.com).
+ */
+export function fundingSource(config: CoreConfig, payer: Keypair): Keypair | undefined {
+  if (config.checkoutAsset === "XLM") return payer;
+  const secret = process.env.SMOKE_USDC_SOURCE_SECRET;
+  return secret ? KeypairValue.fromSecret(secret) : undefined;
+}
 export const explorerTx = (hash: string): string =>
   `https://stellar.expert/explorer/testnet/tx/${hash}`;
 export const explorerContract = (id: string): string =>

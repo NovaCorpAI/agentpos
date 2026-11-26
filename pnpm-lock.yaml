@@ -272,6 +272,21 @@ importers:
         specifier: ^16.4.1
         version: 16.4.1(debug@4.4.3)
     devDependencies:
+      '@agentpos/connectors':
+        specifier: workspace:^
+        version: link:../connectors
+      '@agentpos/mcp-buyer':
+        specifier: workspace:^
+        version: link:../mcp-buyer
+      '@agentpos/receipts':
+        specifier: workspace:^
+        version: link:../receipts
+      '@agentpos/scanner':
+        specifier: workspace:^
+        version: link:../scanner
+      '@agentpos/site':
+        specifier: workspace:^
+        version: link:../site
       '@types/node':
         specifier: ^24.19.2
         version: 24.19.2
