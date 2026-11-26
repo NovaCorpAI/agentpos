@@ -233,7 +233,11 @@ completa de propiedades, cada una con su test, y las preguntas que siguen abiert
   transacción. Cualquier evento publicado dentro de `__check_auth` deja el pago sin poder
   pagarse por un facilitador; lo vimos rechazarlo en testnet
   (`invalid_exact_stellar_payload_event_not_transfer`). El evento `transfer` del token es
-  el registro del pago. Las operaciones del dueño siguen emitiendo sus eventos.
+  el registro del pago. Las operaciones del dueño siguen emitiendo sus eventos. El mismo
+  rechazo ya estaba reportado en el origen antes de que lo encontráramos
+  ([x402, issue 3764](https://github.com/x402-foundation/x402/issues/3764), abierto), con la
+  propuesta de que un facilitador ignore los eventos de contratos que no sean el activo.
+  Mientras eso no cambie, una política que quiera poder pagarse por x402 tiene que callar.
 - **En qué se puede equivocar el dueño.** La regla del dueño lo puede todo, por diseño. Dos
   acciones del dueño debilitan una sesión y merecen una pantalla de confirmación en
   cualquier wallet: `remove_policy` sobre una regla de sesión deja la llave de sesión sin

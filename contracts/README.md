@@ -227,7 +227,11 @@ each with its test, and the questions still open are in [AUDIT-PREP.md](./AUDIT-
   transaction. Anything published from inside `__check_auth` makes the payment unpayable
   through one; we saw the facilitator refuse it on testnet
   (`invalid_exact_stellar_payload_event_not_transfer`). The token's `transfer` event is
-  the record of the payment. Owner operations still emit their events.
+  the record of the payment. Owner operations still emit their events. The same refusal was
+  reported upstream before we met it
+  ([x402 issue 3764](https://github.com/x402-foundation/x402/issues/3764), open), with a
+  proposal to let a facilitator ignore events from contracts other than the asset. Until
+  that changes, a policy that wants to be payable through x402 has to stay silent.
 - **What the owner can still get wrong.** The owner rule can do anything, by design. Two
   owner actions weaken a session and are worth a confirmation screen in any wallet:
   `remove_policy` on a session rule leaves the session key with no mandate at all, and

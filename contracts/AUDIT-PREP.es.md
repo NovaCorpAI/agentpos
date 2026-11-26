@@ -96,7 +96,9 @@ lugares. 9 cambios no compilan y los tests notan los otros 58.
   facilitador x402 rechaza un pago cuya transacción trae cualquier evento de contrato que
   no sea el `transfer` del token. Es el único lugar donde el mandato escribe por sí mismo
   la entrada de almacenamiento de la librería. Un revisor debería comparar las dos
-  funciones línea por línea.
+  funciones línea por línea. La regla del facilitador está reportada en el origen, en
+  [x402, issue 3764](https://github.com/x402-foundation/x402/issues/3764); si se relaja,
+  esta copia puede volver a llamar a la librería.
 
 ## Preguntas abiertas para un revisor
 

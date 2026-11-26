@@ -94,7 +94,9 @@ places. 9 changes do not compile and the tests notice the other 58.
   payment event was removed too, because an x402 facilitator refuses a payment whose
   transaction carries any contract event other than the token's `transfer`. This is the
   one place where the mandate writes the library's storage entry itself. A reviewer should
-  compare the two functions line by line.
+  compare the two functions line by line. The facilitator's rule is reported upstream in
+  [x402 issue 3764](https://github.com/x402-foundation/x402/issues/3764); if it is relaxed,
+  this copy can go back to calling the library.
 
 ## Open questions for a reviewer
 
