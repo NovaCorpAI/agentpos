@@ -1,6 +1,6 @@
 {
   "name": "@agentpos/mandate-contract",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "AgentPOS mandate on chain: client for the Soroban smart account that enforces a buying agent's mandate (testnet only, not audited).",
   "license": "Apache-2.0",
   "homepage": "https://agentposhq.com",
