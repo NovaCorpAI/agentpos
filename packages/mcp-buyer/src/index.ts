@@ -37,12 +37,19 @@ export {
   saveProfile,
   listProfiles,
   profileSchema,
+  mandateAccountSchema,
   approve,
   listPending,
   requestApproval,
   agentposHome,
 } from "./profile.js";
-export type { LoadedProfile, Profile, ProfileJson, PendingApproval } from "./profile.js";
+export type {
+  LoadedProfile,
+  MandateAccountLink,
+  Profile,
+  ProfileJson,
+  PendingApproval,
+} from "./profile.js";
 export { SpendingLog } from "./spending.js";
 export type { SpendingEntry } from "./spending.js";
 export { demoCost, runDemoPurchase } from "./demo.js";

@@ -40,31 +40,31 @@ Claude Desktop / Claude Code MCP config:
 
 ## Paying from a mandate account (testnet)
 
-By default the buyer pays from the profile's own keypair, and the mandate is checked here, in
-software, before every signature. `BuyerService` also takes `contractAccount`: a Soroban smart
-account that pays instead, with the mandate enforced by the network inside the account.
+By default the buyer pays from the profile's own wallet, and the mandate is checked here, in
+software, before every signature. A profile can instead pay from a **mandate account**: a
+Soroban smart account that holds the funds and enforces the mandate on the network. The
+profile's key is then only a session key: it can pay within the session its owner issued, and
+it can do nothing else on the account.
 
-```ts
-new BuyerService({
-  profile,
-  contractAccount: {
-    address: account, // C...
-    authorize: (entry, validUntilLedger, networkPassphrase) =>
-      signMandateAuthEntry(
-        entry,
-        { account, contextRuleId: session, verifier, keys: [agentKey] },
-        validUntilLedger,
-        networkPassphrase,
-      ),
-  },
-});
+```bash
+agentpos-buyer account show      # prints the session key to hand to the account's owner
+agentpos-buyer account link --account C... --verifier C... --session 3
+agentpos-buyer account unlink    # back to the profile's own wallet
 ```
+
+The owner of the account issues the session for that key (see
+[`@agentpos/mandate-contract`](../mandate-contract/README.md)) and tells you its rule number.
+Rule 0 is the owner's and is refused: an agent never holds the key that changes its own
+mandate. Once linked, every purchase of this profile, from the CLI and from the MCP server,
+is paid by the account; `list_profiles` shows the link to the agent.
 
 The profile's mandate is still evaluated first. The account's check is the one that holds if
 this process is wrong or compromised: a payment over its cap is refused before anything is
-sent, with the contract's error code in the message. See
-[`@agentpos/mandate-contract`](../mandate-contract/README.md). Testnet only, not audited; the
-CLI and the MCP server do not expose it yet.
+sent, with the contract's error code in the message (4105 over the cap per payment, 3221 over
+the cap per period, 4106 seller not allowed).
+
+Testnet only: the contracts are not audited, and a linked profile on mainnet refuses to pay.
+Code that builds a `BuyerService` itself can pass `contractAccount` to sign some other way.
 
 ## The market call
 

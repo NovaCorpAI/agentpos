@@ -83,6 +83,8 @@ export function buildBuyerServer(options: BuyerServerOptions): McpServer {
             name: p.name,
             network: p.network,
             address: p.address,
+            // When set, this account pays and enforces its own caps on chain.
+            mandateAccount: p.mandateAccount ?? null,
             mandate: p.mandate,
             sites: p.sites,
             hasShipping: Boolean(p.shipping),

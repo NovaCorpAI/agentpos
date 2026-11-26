@@ -14,6 +14,7 @@ import {
   loadKeypair,
   receiptFromResponse,
   resolveConfig,
+  signMandateAuthEntry,
   usdc,
   usdcFromMinor,
 } from "@agentpos/core";
@@ -103,6 +104,8 @@ export interface BuyerDeps {
    * Pay from a contract account (`C...`) instead of the profile's keypair: a smart account that
    * enforces the mandate on chain. The mandate of the profile is still evaluated first, here;
    * the account's own check is the one that holds if this process is wrong or compromised.
+   * A profile linked to a mandate account (`profile.mandateAccount`) gets this on its own; pass
+   * it only to sign some other way.
    */
   contractAccount?: ContractAccountPayer;
   payFetchFactory?: PayFetchFactory;
@@ -162,6 +165,43 @@ export class BuyerService {
     const kp = loadKeypair(this.profile.keyFile, passphrase);
     this.signerCache = createLocalKeypairSigner(kp.secret(), this.profile.network);
     return this.signerCache;
+  }
+
+  /**
+   * The contract account that pays, when there is one: the one a caller injected, or the mandate
+   * account the profile is linked to, signed for with the profile's key as session key.
+   */
+  private contractAccount(): ContractAccountPayer | undefined {
+    if (this.deps.contractAccount) return this.deps.contractAccount;
+    const link = this.profile.mandateAccount;
+    if (!link) return undefined;
+    if (this.profile.network !== "testnet") {
+      throw new AgentPOSError("CONFIG_INVALID", "A mandate account can pay on testnet only", {
+        hint: "The mandate contracts are not audited. Remove the link (`agentpos-buyer account unlink`) to pay from the profile's own wallet on mainnet.",
+      });
+    }
+    const passphrase = this.deps.passphrase ?? process.env.AGENTPOS_BUYER_PASSPHRASE;
+    if (!passphrase) {
+      throw new AgentPOSError("CONFIG_INVALID", "Wallet is locked", {
+        hint: "Set AGENTPOS_BUYER_PASSPHRASE for the MCP server process (the human who owns the wallet does this, never the agent).",
+      });
+    }
+    const sessionKey = loadKeypair(this.profile.keyFile, passphrase);
+    return {
+      address: link.account,
+      authorize: (entry, validUntilLedger, networkPassphrase) =>
+        signMandateAuthEntry(
+          entry,
+          {
+            account: link.account,
+            contextRuleId: link.sessionRule,
+            verifier: link.verifier,
+            keys: [sessionKey],
+          },
+          validUntilLedger,
+          networkPassphrase,
+        ),
+    };
   }
 
   site(url: string): SiteClient {
@@ -493,8 +533,9 @@ export class BuyerService {
       .map((n) => n(amount))
       .filter((ext) => allowed.includes(ext.network));
     const limits = { maxPerPayment: ownNetworkAllowed ? amount : usdcFromMinor(0n) };
-    const payFetch = this.deps.contractAccount
-      ? createContractAccountBuyerFetch(this.core, this.deps.contractAccount, limits, extensions)
+    const contractAccount = this.contractAccount();
+    const payFetch = contractAccount
+      ? createContractAccountBuyerFetch(this.core, contractAccount, limits, extensions)
       : this.payFetchFactory(this.core, this.signer(), limits, extensions);
     this.log(
       `paying cart ${cartId} at ${client.url}: ${formatUsdc(amount)} ${this.core.checkoutAsset}`,

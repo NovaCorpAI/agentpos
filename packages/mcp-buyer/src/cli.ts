@@ -6,7 +6,13 @@ import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { AgentPOSError, FRIENDBOT_URL, formatUsdc, generateAndStoreKeypair } from "@agentpos/core";
-import { approve, listPending, loadProfileWithWarnings, saveProfile } from "./profile.js";
+import {
+  approve,
+  listPending,
+  loadProfileWithWarnings,
+  mandateAccountSchema,
+  saveProfile,
+} from "./profile.js";
 import type { Profile } from "./profile.js";
 import { mandateSchema } from "./mandate.js";
 import { formatMarketTable } from "./market.js";
@@ -151,6 +157,75 @@ program
           : profile.sites.filter((s) => s !== url);
       saveProfile(profile);
       console.log(pc.green(`${action}: ${url}`));
+    } catch (err) {
+      die(err);
+    }
+  });
+
+program
+  .command("account")
+  .description(
+    "Pay from a mandate account: a smart account that enforces the mandate on chain (testnet)",
+  )
+  .argument("<action>", "link | unlink | show")
+  .option("--account <address>", "the mandate account (C...)")
+  .option(
+    "--verifier <address>",
+    "the Ed25519 verifier contract the session key is registered with",
+  )
+  .option("--session <n>", "context rule id of the session the owner issued for this profile")
+  .action((action: string, opts: { account?: string; verifier?: string; session?: string }) => {
+    try {
+      const profile = loadProfile(program.opts<{ profile: string }>().profile);
+      if (action === "show") {
+        console.log(`session key: ${profile.address}`);
+        console.log(
+          pc.dim(
+            "Give that public key to the owner of the account: the owner issues a session for it.",
+          ),
+        );
+        if (!profile.mandateAccount) return console.log("mandate account: (none)");
+        const link = profile.mandateAccount;
+        return console.log(
+          `mandate account: ${link.account}\nverifier: ${link.verifier}\nsession rule: ${link.sessionRule}`,
+        );
+      }
+      if (action === "unlink") {
+        delete profile.mandateAccount;
+        saveProfile(profile);
+        return console.log(pc.green("unlinked: payments come from the profile's own wallet"));
+      }
+      if (action !== "link") {
+        throw new AgentPOSError("CONFIG_INVALID", `Unknown action '${action}'`, {
+          hint: "agentpos-buyer account link | unlink | show",
+        });
+      }
+      if (profile.network !== "testnet") {
+        throw new AgentPOSError("CONFIG_INVALID", "A mandate account can pay on testnet only", {
+          hint: "The mandate contracts are not audited. Use a testnet profile.",
+        });
+      }
+      const parsed = mandateAccountSchema.safeParse({
+        account: opts.account,
+        verifier: opts.verifier,
+        sessionRule: Number(opts.session),
+      });
+      if (!parsed.success) {
+        throw new AgentPOSError("CONFIG_INVALID", "The mandate account link is not valid", {
+          hint: "agentpos-buyer account link --account C... --verifier C... --session <n>. The session is the rule the owner issued for this profile's key; rule 0 is the owner's and is refused.",
+          details: { issues: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`) },
+        });
+      }
+      profile.mandateAccount = parsed.data;
+      saveProfile(profile);
+      console.log(
+        pc.green(`linked: ${parsed.data.account} pays, session rule ${parsed.data.sessionRule}`),
+      );
+      console.log(
+        pc.dim(
+          "The profile's mandate is still checked first. The account's own caps are the ones the network enforces.",
+        ),
+      );
     } catch (err) {
       die(err);
     }
