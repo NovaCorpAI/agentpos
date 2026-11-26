@@ -23,8 +23,16 @@ export function keysDir(): string {
     : join(homedir(), ".agentpos", "keys");
 }
 
+/**
+ * scrypt with these parameters needs 128 * N * r bytes, which is 32 MiB: exactly Node's default
+ * `maxmem`, and Node refuses a derivation that does not fit strictly under it (seen on Node
+ * 24.14: "memory limit exceeded"). The limit is raised; the parameters, and so every key file
+ * already written, stay the same.
+ */
+const SCRYPT_MAXMEM = 64 * 1024 * 1024;
+
 function derive(passphrase: string, salt: Buffer): Buffer {
-  return scryptSync(passphrase, salt, 32, { N: 2 ** 15, r: 8, p: 1 });
+  return scryptSync(passphrase, salt, 32, { N: 2 ** 15, r: 8, p: 1, maxmem: SCRYPT_MAXMEM });
 }
 
 export function encryptSecret(
