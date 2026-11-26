@@ -94,6 +94,20 @@ propio que `AGENTPOS_MANDATE_STATE_FILE` mantiene separado del de referencia.
 una smart account: un evento de contrato emitido al autorizar. Se conserva como registro de
 ese hallazgo.
 
+## Reportado a los proyectos de origen
+
+Construir esto dejó a la vista dos brechas entre x402 en Stellar y las smart accounts. Las dos
+son públicas, con su reproducción y con transacciones liquidadas en testnet como evidencia.
+
+| Qué                                                                                                | Dónde                                                                   | Nuestra parte                                                                                                                                                                                                                                                        |
+| -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| El esquema de cliente de x402 no puede firmar por una cuenta contrato con su propio valor de firma | [x402, issue 4453](https://github.com/x402-foundation/x402/issues/4453) | Reportado por nosotros, con la causa en el código, un arreglo y la oferta de enviar el PR. `createContractAccountScheme` en el core es ese arreglo, en uso                                                                                                           |
+| El facilitador rechaza un pago cuya cuenta emite un evento de contrato al autorizar                | [x402, issue 3764](https://github.com/x402-foundation/x402/issues/3764) | Reportado antes por otra persona. Lo [confirmamos de forma independiente](https://github.com/x402-foundation/x402/issues/3764#issuecomment-7198315698), mostramos que una cuenta que no emite nada sí se liquida, y medimos cuánto cuestan estos pagos en comisiones |
+
+Mientras lo segundo no cambie, una política que quiera poder pagarse por x402 calla en el
+camino de pago, y por eso `mandate-policy` copia una función de la librería de OpenZeppelin.
+Si se arregla lo primero, el esquema del core desaparece y se usa el cliente estándar.
+
 ## Límites conocidos
 
 - Los firmantes son llaves Ed25519 detrás del contrato verificador. Passkeys y firmantes
