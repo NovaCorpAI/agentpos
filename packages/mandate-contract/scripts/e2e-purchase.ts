@@ -14,6 +14,7 @@
  * (`deploy:testnet`), AGENTPOS_FACILITATOR_API_KEY, and SMOKE_USDC_SOURCE_SECRET when the
  * account needs more testnet USDC.
  */
+import { randomBytes } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -21,8 +22,8 @@ import { Contract, Keypair, scValToNative } from "@stellar/stellar-sdk";
 import {
   AgentPOSError,
   createLogger,
+  generateAndStoreKeypair,
   usdc,
-  type ContractAccountPayer,
   type CoreConfig,
   type UsdcMinor,
 } from "@agentpos/core";
@@ -35,11 +36,10 @@ import {
   getMandate,
   issueSession,
   revokeSession,
-  signMandateAuthEntry,
   submit,
   type MandateChain,
 } from "../src/index.js";
-import { scv } from "../src/scval.js";
+import { scv } from "@agentpos/core";
 import {
   chainFor,
   explorerTx,
@@ -207,15 +207,25 @@ async function main(): Promise<void> {
 
   const home = mkdtempSync(join(tmpdir(), "agentpos-e2e-contract-"));
   process.env.AGENTPOS_HOME = home;
-  const agent = Keypair.random();
+  // The agent's key is created and kept the way `agentpos-buyer init` does it: encrypted on
+  // disk, opened with the human's passphrase. It is the session key of the account.
+  const passphrase = randomBytes(24).toString("hex");
+  const keyFile = "e2e-session";
+  const agent = Keypair.fromPublicKey(generateAndStoreKeypair(keyFile, passphrase).publicKey);
   let session: number | undefined;
   try {
     // ---- the agent finds the item; the owner issues a session sized to it ---------------
-    const profile: Profile = {
+    const makeProfile = (sessionRule?: number): Profile => ({
       name: "e2e-contract-account",
       network: core.network,
-      keyFile: "unused: the account signs",
+      keyFile,
       address: agent.publicKey(),
+      // The link `agentpos-buyer account link` writes: this account pays.
+      ...(sessionRule === undefined
+        ? {}
+        : {
+            mandateAccount: { account: state.account, verifier: state.verifier, sessionRule },
+          }),
       // Looser than the account's mandate, on purpose: see the header of this file.
       mandate: mandateSchema.parse({
         maxPerTx: "100",
@@ -235,15 +245,15 @@ async function main(): Promise<void> {
       },
       sites: [siteUrl],
       createdAt: new Date().toISOString(),
-    };
+    });
     const spending = new SpendingLog(join(home, "spending.jsonl"));
-    const makeBuyer = (contractAccount?: ContractAccountPayer): BuyerService =>
+    const makeBuyer = (sessionRule?: number): BuyerService =>
       new BuyerService({
-        profile,
+        profile: makeProfile(sessionRule),
+        passphrase,
         core,
         spendingLog: spending,
         log: (message) => step(`buyer: ${message}`),
-        ...(contractAccount ? { contractAccount } : {}),
       });
 
     const offer = (await makeBuyer().searchOffers(ITEM_QUERY))[0];
@@ -273,22 +283,7 @@ async function main(): Promise<void> {
       `owner issued session ${session}: up to ${price} units per payment, in ${explorerTx(issued.hash)}`,
     );
 
-    const sessionRule = session;
-    const buyer = makeBuyer({
-      address: state.account,
-      authorize: (entry, validUntilLedger, networkPassphrase) =>
-        signMandateAuthEntry(
-          entry,
-          {
-            account: state.account,
-            contextRuleId: sessionRule,
-            verifier: state.verifier,
-            keys: [agent],
-          },
-          validUntilLedger,
-          networkPassphrase,
-        ),
-    });
+    const buyer = makeBuyer(session);
 
     // ---- 1. a purchase within the mandate ----------------------------------------------
     const cart = await buyer.createCart(siteUrl, [{ itemId: offer.id, quantity: 1 }]);

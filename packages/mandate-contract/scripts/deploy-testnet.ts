@@ -21,7 +21,7 @@ import {
   uploadWasm,
   type ExternalSigner,
 } from "../src/index.js";
-import { scv } from "../src/scval.js";
+import { scv } from "@agentpos/core";
 import {
   DEPLOYMENT_FILE,
   STATE_FILE,

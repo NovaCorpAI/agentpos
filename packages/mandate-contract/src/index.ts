@@ -3,13 +3,15 @@
  *
  * Testnet only, not audited. See `contracts/README.md` for what the contracts enforce.
  */
-export { signMandateAuthEntry, type MandateAuthorization } from "./auth.js";
+// The signing itself lives in the core, next to the other signers; re-exported for convenience.
+export { signMandateAuthEntry, type MandateAuthorization } from "@agentpos/core";
 export {
   MandateContractError,
   deployContract,
   deployMandateAccount,
   getMandate,
   issueSession,
+  issueSessionOperation,
   revokeSession,
   setMandate,
   submit,
@@ -28,4 +30,4 @@ export {
   signerScVal,
   type ExternalSigner,
   type MandateParams,
-} from "./scval.js";
+} from "@agentpos/core";

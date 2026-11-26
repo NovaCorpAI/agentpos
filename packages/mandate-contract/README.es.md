@@ -32,7 +32,7 @@ cuenta firme:
 
 ```ts
 import { createContractAccountScheme } from "@agentpos/core";
-import { signMandateAuthEntry } from "@agentpos/mandate-contract";
+import { signMandateAuthEntry } from "@agentpos/core";
 
 const scheme = createContractAccountScheme({
   address: account, // la cuenta con mandato, C...

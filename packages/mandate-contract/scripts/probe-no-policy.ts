@@ -22,7 +22,7 @@ import {
   signerScVal,
   submit,
 } from "../src/index.js";
-import { scv } from "../src/scval.js";
+import { scv } from "@agentpos/core";
 import { chainFor, explorerTx, loadConfig, readState } from "./testnet.js";
 
 async function main(): Promise<void> {

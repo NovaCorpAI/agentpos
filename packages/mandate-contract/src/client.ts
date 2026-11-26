@@ -18,7 +18,7 @@ import {
   type Keypair,
 } from "@stellar/stellar-sdk";
 import { contractErrorFromSimulation } from "@agentpos/core";
-import { signMandateAuthEntry, type MandateAuthorization } from "./auth.js";
+import { signMandateAuthEntry, type MandateAuthorization } from "@agentpos/core";
 import {
   callContractRuleScVal,
   policiesScVal,
@@ -26,7 +26,7 @@ import {
   signerScVal,
   type ExternalSigner,
   type MandateParams,
-} from "./scval.js";
+} from "@agentpos/core";
 
 /** Ledgers a signature stays valid for (about five minutes). */
 const AUTH_VALIDITY_LEDGERS = 60;
@@ -205,13 +205,12 @@ export interface SessionTerms {
   name?: string;
 }
 
-/** Owner operation: issue a session. Returns the id of its context rule. */
-export async function issueSession(
-  chain: MandateChain,
-  owner: MandateAuthorization,
-  terms: SessionTerms,
-): Promise<{ contextRuleId: number; hash: string }> {
-  const operation = new Contract(owner.account).call(
+/**
+ * The call that issues a session: `add_context_rule` on the account, scoped to the token, with
+ * the agent's keys as signers and the mandate as the policy's install parameters.
+ */
+export function issueSessionOperation(account: string, terms: SessionTerms): xdr.Operation {
+  return new Contract(account).call(
     "add_context_rule",
     callContractRuleScVal(terms.token),
     xdr.ScVal.scvString(terms.name ?? "agent session"),
@@ -219,6 +218,15 @@ export async function issueSession(
     xdr.ScVal.scvVec(terms.signers.map(signerScVal)),
     policiesScVal(terms.policy, terms.mandate),
   );
+}
+
+/** Owner operation: issue a session. Returns the id of its context rule. */
+export async function issueSession(
+  chain: MandateChain,
+  owner: MandateAuthorization,
+  terms: SessionTerms,
+): Promise<{ contextRuleId: number; hash: string }> {
+  const operation = issueSessionOperation(owner.account, terms);
   const { hash: txHash, returnValue } = await submit(chain, operation, owner);
   const rule: unknown = returnValue ? scValToNative(returnValue) : undefined;
   const id = (rule as { id?: unknown } | undefined)?.id;
