@@ -7,6 +7,7 @@ import {
   ERROR_CODES,
   compareUsdc,
   createBuyerFetch,
+  createContractAccountBuyerFetch,
   createLocalKeypairSigner,
   formatUsdc,
   isAgentPOSError,
@@ -24,6 +25,7 @@ import type {
   CartLine,
   CoreConfig,
   SettlementReceipt,
+  ContractAccountPayer,
   SignerProvider,
   UsdcMinor,
 } from "@agentpos/core";
@@ -97,6 +99,12 @@ export interface BuyerDeps {
   passphrase?: string;
   /** Tests inject a fake; production signs with the profile keypair. */
   signer?: SignerProvider;
+  /**
+   * Pay from a contract account (`C...`) instead of the profile's keypair: a smart account that
+   * enforces the mandate on chain. The mandate of the profile is still evaluated first, here;
+   * the account's own check is the one that holds if this process is wrong or compromised.
+   */
+  contractAccount?: ContractAccountPayer;
   payFetchFactory?: PayFetchFactory;
   /** Extra networks the buyer can pay on; the mandate decides which ones it may (M3). */
   networks?: ReadonlyArray<BuyerNetwork>;
@@ -484,12 +492,10 @@ export class BuyerService {
     const extensions = (this.deps.networks ?? [])
       .map((n) => n(amount))
       .filter((ext) => allowed.includes(ext.network));
-    const payFetch = this.payFetchFactory(
-      this.core,
-      this.signer(),
-      { maxPerPayment: ownNetworkAllowed ? amount : usdcFromMinor(0n) },
-      extensions,
-    );
+    const limits = { maxPerPayment: ownNetworkAllowed ? amount : usdcFromMinor(0n) };
+    const payFetch = this.deps.contractAccount
+      ? createContractAccountBuyerFetch(this.core, this.deps.contractAccount, limits, extensions)
+      : this.payFetchFactory(this.core, this.signer(), limits, extensions);
     this.log(
       `paying cart ${cartId} at ${client.url}: ${formatUsdc(amount)} ${this.core.checkoutAsset}`,
     );

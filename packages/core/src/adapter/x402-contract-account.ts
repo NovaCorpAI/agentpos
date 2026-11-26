@@ -72,7 +72,8 @@ function assertSimulated(
   const code = contractErrorFromSimulation(simulation);
   throw new AgentPOSError(
     "PAYMENT_REJECTED",
-    `The paying account refused the payment in simulation (${stage})`,
+    // The code goes in the message too: the x402 client rethrows with the message alone.
+    `The paying account refused the payment in simulation (${stage})${code === undefined ? "" : `: contract error ${code}`}`,
     {
       hint:
         code === undefined

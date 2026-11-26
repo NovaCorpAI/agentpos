@@ -38,6 +38,34 @@ Claude Desktop / Claude Code MCP config:
 }
 ```
 
+## Paying from a mandate account (testnet)
+
+By default the buyer pays from the profile's own keypair, and the mandate is checked here, in
+software, before every signature. `BuyerService` also takes `contractAccount`: a Soroban smart
+account that pays instead, with the mandate enforced by the network inside the account.
+
+```ts
+new BuyerService({
+  profile,
+  contractAccount: {
+    address: account, // C...
+    authorize: (entry, validUntilLedger, networkPassphrase) =>
+      signMandateAuthEntry(
+        entry,
+        { account, contextRuleId: session, verifier, keys: [agentKey] },
+        validUntilLedger,
+        networkPassphrase,
+      ),
+  },
+});
+```
+
+The profile's mandate is still evaluated first. The account's check is the one that holds if
+this process is wrong or compromised: a payment over its cap is refused before anything is
+sent, with the contract's error code in the message. See
+[`@agentpos/mandate-contract`](../mandate-contract/README.md). Testnet only, not audited; the
+CLI and the MCP server do not expose it yet.
+
 ## The market call
 
 One structured request, asked of every store the mandate allows at the same time, answered with
