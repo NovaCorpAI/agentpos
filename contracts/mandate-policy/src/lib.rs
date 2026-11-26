@@ -13,8 +13,13 @@
 //! 2. the call is `transfer(from = the account, to, amount)`, nothing else on the token;
 //! 3. `amount > 0` and `amount <= per_payment_cap`;
 //! 4. `to` is in the seller allowlist;
-//! 5. the rolling total over `period_ledgers` stays within `period_cap` (OpenZeppelin's
-//!    spending limit policy, reused as is).
+//! 5. the rolling total over `period_ledgers` stays within `period_cap` (the state and
+//!    the rules of OpenZeppelin's spending limit policy).
+//!
+//! Authorizing a payment emits no contract event. An x402 facilitator accepts a payment
+//! only when the token's `transfer` is the single contract event of the transaction, so
+//! anything published from inside `__check_auth` would make the payment unpayable through
+//! one. The token's own `transfer` event is the record of the payment.
 //!
 //! Session expiry and revocation are enforced by the account before this policy runs:
 //! expiry is the rule's `valid_until`, revocation is removing the rule.
@@ -33,7 +38,10 @@ use soroban_sdk::{
 };
 use stellar_accounts::{
     policies::{
-        spending_limit::{self, SpendingLimitAccountParams, SpendingLimitData},
+        spending_limit::{
+            self, SpendingEntry, SpendingLimitAccountParams, SpendingLimitData, SpendingLimitError,
+            SpendingLimitStorageKey, MAX_HISTORY_ENTRIES,
+        },
         Policy,
     },
     smart_account::{ContextRule, Signer, SmartAccountClient},
@@ -85,8 +93,8 @@ enum MandateStorageKey {
     Mandate(Address, u32),
 }
 
-/// Machine-readable rejection codes. An over-period payment is rejected by the reused
-/// OpenZeppelin policy with `SpendingLimitExceeded = 3221`.
+/// Machine-readable rejection codes. An over-period payment is rejected with the code of
+/// the OpenZeppelin policy whose state it is, `SpendingLimitExceeded = 3221`.
 #[contracterror]
 #[derive(Copy, Clone, Debug, PartialEq)]
 #[repr(u32)]
@@ -107,17 +115,6 @@ pub enum MandateError {
     SellerNotAllowed = 4106,
     /// Not every signer of the session rule signed.
     MissingSessionSignature = 4107,
-}
-
-/// Emitted for every payment the mandate authorizes.
-#[contractevent]
-#[derive(Clone)]
-pub struct MandatePaymentAuthorized {
-    #[topic]
-    pub smart_account: Address,
-    pub context_rule_id: u32,
-    pub seller: Address,
-    pub amount: i128,
 }
 
 /// Emitted when the owner changes the mandate.
@@ -146,8 +143,8 @@ impl Policy for MandatePolicy {
         context_rule: ContextRule,
         smart_account: Address,
     ) {
-        // Checks first (reads only). The reused spending limit policy then requires the
-        // account's authorization before it writes anything.
+        // Checks first (reads only). Nothing is written before the account's
+        // authorization further down.
 
         // A rule with policies defers signer validation to the policy. The session key
         // must have signed; with several session signers, all of them.
@@ -170,23 +167,11 @@ impl Policy for MandatePolicy {
             panic_with_error!(e, MandateError::SellerNotAllowed)
         }
 
-        // Rolling period cap: requires the account's authorization, evicts entries older
-        // than the period, rejects with `SpendingLimitExceeded`, records the payment.
-        spending_limit::enforce(
-            e,
-            &context,
-            &authenticated_signers,
-            &context_rule,
-            &smart_account,
-        );
+        // Every write below needs the account's authorization. The account is the direct
+        // caller here, from inside its `__check_auth`.
+        smart_account.require_auth();
 
-        MandatePaymentAuthorized {
-            smart_account,
-            context_rule_id: context_rule.id,
-            seller,
-            amount,
-        }
-        .publish(e);
+        enforce_period(e, context_rule.id, &smart_account, amount);
     }
 
     fn install(
@@ -360,6 +345,44 @@ fn parse_transfer(e: &Env, context: &Context, smart_account: &Address) -> (Addre
         }
     }
     panic_with_error!(e, MandateError::NotATransfer)
+}
+
+/// Rolling period cap: drops the payments that left the window, refuses the payment when
+/// the total would pass the cap, and records it otherwise.
+///
+/// This is `spending_limit::enforce` of OpenZeppelin `stellar-accounts` 0.8.0, on the same
+/// storage entry and with the same error codes, without its `SpendingLimitEnforced` event
+/// (see the module documentation). Installing, changing and removing the cap still go
+/// through that policy's own functions. The library version is pinned: a new version must
+/// be compared against this function before it is adopted.
+fn enforce_period(e: &Env, context_rule_id: u32, smart_account: &Address, amount: i128) {
+    let key = SpendingLimitStorageKey::AccountContext(smart_account.clone(), context_rule_id);
+    // Panics with `SmartAccountNotInstalled` when the entry is missing; renews its TTL.
+    let mut data = spending_limit::get_spending_limit_data(e, context_rule_id, smart_account);
+    let current_ledger = e.ledger().sequence();
+
+    let cutoff = current_ledger.saturating_sub(data.period_ledgers);
+    while let Some(entry) = data.spending_history.get(0) {
+        if entry.ledger_sequence > cutoff {
+            break;
+        }
+        data.cached_total_spent -= entry.amount;
+        data.spending_history.pop_front();
+    }
+
+    if data.cached_total_spent + amount > data.spending_limit {
+        panic_with_error!(e, SpendingLimitError::SpendingLimitExceeded)
+    }
+    if data.spending_history.len() >= MAX_HISTORY_ENTRIES {
+        panic_with_error!(e, SpendingLimitError::HistoryCapacityExceeded)
+    }
+
+    data.spending_history.push_back(SpendingEntry {
+        amount,
+        ledger_sequence: current_ledger,
+    });
+    data.cached_total_spent += amount;
+    e.storage().persistent().set(&key, &data);
 }
 
 /// Sum of the payments still inside the rolling period at the current ledger.

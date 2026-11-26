@@ -6,7 +6,7 @@ What a reviewer needs before reading the code: what is in scope, what the contra
 on, which properties they claim and the test that pins each one, and what is still open.
 
 This is the author's own preparation. No third party has reviewed these contracts. They
-are not deployed.
+are deployed on testnet only ([deployments/testnet.json](./deployments/testnet.json)).
 
 ## Scope
 
@@ -65,8 +65,8 @@ The model test (`mandate_model.rs`) checks properties 2, 3, 4, 6 and 7 together:
 operations from 8 fixed seeds, compared step by step with a second, naive implementation
 of the mandate.
 
-Mutation testing (`.github/workflows/mutants.yml`) changes the three contracts in 53
-places. 9 changes do not compile and the tests notice the other 44.
+Mutation testing (`.github/workflows/mutants.yml`) changes the three contracts in 67
+places. 9 changes do not compile and the tests notice the other 58.
 
 ## What we checked against the library we reuse
 
@@ -87,13 +87,25 @@ places. 9 changes do not compile and the tests notice the other 44.
   once.
 - **History limit.** The library keeps at most 815 payments per period and refuses the
   next one until old payments leave the window.
+- **The check on each payment is a copy of the library's, without its event.**
+  `enforce_period` in `mandate-policy` repeats `spending_limit::enforce` of
+  `stellar-accounts` 0.8.0: same storage entry, same eviction of old payments, same two
+  refusals (3221 and 3224). It leaves out the `SpendingLimitEnforced` event, and our own
+  payment event was removed too, because an x402 facilitator refuses a payment whose
+  transaction carries any contract event other than the token's `transfer`. This is the
+  one place where the mandate writes the library's storage entry itself. A reviewer should
+  compare the two functions line by line. The facilitator's rule is reported upstream in
+  [x402 issue 3764](https://github.com/x402-foundation/x402/issues/3764); if it is relaxed,
+  this copy can go back to calling the library.
 
 ## Open questions for a reviewer
 
 These are not covered by a test, or only partly.
 
-1. **Nothing is deployed.** Every result comes from the Soroban test host, natively and
-   with the WASM. Behaviour on testnet has not been observed.
+1. **Testnet has seen little.** The properties come from the Soroban test host, natively
+   and with the WASM. On testnet we observed an owner issuing and revoking a session, a
+   payment within the mandate settled through an x402 facilitator, and a payment over the
+   cap refused in simulation with 4105. No other property has been observed there.
 2. **Idle sessions on a real network.** `storage_05` shows that an archived entry comes
    back with its content in the test host. Restoration on the network, and who pays for
    it, has not been checked.

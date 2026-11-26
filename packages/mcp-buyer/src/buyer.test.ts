@@ -301,6 +301,9 @@ describe("BuyerService", () => {
       capabilities: {},
       clientInfo: { name: "t", version: "1" },
     });
+    // A profile that pays from its own wallet says so, without asking the network anything.
+    const account = await call("tools/call", { name: "get_mandate_account", arguments: {} }, 9);
+    expect(account.result.structuredContent).toEqual({ linked: false });
     const search = await call(
       "tools/call",
       { name: "search_offers", arguments: { query: "mug" } },

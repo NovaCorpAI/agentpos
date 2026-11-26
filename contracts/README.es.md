@@ -8,6 +8,8 @@ firma. Estos contratos son su contraparte en la red: el límite lo revisa la red
 `__check_auth` de la cuenta, así que se sostiene aunque se filtre la llave del agente.
 
 **Estado: solo testnet, sin auditoría.** Nada de esto va a mainnet antes de una auditoría.
+Desplegado en testnet: los identificadores de los contratos están en
+[deployments/testnet.json](./deployments/testnet.json).
 
 ## Qué hay aquí
 
@@ -27,7 +29,7 @@ agrega AgentPOS es la política del mandato y la forma de ordenar las piezas.
 | --- | --- |
 | Solo transferencias de USDC | La regla de contexto de la sesión está limitada al contrato de USDC (`CallContract`), y la política acepta solo `transfer(from = cuenta, to, amount)` |
 | Tope por pago | `mandate-policy` (`OverPaymentCap`, 4105) |
-| Tope por período | `mandate-policy`, reusando el límite de gasto de OpenZeppelin (`SpendingLimitExceeded`, 3221) |
+| Tope por período | `mandate-policy`, sobre el estado y con las reglas del límite de gasto de OpenZeppelin (`SpendingLimitExceeded`, 3221) |
 | Vendedores permitidos | `mandate-policy` (`SellerNotAllowed`, 4106) |
 | Expiración de la sesión | El ledger `valid_until` de la regla de contexto, que revisa la cuenta |
 | Revocación | El dueño quita la regla de contexto; el siguiente pago no encuentra regla |
@@ -182,6 +184,17 @@ Cada pago agrega una entrada al historial del período (unos 80 bytes) hasta que
 ventana. CI falla si un pago supera 4.000.000 de instrucciones; ese es un techo propio de
 regresión, no un límite de la red.
 
+**Cuánto cuesta en comisiones, y qué le exige eso a un facilitador.** En testnet
+(2026-11-26), a un pago con mandato liquidado por un facilitador se le cobraron 542.213
+stroops, unos 0,054 XLM, que patrocina el facilitador. A un pago desde la misma cuenta bajo
+una sesión sin política se le cobraron 255.004. El facilitador x402 de referencia rechaza una
+transacción cuya comisión supere su techo, 50.000 stroops por defecto, así que un facilitador
+que liquide para cuentas con mandato tiene que subirlo. El facilitador de testnet de
+OpenZeppelin liquida estos pagos tal como está. Su techo en mainnet no se ha comprobado, y
+nada de esto va a mainnet antes de una auditoría. Nuestro propio facilitador
+(`apps/facilitator`) toma el techo de `AGENTPOS_FACILITATOR_MAX_FEE_STROOPS`; 1.000.000 deja
+espacio para un pago con mandato.
+
 ### Mutation testing
 
 Las suites anteriores prueban los contratos. El mutation testing prueba a las suites:
@@ -189,7 +202,7 @@ cargo-mutants rompe el código de a un cambio pequeño por vez (un `>` convertid
 un `&&` en `||`, el cuerpo de una función vaciado) y corre todas las suites contra cada
 cambio. Un cambio que ningún test nota es un hueco en los tests.
 
-Sobre los tres contratos hace 53 cambios. 9 no compilan y los tests notan los otros 44;
+Sobre los tres contratos hace 67 cambios. 9 no compilan y los tests notan los otros 58;
 ninguno pasa inadvertido. La primera corrida completa dejó 3 sin notar, y cada uno se
 volvió un test: la lista de vendedores en su límite, y una llamada al token con forma de
 transferencia y otro nombre. Una corrida parcial anterior había mostrado que nada probaba
@@ -220,10 +233,22 @@ completa de propiedades, cada una con su test, y las preguntas que siguen abiert
 - **El contrato de política no tiene dueño ni camino de actualización.** Su estado se
   indexa por `(cuenta, regla de contexto)` y toda escritura exige la autorización de esa
   cuenta.
-- **La política reusada se usa solo por sus funciones públicas.** El tope del período se
-  instala, se exige, se cambia y se quita llamando a las funciones del límite de gasto de
-  OpenZeppelin; el mandato nunca escribe el almacenamiento de esa política. La versión de
-  la librería queda fijada igual.
+- **El tope del período es el de OpenZeppelin, salvo el paso que corre en cada pago.** Se
+  instala, se cambia y se quita llamando a las funciones del límite de gasto de
+  OpenZeppelin. La revisión de cada pago (`enforce_period`) es el `enforce` de esa
+  librería, sobre la misma entrada de almacenamiento y con los mismos códigos de error,
+  sin su evento. Esa única función escribe directo la entrada de la librería, así que la
+  versión queda fijada y una versión nueva se compara con ella antes de adoptarla.
+- **Autorizar un pago no emite ningún evento de contrato.** Un facilitador x402 acepta un
+  pago solo cuando el `transfer` del token es el único evento de contrato de la
+  transacción. Cualquier evento publicado dentro de `__check_auth` deja el pago sin poder
+  pagarse por un facilitador; lo vimos rechazarlo en testnet
+  (`invalid_exact_stellar_payload_event_not_transfer`). El evento `transfer` del token es
+  el registro del pago. Las operaciones del dueño siguen emitiendo sus eventos. El mismo
+  rechazo ya estaba reportado en el origen antes de que lo encontráramos
+  ([x402, issue 3764](https://github.com/x402-foundation/x402/issues/3764), abierto), con la
+  propuesta de que un facilitador ignore los eventos de contratos que no sean el activo.
+  Mientras eso no cambie, una política que quiera poder pagarse por x402 tiene que callar.
 - **En qué se puede equivocar el dueño.** La regla del dueño lo puede todo, por diseño. Dos
   acciones del dueño debilitan una sesión y merecen una pantalla de confirmación en
   cualquier wallet: `remove_policy` sobre una regla de sesión deja la llave de sesión sin
@@ -262,11 +287,11 @@ testing corre aparte (`.github/workflows/mutants.yml`) en los pull requests que 
 
 ## Límites conocidos
 
-- Sin auditoría y todavía sin desplegar. Solo testnet hasta que haya una auditoría.
+- Sin auditoría. Solo testnet hasta que haya una auditoría.
 - Un pago a una dirección muxed (`M...`) se rechaza: la lista compara direcciones simples.
 - El período es una ventana móvil medida en ledgers, no en días de calendario.
 - Una sesión con más de 815 pagos dentro de un período se rechaza hasta que los pagos
-  antiguos salgan de la ventana (límite de la política de OpenZeppelin que se reusa).
+  antiguos salgan de la ventana (el límite de la política de OpenZeppelin, que se mantiene).
 - La regla del dueño no expira. Quitarla bloquea la cuenta, como en cualquier smart account
   de OpenZeppelin.
 

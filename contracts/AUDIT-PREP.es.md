@@ -5,8 +5,8 @@
 Lo que un revisor necesita antes de leer el código: qué está en alcance, en qué se apoyan
 los contratos, qué propiedades afirman y el test que fija cada una, y qué sigue abierto.
 
-Esta es la preparación del propio autor. Ningún tercero ha revisado estos contratos. No
-están desplegados.
+Esta es la preparación del propio autor. Ningún tercero ha revisado estos contratos. Están
+desplegados solo en testnet ([deployments/testnet.json](./deployments/testnet.json)).
 
 ## Alcance
 
@@ -65,8 +65,8 @@ El test de modelo (`mandate_model.rs`) revisa las propiedades 2, 3, 4, 6 y 7 jun
 operaciones a partir de 8 semillas fijas, comparadas paso a paso con una segunda
 implementación ingenua del mandato.
 
-El mutation testing (`.github/workflows/mutants.yml`) cambia los tres contratos en 53
-lugares. 9 cambios no compilan y los tests notan los otros 44.
+El mutation testing (`.github/workflows/mutants.yml`) cambia los tres contratos en 67
+lugares. 9 cambios no compilan y los tests notan los otros 58.
 
 ## Qué revisamos contra la librería que reusamos
 
@@ -88,13 +88,26 @@ lugares. 9 cambios no compilan y los tests notan los otros 44.
   rechace, así que se pide una sola vez.
 - **Límite del historial.** La librería guarda como máximo 815 pagos por período y rechaza
   el siguiente hasta que los pagos antiguos salgan de la ventana.
+- **La revisión de cada pago es una copia de la de la librería, sin su evento.**
+  `enforce_period` en `mandate-policy` repite `spending_limit::enforce` de
+  `stellar-accounts` 0.8.0: la misma entrada de almacenamiento, el mismo descarte de pagos
+  antiguos, los mismos dos rechazos (3221 y 3224). Deja fuera el evento
+  `SpendingLimitEnforced`, y también se quitó nuestro propio evento de pago, porque un
+  facilitador x402 rechaza un pago cuya transacción trae cualquier evento de contrato que
+  no sea el `transfer` del token. Es el único lugar donde el mandato escribe por sí mismo
+  la entrada de almacenamiento de la librería. Un revisor debería comparar las dos
+  funciones línea por línea. La regla del facilitador está reportada en el origen, en
+  [x402, issue 3764](https://github.com/x402-foundation/x402/issues/3764); si se relaja,
+  esta copia puede volver a llamar a la librería.
 
 ## Preguntas abiertas para un revisor
 
 No están cubiertas por un test, o solo en parte.
 
-1. **No hay nada desplegado.** Todos los resultados vienen del host de pruebas de Soroban,
-   en nativo y con el WASM. El comportamiento en testnet no se ha observado.
+1. **Testnet ha visto poco.** Las propiedades vienen del host de pruebas de Soroban, en
+   nativo y con el WASM. En testnet observamos a un dueño emitir y revocar una sesión, un
+   pago dentro del mandato liquidado por un facilitador x402, y un pago sobre el tope
+   rechazado en simulación con 4105. Ninguna otra propiedad se ha observado ahí.
 2. **Sesiones inactivas en una red real.** `storage_05` muestra que una entrada archivada
    vuelve con su contenido en el host de pruebas. La restauración en la red, y quién la
    paga, no se ha comprobado.

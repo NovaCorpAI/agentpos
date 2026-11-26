@@ -8,6 +8,8 @@ signature. These contracts are its on-chain counterpart: the limit is checked by
 network inside the account's `__check_auth`, so it holds even if the agent's key leaks.
 
 **Status: testnet only, not audited.** Nothing here goes to mainnet before an audit.
+Deployed on testnet: the contract ids are in
+[deployments/testnet.json](./deployments/testnet.json).
 
 ## What is here
 
@@ -27,7 +29,7 @@ adds is the mandate policy and the way the pieces are arranged.
 | --- | --- |
 | Only USDC transfers | The session's context rule is scoped to the USDC contract (`CallContract`), and the policy accepts only `transfer(from = account, to, amount)` |
 | Cap per payment | `mandate-policy` (`OverPaymentCap`, 4105) |
-| Cap per period | `mandate-policy`, reusing OpenZeppelin's spending limit (`SpendingLimitExceeded`, 3221) |
+| Cap per period | `mandate-policy`, on the state and with the rules of OpenZeppelin's spending limit (`SpendingLimitExceeded`, 3221) |
 | Seller allowlist | `mandate-policy` (`SellerNotAllowed`, 4106) |
 | Session expiry | The context rule's `valid_until` ledger, checked by the account |
 | Revocation | The owner removes the context rule; the next payment finds no rule |
@@ -179,6 +181,16 @@ Each payment adds one entry to the period's history (about 80 bytes) until it le
 window. CI fails if a payment goes over 4,000,000 instructions; that is our own regression
 ceiling, not a network limit.
 
+**What it costs in fees, and what that asks of a facilitator.** On testnet (2026-11-26) a
+mandated payment settled through a facilitator was charged 542,213 stroops, about 0.054 XLM,
+which the facilitator sponsors. A payment from the same account under a session with no
+policy was charged 255,004. The reference x402 facilitator refuses a transaction whose fee
+is over its ceiling, 50,000 stroops by default, so a facilitator that settles for mandate
+accounts has to raise it. OpenZeppelin's hosted testnet facilitator settles these payments
+as it is. Its mainnet ceiling has not been checked, and nothing here goes to mainnet before
+an audit. Our own facilitator (`apps/facilitator`) takes the ceiling from
+`AGENTPOS_FACILITATOR_MAX_FEE_STROOPS`; 1,000,000 leaves room for a mandated payment.
+
 ### Mutation testing
 
 The suites above test the contracts. Mutation testing tests the suites: cargo-mutants
@@ -186,8 +198,8 @@ breaks the code one small change at a time (a `>` turned into `>=`, an `&&` into
 function body emptied) and runs every suite against each change. A change that no test
 notices is a gap in the tests.
 
-Over the three contracts it makes 53 changes. 9 do not compile and the tests notice the
-other 44; none goes unnoticed. The first full run left 3 unnoticed, and each became a test:
+Over the three contracts it makes 67 changes. 9 do not compile and the tests notice the
+other 58; none goes unnoticed. The first full run left 3 unnoticed, and each became a test:
 the seller list at its limit, and a token call with the shape of a transfer and another
 name. An earlier partial run had found that nothing tested a session with a missing
 signature when there are several signers, and that nothing tested storage renewal.
@@ -214,10 +226,22 @@ each with its test, and the questions still open are in [AUDIT-PREP.md](./AUDIT-
   signature at all. `reject_12` pins it.
 - **The policy contract has no owner and no upgrade path.** Its state is keyed by
   `(account, context rule)` and every write requires that account's authorization.
-- **The reused policy is used through its public functions only.** The period cap is
-  installed, enforced, changed and removed by calling OpenZeppelin's spending limit
-  functions; the mandate never writes that policy's storage. The library version is
-  pinned all the same.
+- **The period cap is OpenZeppelin's, except for the step that runs on every payment.**
+  It is installed, changed and removed by calling OpenZeppelin's spending limit functions.
+  The check on each payment (`enforce_period`) is that library's `enforce` on the same
+  storage entry and with the same error codes, without its event. That one function
+  writes the library's entry directly, so the library version is pinned and a new version
+  must be compared against it before it is adopted.
+- **Authorizing a payment emits no contract event.** An x402 facilitator accepts a
+  payment only when the token's `transfer` is the single contract event of the
+  transaction. Anything published from inside `__check_auth` makes the payment unpayable
+  through one; we saw the facilitator refuse it on testnet
+  (`invalid_exact_stellar_payload_event_not_transfer`). The token's `transfer` event is
+  the record of the payment. Owner operations still emit their events. The same refusal was
+  reported upstream before we met it
+  ([x402 issue 3764](https://github.com/x402-foundation/x402/issues/3764), open), with a
+  proposal to let a facilitator ignore events from contracts other than the asset. Until
+  that changes, a policy that wants to be payable through x402 has to stay silent.
 - **What the owner can still get wrong.** The owner rule can do anything, by design. Two
   owner actions weaken a session and are worth a confirmation screen in any wallet:
   `remove_policy` on a session rule leaves the session key with no mandate at all, and
@@ -255,11 +279,11 @@ apart (`.github/workflows/mutants.yml`) on pull requests that touch `contracts/`
 
 ## Known limits
 
-- Not audited and not deployed yet. Testnet only until an audit.
+- Not audited. Testnet only until an audit.
 - A payment to a muxed address (`M...`) is refused: the allowlist compares plain addresses.
 - The period is a rolling window measured in ledgers, not calendar days.
 - A session with more than 815 payments inside one period is refused until old payments
-  leave the window (a limit of the reused OpenZeppelin policy).
+  leave the window (the limit of OpenZeppelin's policy, kept).
 - The owner rule has no expiry. Removing it locks the account, as in any OpenZeppelin smart
   account.
 

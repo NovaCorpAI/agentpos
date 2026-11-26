@@ -18,6 +18,7 @@
     "format:check": "prettier --check .",
     "e2e:smoke": "pnpm --filter @agentpos/core e2e:smoke",
     "e2e:testnet": "pnpm --filter @agentpos/mcp-buyer e2e:testnet",
+    "e2e:mandate": "pnpm --filter @agentpos/mandate-contract e2e:purchase",
     "demo:up": "docker compose -f apps/demo-store/docker-compose.yml up -d",
     "demo:down": "docker compose -f apps/demo-store/docker-compose.yml down -v",
     "demo:logs": "docker compose -f apps/demo-store/docker-compose.yml logs -f wpcli",

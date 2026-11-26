@@ -162,3 +162,53 @@ jobs:
       - name: Agent buys on testnet
         if: ${{ env.AGENTPOS_FACILITATOR_API_KEY != '' }}
         run: pnpm e2e:testnet
+
+  e2e-mandate-account:
+    # The mandate on chain, end to end: build the contracts, deploy them to testnet, then an
+    # agent buys in the demo store paying from the contract account, and a purchase over the cap
+    # is refused by the account. XLM, like e2e-testnet: friendbot funds it, no faucet needed.
+    # Needs the AGENTPOS_FACILITATOR_API_KEY repository secret; skipped when absent.
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    needs: [verify, contracts]
+    runs-on: ubuntu-latest
+    env:
+      AGENTPOS_NETWORK: testnet
+      AGENTPOS_CHECKOUT_ASSET: XLM
+      AGENTPOS_FACILITATOR_API_KEY: ${{ secrets.AGENTPOS_FACILITATOR_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Keep this deployment's keys in the runner
+        # An ad hoc deployment: throwaway keys in the runner's temp folder, and the public
+        # record of the reference deployment is left alone.
+        run: echo "AGENTPOS_MANDATE_STATE_FILE=$RUNNER_TEMP/mandate-testnet.json" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: contracts
+      - uses: stellar/stellar-cli@v30.0.1
+      - name: Build WASM
+        working-directory: contracts
+        run: stellar contract build
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Start demo store
+        run: |
+          pnpm demo:up
+          for i in $(seq 1 60); do
+            docker compose -f apps/demo-store/docker-compose.yml logs wpcli 2>/dev/null | grep -q "\[seed\] done" && break
+            sleep 5
+          done
+          docker compose -f apps/demo-store/docker-compose.yml logs wpcli | tail -3
+      - name: Deploy the mandate contracts to testnet
+        if: ${{ env.AGENTPOS_FACILITATOR_API_KEY != '' }}
+        run: pnpm --filter @agentpos/mandate-contract deploy:testnet
+      - name: Agent buys from the contract account, then goes over the cap
+        if: ${{ env.AGENTPOS_FACILITATOR_API_KEY != '' }}
+        run: pnpm e2e:mandate

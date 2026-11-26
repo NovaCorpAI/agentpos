@@ -6,6 +6,7 @@ export * from "./wallet-proof.js";
 export * from "./llm.js";
 export * from "./measured-llm.js";
 export * from "./signer.js";
+export * from "./smart-account/index.js";
 export * from "./fiscal.js";
 export * from "./catalog.js";
 export * from "./adapter/index.js";

@@ -5,8 +5,21 @@ import { Command } from "commander";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { AgentPOSError, FRIENDBOT_URL, formatUsdc, generateAndStoreKeypair } from "@agentpos/core";
-import { approve, listPending, loadProfileWithWarnings, saveProfile } from "./profile.js";
+import {
+  AgentPOSError,
+  FRIENDBOT_URL,
+  formatUsdc,
+  generateAndStoreKeypair,
+  readMandateSession,
+} from "@agentpos/core";
+import type { MandateSessionState } from "@agentpos/core";
+import {
+  approve,
+  listPending,
+  loadProfileWithWarnings,
+  mandateAccountSchema,
+  saveProfile,
+} from "./profile.js";
 import type { Profile } from "./profile.js";
 import { mandateSchema } from "./mandate.js";
 import { formatMarketTable } from "./market.js";
@@ -16,11 +29,15 @@ import { runDemoPurchase } from "./demo.js";
 import { runSignerWatch } from "./watch.js";
 import { SpendingLog } from "./spending.js";
 
-function die(err: unknown): never {
+function report(err: unknown): void {
   if (err instanceof AgentPOSError) {
     console.error(pc.red(`\n${err.code}: ${err.message}`));
     console.error(pc.dim(`hint: ${err.hint}`));
   } else console.error(pc.red(String(err)));
+}
+
+function die(err: unknown): never {
+  report(err);
   process.exit(1);
 }
 
@@ -112,6 +129,10 @@ program
     };
     const file = saveProfile(profile);
     if (opts.network === "testnet") {
+      p.note(
+        `This wallet can also be only a session key of a mandate account, a smart account that holds the funds and enforces the limits on the network.\nGive ${publicKey} to the owner of the account, then run:\n  agentpos-buyer account link --account C... --session <n>`,
+        "Optional: pay from a mandate account (testnet)",
+      );
       const res = await fetch(`${FRIENDBOT_URL}?addr=${publicKey}`).catch(() => undefined);
       p.note(
         res?.ok
@@ -155,6 +176,156 @@ program
       die(err);
     }
   });
+
+/** Ledgers close about every five seconds; good enough to tell a human "about 13 days". */
+function ledgersToText(ledgers: number): string {
+  const hours = (ledgers * 5) / 3600;
+  return hours >= 48 ? `about ${Math.round(hours / 24)} days` : `about ${Math.round(hours)} hours`;
+}
+
+function printSession(state: MandateSessionState): void {
+  const amount = (minor: bigint): string => formatUsdc(minor as never);
+  console.log(`session "${state.name}" on token ${state.token}`);
+  console.log(`balance of the account: ${amount(state.balance)}`);
+  if (state.mandate) {
+    const m = state.mandate;
+    console.log(`cap per payment: ${amount(m.perPaymentCap)}`);
+    console.log(
+      `cap per period: ${amount(m.periodCap)} every ${ledgersToText(m.periodLedgers)} (spent now: ${amount(m.spentInPeriod)})`,
+    );
+    console.log(`sellers it may pay: ${m.sellers.join(", ")}`);
+  } else {
+    console.log(
+      pc.yellow(
+        "no mandate policy on this session: the network enforces no cap and no seller list on it",
+      ),
+    );
+  }
+  if (state.validUntilLedger === undefined) console.log("the session does not expire");
+  else if (state.expired) console.log(pc.red("the session has expired"));
+  else
+    console.log(
+      `the session ends in ${ledgersToText(state.validUntilLedger - state.latestLedger)} (ledger ${state.validUntilLedger})`,
+    );
+}
+
+program
+  .command("account")
+  .description(
+    "Pay from a mandate account: a smart account that enforces the mandate on chain (testnet)",
+  )
+  .argument("<action>", "link | unlink | show")
+  .option("--account <address>", "the mandate account (C...)")
+  .option("--session <n>", "context rule id of the session the owner issued for this profile")
+  .option(
+    "--verifier <address>",
+    "verifier contract of the session key (read from the account when omitted)",
+  )
+  .option("--offline", "link without reading the account from the network (needs --verifier)")
+  .action(
+    async (
+      action: string,
+      opts: { account?: string; verifier?: string; session?: string; offline?: boolean },
+    ) => {
+      try {
+        const profile = loadProfile(program.opts<{ profile: string }>().profile);
+        if (action === "show") {
+          console.log(`session key: ${profile.address}`);
+          console.log(
+            pc.dim(
+              "Give that public key to the owner of the account: the owner issues a session for it.",
+            ),
+          );
+          if (!profile.mandateAccount) return console.log("mandate account: (none)");
+          const link = profile.mandateAccount;
+          console.log(
+            `mandate account: ${link.account}\nverifier: ${link.verifier}\nsession rule: ${link.sessionRule}`,
+          );
+          const state = await new BuyerService({ profile }).mandateAccountStatus();
+          if (state) printSession(state);
+          return;
+        }
+        if (action === "unlink") {
+          delete profile.mandateAccount;
+          saveProfile(profile);
+          return console.log(pc.green("unlinked: payments come from the profile's own wallet"));
+        }
+        if (action !== "link") {
+          throw new AgentPOSError("CONFIG_INVALID", `Unknown action '${action}'`, {
+            hint: "agentpos-buyer account link | unlink | show",
+          });
+        }
+        if (profile.network !== "testnet") {
+          throw new AgentPOSError("CONFIG_INVALID", "A mandate account can pay on testnet only", {
+            hint: "The mandate contracts are not audited. Use a testnet profile.",
+          });
+        }
+        const badLink = (issues?: string[]): AgentPOSError =>
+          new AgentPOSError("CONFIG_INVALID", "The mandate account link is not valid", {
+            hint: "agentpos-buyer account link --account C... --session <n>. The session is the rule the owner issued for this profile's key; rule 0 is the owner's and is refused.",
+            ...(issues ? { details: { issues } } : {}),
+          });
+        const draft = mandateAccountSchema
+          .omit({ verifier: true })
+          .safeParse({ account: opts.account, sessionRule: Number(opts.session) });
+        if (!draft.success) {
+          throw badLink(draft.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`));
+        }
+        let verifier = opts.verifier;
+        if (!opts.offline) {
+          // Ask the network before trusting the link: a typo here would only show up as a
+          // refused payment later.
+          const state = await readMandateSession({
+            network: profile.network,
+            account: draft.data.account,
+            contextRuleId: draft.data.sessionRule,
+          });
+          const mine = state.signers.find((signer) => signer.publicKey === profile.address);
+          if (!mine) {
+            throw new AgentPOSError(
+              "CONFIG_INVALID",
+              "That session was not issued for this profile's key",
+              {
+                hint: `The owner must issue the session for ${profile.address} (agentpos-buyer account show prints it).`,
+                details: { sessionSigners: state.signers.map((signer) => signer.publicKey) },
+              },
+            );
+          }
+          if (verifier && verifier !== mine.verifier) {
+            throw new AgentPOSError("CONFIG_INVALID", "The verifier does not match the session", {
+              hint: `The session registers this key with ${mine.verifier}. Omit --verifier to use it.`,
+            });
+          }
+          if (state.expired) {
+            throw new AgentPOSError("CONFIG_INVALID", "That session has expired", {
+              hint: "Ask the owner of the account to issue a new session.",
+            });
+          }
+          verifier = mine.verifier;
+          printSession(state);
+        }
+        const parsed = mandateAccountSchema.safeParse({ ...draft.data, verifier });
+        if (!parsed.success) {
+          throw badLink(parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`));
+        }
+        profile.mandateAccount = parsed.data;
+        saveProfile(profile);
+        console.log(
+          pc.green(`linked: ${parsed.data.account} pays, session rule ${parsed.data.sessionRule}`),
+        );
+        console.log(
+          pc.dim(
+            "The profile's mandate is still checked first. The account's own caps are the ones the network enforces.",
+          ),
+        );
+      } catch (err) {
+        // Not `die`: this command has just talked to the network, and on Windows exiting while
+        // its sockets close aborts the process. Report, set the code and let it end by itself.
+        report(err);
+        process.exitCode = 1;
+      }
+    },
+  );
 
 program
   .command("pending")

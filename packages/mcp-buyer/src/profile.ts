@@ -26,6 +26,26 @@ export function profilesDir(): string {
   return join(agentposHome(), "profiles");
 }
 
+const CONTRACT_ADDRESS = /^C[A-Z2-7]{55}$/;
+
+/**
+ * A mandate account the profile pays from: a Soroban smart account that enforces the mandate
+ * on chain. The profile's own key is the session key the account's owner issued the session
+ * for; it can pay within that session and can do nothing else on the account.
+ */
+export const mandateAccountSchema = z.object({
+  /** The mandate account (`C...`). It holds the funds. */
+  account: z.string().regex(CONTRACT_ADDRESS),
+  /** The Ed25519 verifier contract the session key is registered with. */
+  verifier: z.string().regex(CONTRACT_ADDRESS),
+  /**
+   * Context rule of the agent's session. Rule 0 is the owner's and is refused here: an agent
+   * never holds the key that can change its own mandate.
+   */
+  sessionRule: z.number().int().min(1),
+});
+export type MandateAccountLink = z.output<typeof mandateAccountSchema>;
+
 export const profileSchema = z.object({
   name: z.string().regex(/^[a-z0-9-]+$/),
   network: z.enum(["testnet", "mainnet"]).default("testnet"),
@@ -34,6 +54,8 @@ export const profileSchema = z.object({
   /** Public address, kept for display; the truth is the key file. */
   address: z.string().regex(/^G[A-Z2-7]{55}$/),
   mandate: mandateSchema,
+  /** When set, payments come from this account instead of the profile's own wallet. */
+  mandateAccount: mandateAccountSchema.optional(),
   buyer: buyerContactSchema.optional(),
   shipping: addressSchema.optional(),
   /** Store URLs the agent may search by default. */

@@ -34,6 +34,8 @@ import { usdcFromMinor } from "../money.js";
 import type { SignerProvider } from "../signer.js";
 import { AgentPOSError } from "../errors.js";
 import { ADAPTER_VERSION, PROTOCOL_VERSIONS } from "./versions.js";
+import { createContractAccountScheme } from "./x402-contract-account.js";
+import type { ContractAccountPayer } from "./x402-contract-account.js";
 
 export type {
   RouteConfig,
@@ -433,6 +435,15 @@ export function createBuyerClient(
     signer,
     config.rpcUrl ? { url: config.rpcUrl } : undefined,
   );
+  return buyerClientFor(config, scheme, limits, extensions);
+}
+
+function buyerClientFor(
+  config: CoreConfig,
+  scheme: SchemeNetworkClient,
+  limits: BuyerLimits,
+  extensions: ReadonlyArray<BuyerNetworkExtension>,
+): x402HTTPClient {
   const core = x402Client.fromConfig({
     schemes: [
       { network: config.caip2, client: scheme },
@@ -475,6 +486,24 @@ export function createBuyerFetch(
     globalThis.fetch,
     createBuyerClient(config, signer, limits, extensions),
   );
+}
+
+/**
+ * Buyer side, paying from a contract account (`C...`) that signs with its own format, such as a
+ * smart account that enforces a mandate. Same limits, same networks and same wire payment as
+ * `createBuyerFetch`; only who signs differs.
+ */
+export function createContractAccountBuyerFetch(
+  config: CoreConfig,
+  payer: ContractAccountPayer,
+  limits: BuyerLimits,
+  extensions: ReadonlyArray<BuyerNetworkExtension> = [],
+): typeof globalThis.fetch {
+  const scheme = createContractAccountScheme({
+    ...payer,
+    ...(payer.rpcUrl === undefined && config.rpcUrl ? { rpcUrl: config.rpcUrl } : {}),
+  });
+  return wrapFetchWithPayment(globalThis.fetch, buyerClientFor(config, scheme, limits, extensions));
 }
 
 /** Decodes the PAYMENT-RESPONSE header of a paid response into a receipt. */

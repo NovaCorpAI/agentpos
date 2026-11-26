@@ -38,6 +38,48 @@ Claude Desktop / Claude Code MCP config:
 }
 ```
 
+## Paying from a mandate account (testnet)
+
+By default the buyer pays from the profile's own wallet, and the mandate is checked here, in
+software, before every signature. A profile can instead pay from a **mandate account**: a
+Soroban smart account that holds the funds and enforces the mandate on the network. The
+profile's key is then only a session key: it can pay within the session its owner issued, and
+it can do nothing else on the account.
+
+```bash
+agentpos-buyer account show      # the session key to hand to the account's owner
+agentpos-buyer account link --account C... --session 3
+agentpos-buyer account unlink    # back to the profile's own wallet
+```
+
+The owner of the account issues the session for that key (see
+[`@agentpos/mandate-contract`](../mandate-contract/README.md)) and tells you its rule number.
+`link` reads the session from the network before it saves anything: it refuses a session
+that does not exist, that was issued for another key or that has expired, and it prints what
+the account will enforce. Rule 0 is the owner's and is refused: an agent never holds the key
+that changes its own mandate. Once linked, `show` prints the session as the network has it
+now:
+
+```text
+balance of the account: 6
+cap per payment: 1
+cap per period: 2 every about 24 hours (spent now: 1)
+sellers it may pay: GCPW...G6CQ
+the session ends in about 14 days (ledger 6177535)
+```
+
+Every purchase of a linked profile, from the CLI and from the MCP server, is paid by the
+account. `list_profiles` shows the link to the agent, and `get_mandate_account` gives it the
+same limits `show` prints, so it can check them before it proposes a purchase.
+
+The profile's mandate is still evaluated first. The account's check is the one that holds if
+this process is wrong or compromised: a payment over its cap is refused before anything is
+sent, with the contract's error code in the message (4105 over the cap per payment, 3221 over
+the cap per period, 4106 seller not allowed).
+
+Testnet only: the contracts are not audited, and a linked profile on mainnet refuses to pay.
+Code that builds a `BuyerService` itself can pass `contractAccount` to sign some other way.
+
 ## The market call
 
 One structured request, asked of every store the mandate allows at the same time, answered with
@@ -111,7 +153,7 @@ multiplied by `quantity` in minor units, never in decimals.
 
 ## Agent tools
 
-`list_profiles`, `search_offers`, `market_call`, `get_site`, `create_cart`, `buy`, `get_order`, `get_spending_log`.
+`list_profiles`, `search_offers`, `market_call`, `get_site`, `create_cart`, `buy`, `get_order`, `get_spending_log`, `get_mandate_account`.
 `buy` never pays outside the mandate: `MANDATE_EXCEEDED`, `SELLER_UNVERIFIED` or
 `CONFIRMATION_REQUIRED` are returned instead. For the last one the human runs
 `agentpos-buyer approve <cartId>` (see `agentpos-buyer pending`) and the agent calls `buy` again.
