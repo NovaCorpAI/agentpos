@@ -1,5 +1,6 @@
 export * from "./versions.js";
 export * from "./x402.js";
+export * from "./x402-contract-account.js";
 export * from "./ucp.js";
 export * from "./acp.js";
 export * from "./conformance.js";
