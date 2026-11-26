@@ -33,3 +33,12 @@ overrides:
   undici@>=7.0.0 <7.30.1: ">=7.30.1 <8"
   # fast-uri 3.x < 3.1.9 (via ajv): scheme spoofing and host confusion advisories.
   fast-uri@>=3.0.0 <3.1.9: ">=3.1.9 <4"
+  # Advisories reported by pnpm audit --prod on 2026-11-26 (gate G1, check "audit").
+  # follow-redirects < 1.16.2 (transitive via @stellar/stellar-sdk > axios), GHSA-mrwp-f3q8-3g9p:
+  # sensitive headers kept across a cross-realm redirect.
+  follow-redirects@<1.16.2: ">=1.16.2 <2"
+  # hono < 4.13.16 and @hono/node-server < 2.1.6: path forwarding in mount(), a wildcard
+  # middleware the RegExpRouter skips, csrf() and an unhandled ECONNRESET. Our own packages ask
+  # for the patched versions; these cover the copies @modelcontextprotocol/sdk brings.
+  hono@>=4.0.0 <4.13.16: ">=4.13.16 <5"
+  "@hono/node-server@>=2.0.0 <2.1.6": ">=2.1.6 <3"
