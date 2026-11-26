@@ -85,7 +85,7 @@ No code change is needed on the store side; the URL has always been configurable
 | `AGENTPOS_FACILITATOR_ASSETS` | yes | Comma-separated contract ids (`C...`) this facilitator will settle. |
 | `AGENTPOS_FACILITATOR_NETWORK` | no | `testnet` (default) or `mainnet`. |
 | `AGENTPOS_FACILITATOR_RPC_URL` | on mainnet | Soroban RPC. Mainnet refuses to guess. |
-| `AGENTPOS_FACILITATOR_MAX_FEE_STROOPS` | no | Per-transaction fee ceiling; verify refuses above it. Default 50,000. |
+| `AGENTPOS_FACILITATOR_MAX_FEE_STROOPS` | no | Per-transaction fee ceiling; verify refuses above it. Default 50,000. A payment from a mandate account (a smart account with a policy) costs about 550,000 on testnet: set 1,000,000 to settle those. |
 | `AGENTPOS_FACILITATOR_MIN_BALANCE_STROOPS` | no | `/health` goes 503 below this. Default 50,000,000 (5 XLM). |
 | `PORT` | no | Default 8403. |
 

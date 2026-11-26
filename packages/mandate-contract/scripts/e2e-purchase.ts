@@ -285,6 +285,20 @@ async function main(): Promise<void> {
 
     const buyer = makeBuyer(session);
 
+    // What the agent can read before it buys (`get_mandate_account` in the MCP server): the
+    // limits as the network has them, not as the agent's own software remembers them.
+    const status = await buyer.mandateAccountStatus();
+    if (
+      status?.mandate?.perPaymentCap !== price ||
+      status.mandate.spentInPeriod !== 0n ||
+      !status.signers.some((signer) => signer.publicKey === agent.publicKey())
+    ) {
+      throw new Error(`the account's session does not read as issued: ${String(status?.name)}`);
+    }
+    step(
+      `agent reads its limits from the network: ${status.mandate.perPaymentCap} per payment, ${status.mandate.periodCap} per period, balance ${status.balance}`,
+    );
+
     // ---- 1. a purchase within the mandate ----------------------------------------------
     const cart = await buyer.createCart(siteUrl, [{ itemId: offer.id, quantity: 1 }]);
     step(`cart ${cart.cartId} total ${cart.quote.total} ${asset} payTo ${cart.quote.payTo}`);

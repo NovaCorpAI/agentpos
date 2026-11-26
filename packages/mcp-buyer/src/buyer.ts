@@ -13,6 +13,7 @@ import {
   isAgentPOSError,
   loadKeypair,
   receiptFromResponse,
+  readMandateSession,
   resolveConfig,
   signMandateAuthEntry,
   usdc,
@@ -27,6 +28,7 @@ import type {
   CoreConfig,
   SettlementReceipt,
   ContractAccountPayer,
+  MandateSessionState,
   SignerProvider,
   UsdcMinor,
 } from "@agentpos/core";
@@ -165,6 +167,22 @@ export class BuyerService {
     const kp = loadKeypair(this.profile.keyFile, passphrase);
     this.signerCache = createLocalKeypairSigner(kp.secret(), this.profile.network);
     return this.signerCache;
+  }
+
+  /**
+   * The linked mandate account as the network has it right now: caps, what is spent in the
+   * period, the sellers it may pay, when the session ends and what the account holds. Read-only,
+   * needs no key. Undefined when the profile is not linked to an account.
+   */
+  async mandateAccountStatus(): Promise<MandateSessionState | undefined> {
+    const link = this.profile.mandateAccount;
+    if (!link) return undefined;
+    return readMandateSession({
+      network: this.profile.network,
+      rpcUrl: this.core.rpcUrl,
+      account: link.account,
+      contextRuleId: link.sessionRule,
+    });
   }
 
   /**

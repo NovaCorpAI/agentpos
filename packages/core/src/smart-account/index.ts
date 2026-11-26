@@ -15,3 +15,9 @@ export {
   type ExternalSigner,
   type MandateParams,
 } from "./scval.js";
+export {
+  readMandateSession,
+  type MandateSessionQuery,
+  type MandateSessionState,
+  type SessionSigner,
+} from "./session.js";

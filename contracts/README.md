@@ -181,6 +181,16 @@ Each payment adds one entry to the period's history (about 80 bytes) until it le
 window. CI fails if a payment goes over 4,000,000 instructions; that is our own regression
 ceiling, not a network limit.
 
+**What it costs in fees, and what that asks of a facilitator.** On testnet (2026-11-26) a
+mandated payment settled through a facilitator was charged 542,213 stroops, about 0.054 XLM,
+which the facilitator sponsors. A payment from the same account under a session with no
+policy was charged 255,004. The reference x402 facilitator refuses a transaction whose fee
+is over its ceiling, 50,000 stroops by default, so a facilitator that settles for mandate
+accounts has to raise it. OpenZeppelin's hosted testnet facilitator settles these payments
+as it is. Its mainnet ceiling has not been checked, and nothing here goes to mainnet before
+an audit. Our own facilitator (`apps/facilitator`) takes the ceiling from
+`AGENTPOS_FACILITATOR_MAX_FEE_STROOPS`; 1,000,000 leaves room for a mandated payment.
+
 ### Mutation testing
 
 The suites above test the contracts. Mutation testing tests the suites: cargo-mutants

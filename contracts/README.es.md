@@ -184,6 +184,17 @@ Cada pago agrega una entrada al historial del período (unos 80 bytes) hasta que
 ventana. CI falla si un pago supera 4.000.000 de instrucciones; ese es un techo propio de
 regresión, no un límite de la red.
 
+**Cuánto cuesta en comisiones, y qué le exige eso a un facilitador.** En testnet
+(2026-11-26), a un pago con mandato liquidado por un facilitador se le cobraron 542.213
+stroops, unos 0,054 XLM, que patrocina el facilitador. A un pago desde la misma cuenta bajo
+una sesión sin política se le cobraron 255.004. El facilitador x402 de referencia rechaza una
+transacción cuya comisión supere su techo, 50.000 stroops por defecto, así que un facilitador
+que liquide para cuentas con mandato tiene que subirlo. El facilitador de testnet de
+OpenZeppelin liquida estos pagos tal como está. Su techo en mainnet no se ha comprobado, y
+nada de esto va a mainnet antes de una auditoría. Nuestro propio facilitador
+(`apps/facilitator`) toma el techo de `AGENTPOS_FACILITATOR_MAX_FEE_STROOPS`; 1.000.000 deja
+espacio para un pago con mandato.
+
 ### Mutation testing
 
 Las suites anteriores prueban los contratos. El mutation testing prueba a las suites:

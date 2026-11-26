@@ -267,6 +267,32 @@ export function buildBuyerServer(options: BuyerServerOptions): McpServer {
   );
 
   server.registerTool(
+    "get_mandate_account",
+    {
+      title: "Mandate account",
+      description:
+        "When the profile pays from a mandate account: the limits the network enforces on it right now (cap per payment, cap per period and what is already spent, allowed sellers, when the session ends, balance). Amounts are in the token's smallest unit (7 decimals). Read-only. Check it before proposing a purchase: a payment outside these limits is refused by the account.",
+      inputSchema: { ...profileArg },
+    },
+    async ({ profile }) => {
+      try {
+        const status = await buyer(profile).mandateAccountStatus();
+        if (!status) return ok({ linked: false });
+        // JSON has no bigint: amounts go out as strings, exact.
+        return ok(
+          JSON.parse(
+            JSON.stringify({ linked: true, ...status }, (_key, value: unknown) =>
+              typeof value === "bigint" ? value.toString() : value,
+            ),
+          ) as Record<string, unknown>,
+        );
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  server.registerTool(
     "get_spending_log",
     {
       title: "Spending log",
